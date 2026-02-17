@@ -14,6 +14,7 @@ Covers:
 - _parse_response: empty hourly list raises PVGISError
 - Retry logic: retries on 429/500/503, raises after max retries
 - Retry logic: immediate raise on non-retryable 4xx (e.g. 400, 404)
+- URL construction: correct URL from base_url + endpoint, params forwarded
 - fetch_hourly_production: unknown mounting_type raises ValueError
 - fetch_hourly_production: end-to-end with mocked requests.get
 """
@@ -27,7 +28,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from pv_bess_model.config.defaults import HOURS_PER_YEAR
+from pv_bess_model.config.defaults import HOURS_PER_YEAR, PVGIS_SERIESCALC_ENDPOINT
 from pv_bess_model.pv.pvgis_client import PVGISClient, PVGISError, _strip_leap_day
 
 # ---------------------------------------------------------------------------
@@ -237,6 +238,68 @@ class TestCacheRoundTrip:
         with patch("requests.get", return_value=self._ok_response(data)):
             client_no_cache._get_with_cache({"lat": 5.0})
         assert list(tmp_path.rglob("*.json")) == []
+
+
+# ---------------------------------------------------------------------------
+# URL construction
+# ---------------------------------------------------------------------------
+
+
+class TestURLConstruction:
+    """Verify that _fetch builds the correct URL and passes params through."""
+
+    def _ok_response(self, data: dict) -> MagicMock:
+        r = MagicMock()
+        r.status_code = 200
+        r.json.return_value = data
+        return r
+
+    def test_url_uses_base_plus_endpoint(self):
+        """requests.get must receive base_url + PVGIS_SERIESCALC_ENDPOINT."""
+        client = PVGISClient(
+            cache_dir=None,
+            base_url="https://test.example.com/api/v5_3/",
+            max_retries=1,
+            backoff_factor=0.0,
+        )
+        data = _pvgis_response({2005: HOURS_PER_YEAR})
+        with patch("requests.get", return_value=self._ok_response(data)) as mock_get:
+            client._fetch({"lat": 0})
+        expected_url = f"https://test.example.com/api/v5_3/{PVGIS_SERIESCALC_ENDPOINT}"
+        actual_url = mock_get.call_args[0][0]
+        assert actual_url == expected_url
+
+    def test_trailing_slash_normalised(self):
+        """base_url with and without trailing slash must produce the same URL."""
+        data = _pvgis_response({2005: HOURS_PER_YEAR})
+        ok = self._ok_response(data)
+        urls = []
+        for base in (
+            "https://example.com/api/v5_3/",
+            "https://example.com/api/v5_3",
+        ):
+            client = PVGISClient(cache_dir=None, base_url=base, max_retries=1, backoff_factor=0.0)
+            with patch("requests.get", return_value=ok) as mock_get:
+                client._fetch({"lat": 0})
+            urls.append(mock_get.call_args[0][0])
+        assert urls[0] == urls[1]
+
+    def test_params_forwarded_to_requests_get(self):
+        """Query params dict must be passed as the 'params' keyword argument."""
+        client = PVGISClient(cache_dir=None, max_retries=1, backoff_factor=0.0)
+        params = {"lat": 53.55, "lon": 9.99, "peakpower": 5000}
+        data = _pvgis_response({2005: HOURS_PER_YEAR})
+        with patch("requests.get", return_value=self._ok_response(data)) as mock_get:
+            client._fetch(params)
+        assert mock_get.call_args[1]["params"] == params
+
+    def test_timeout_forwarded(self):
+        """The configured timeout must be passed to requests.get."""
+        client = PVGISClient(cache_dir=None, timeout=42, max_retries=1, backoff_factor=0.0)
+        data = _pvgis_response({2005: HOURS_PER_YEAR})
+        with patch("requests.get", return_value=self._ok_response(data)) as mock_get:
+            client._fetch({"lat": 0})
+        assert mock_get.call_args[1]["timeout"] == 42
 
 
 # ---------------------------------------------------------------------------
