@@ -1,0 +1,137 @@
+{
+  "scenario": {
+    "name": "Regelenergie_Grey_Example",
+    "_comment": "Grey mode with grid charging for frequency regulation / balancing market arbitrage.",
+    "monte_carlo": {
+      "enabled": false,
+      "iterations": 500,
+      "sigma_pv_yield_pct": 5.0,
+      "sigma_capex_pct": 8.0,
+      "sigma_opex_pct": 5.0,
+      "sigma_bess_availability_pct": 3.0,
+      "price_scenarios": {
+        "mid": {"csv_column": "MID", "weight": 1.0}
+      }
+    },
+    "output": {
+      "directory": "output/",
+      "export_dispatch_sample": true
+    }
+  },
+  "project_settings": {
+    "lifetime_years": 20,
+    "discount_rate": 0.07,
+    "operating_mode": "grey",
+    "location": {
+      "latitude": 52.52,
+      "longitude": 13.40,
+      "pvgis_database": "PVGIS-SARAH2"
+    },
+    "technology": {
+      "pv": {
+        "design": {
+          "peak_power_kwp": 10000,
+          "mounting_type": "free",
+          "azimuth_deg": 0,
+          "tilt_deg": 25
+        },
+        "performance": {
+          "system_loss_pct": 14.0,
+          "degradation_rate_pct_per_year": 0.4
+        },
+        "costs": {
+          "capex": {
+            "fixed_eur": 100000,
+            "eur_per_kw": 750
+          },
+          "opex": {
+            "fixed_eur": 10000,
+            "eur_per_kw": 10,
+            "pct_of_capex": 0.002
+          }
+        }
+      },
+      "bess": {
+        "design_space": {
+          "scale_pct_of_pv": [0, 20, 40, 60, 80, 100],
+          "e_to_p_ratio_hours": [1, 2]
+        },
+        "performance": {
+          "round_trip_efficiency_pct": 90.0,
+          "min_soc_pct": 10.0,
+          "max_soc_pct": 90.0,
+          "degradation_rate_pct_per_year": 2.5,
+          "bess_availability_pct": 95.0
+        },
+        "costs": {
+          "capex": {
+            "fixed_eur": 100000,
+            "eur_per_kw": 90,
+            "eur_per_kwh": 230
+          },
+          "opex": {
+            "fixed_eur": 50000,
+            "pct_of_capex": 0.012
+          },
+          "replacement": {
+            "enabled": true,
+            "year": 10,
+            "fixed_eur": 0,
+            "eur_per_kw": 80,
+            "eur_per_kwh": 180
+          }
+        }
+      },
+      "grid_connection": {
+        "max_export_kw": 8000,
+        "costs": {
+          "capex": {
+            "fixed_eur": 150000,
+            "eur_per_kw": 80
+          },
+          "opex": {
+            "fixed_eur": 50000,
+            "pct_of_capex": 0.01
+          }
+        }
+      }
+    },
+    "finance": {
+      "leverage_pct": 70,
+      "interest_rate_pct": 5.0,
+      "loan_tenor_years": 15,
+      "equity_irr_target": null,
+      "debt_uses_p90": true,
+      "inflation_rate": 0.025,
+      "revenue_streams": {
+        "marketing": {
+          "type": "ppa",
+          "floor_price_eur_per_kwh": null,
+          "fixed_price_years": null,
+          "eeg_inflation": false
+        },
+        "ppa": {
+          "type": "ppa_collar",
+          "pay_as_produced_price_eur_per_kwh": null,
+          "baseload_mw": null,
+          "floor_price_eur_per_kwh": 0.045,
+          "cap_price_eur_per_kwh": 0.120,
+          "duration_years": 10,
+          "inflation_on_ppa": true,
+          "guarantee_of_origin_eur_per_kwh": 0.003
+        }
+      },
+      "price_inputs": {
+        "day_ahead_csv": "data/day_ahead_prices.csv",
+        "price_unit": "eur_per_mwh",
+        "inflation_on_input_data": false
+      },
+      "tax": {
+        "afa_years_pv": 20,
+        "afa_years_bess": 10,
+        "gewerbesteuer_hebesatz": 380,
+        "gewerbesteuer_messzahl": 0.035
+      }
+    }
+  }
+}
