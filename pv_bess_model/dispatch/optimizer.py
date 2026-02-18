@@ -15,6 +15,24 @@ floor price are known constants at solve time, the effective price
 This avoids the need for revenue-helper variables and their associated
 linearisation constraints.
 
+Unit conventions
+----------------
+All inputs and outputs follow a single, consistent unit scheme:
+
+========  ======  ====================================================
+Quantity  Unit    Notes
+========  ======  ====================================================
+Energy    kWh     PV production, charge/discharge amounts, SoC levels
+Power     kW      Charge/discharge limits, grid export limit.
+                  Equivalent to kWh/h for 1-hour timesteps.
+Price     €/kWh   Spot prices AND floor price.  The price loader
+                  converts CSV €/MWh → €/kWh before passing to this
+                  module.  EEG/PPA modules also return €/kWh.
+Revenue   €       Hourly revenue = energy (kWh) × price (€/kWh).
+RTE       frac    Round-trip efficiency as a fraction in (0, 1],
+                  e.g. 0.88 for 88 %.
+========  ======  ====================================================
+
 Variable indexing (Green Mode)
 ------------------------------
 For *T* hourly timesteps (default 24):
@@ -48,15 +66,18 @@ SoC is tracked implicitly via cumulative charge/discharge constraints
 
 Public API
 ----------
-DailyDispatchResult – TypedDict with all per-hour arrays + end_soc.
-optimize_day        – Solve the daily LP for one day (Green or Grey).
+BessParams           – Frozen dataclass bundling BESS physical parameters.
+DailyDispatchResult  – TypedDict with all per-hour arrays + end_soc.
+OperatingMode        – Literal type alias for ``"green"`` | ``"grey"``.
+optimize_day         – Solve the daily LP for one day (Green or Grey).
 dispatch_offline_day – Produce dispatch results for a BESS-offline day.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TypedDict
+from dataclasses import dataclass
+from typing import Literal, TypedDict
 
 import numpy as np
 from scipy.optimize import linprog
@@ -64,6 +85,44 @@ from scipy.optimize import linprog
 from pv_bess_model.config.defaults import LP_SOLVER_METHOD
 
 logger = logging.getLogger(__name__)
+
+#: Accepted operating-mode values.
+OperatingMode = Literal["green", "grey"]
+
+
+# ---------------------------------------------------------------------------
+# BESS parameter bundle
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class BessParams:
+    """Physical BESS parameters that stay constant within a project year.
+
+    All values are already computed for the current degradation state; the
+    dispatch engine is responsible for applying annual degradation *before*
+    constructing this object.
+
+    Attributes
+    ----------
+    max_charge_kw : float
+        Maximum charging power in **kW** (= kWh/h for 1 h timesteps).
+    max_discharge_kw : float
+        Maximum discharging power in **kW**.
+    round_trip_efficiency : float
+        Round-trip efficiency as a **fraction** in (0, 1], e.g. 0.88.
+        Losses are applied on discharge only.
+    soc_min_kwh : float
+        Minimum allowable state-of-charge in **kWh**.
+    soc_max_kwh : float
+        Maximum allowable state-of-charge in **kWh**.
+    """
+
+    max_charge_kw: float
+    max_discharge_kw: float
+    round_trip_efficiency: float
+    soc_min_kwh: float
+    soc_max_kwh: float
 
 
 # ---------------------------------------------------------------------------
@@ -74,49 +133,56 @@ logger = logging.getLogger(__name__)
 class DailyDispatchResult(TypedDict):
     """Per-hour dispatch arrays returned by :func:`optimize_day`.
 
-    All arrays have length *T* (number of hourly timesteps, typically 24).
-    Energy values are in kWh, revenue in €.
+    All energy arrays have length *T* (number of hourly timesteps, typically
+    24) and are in **kWh**.  Revenue arrays are in **€**.
+
+    Scalar ``end_soc*`` fields carry over the state for day-to-day coupling.
     """
 
     charge_pv: np.ndarray
-    """kWh charged into BESS from PV per hour."""
+    """kWh charged into BESS from PV surplus, per hour. shape (T,)"""
 
     discharge_green: np.ndarray
-    """kWh removed from BESS SoC (green) per hour."""
+    """kWh removed from BESS SoC (green chamber), per hour. shape (T,)"""
 
     export_pv: np.ndarray
-    """kWh PV exported directly to grid per hour."""
+    """kWh PV exported directly to grid, per hour. shape (T,)"""
 
     curtail: np.ndarray
-    """kWh PV curtailed per hour."""
+    """kWh PV curtailed (wasted), per hour. shape (T,)"""
 
     charge_grid: np.ndarray
-    """kWh charged into BESS from grid per hour (Grey Mode; zeros in Green)."""
+    """kWh charged into BESS from grid, per hour. shape (T,)
+    Grey Mode only; zeros in Green Mode."""
 
     discharge_grey: np.ndarray
-    """kWh removed from BESS SoC (grey) per hour (Grey Mode; zeros in Green)."""
+    """kWh removed from BESS SoC (grey chamber), per hour. shape (T,)
+    Grey Mode only; zeros in Green Mode."""
 
     soc: np.ndarray
-    """SoC at the *end* of each hour (kWh).  Green Mode: total SoC.
-    Grey Mode: sum of green + grey SoC."""
+    """Total SoC at the *end* of each hour, in kWh. shape (T,)
+    Green Mode: equals soc_green.  Grey Mode: soc_green + soc_grey."""
 
     soc_green: np.ndarray
-    """Green SoC at end of each hour (kWh).  In Green Mode equals ``soc``."""
+    """Green-chamber SoC at end of each hour, in kWh. shape (T,)"""
 
     soc_grey: np.ndarray
-    """Grey SoC at end of each hour (kWh).  Zeros in Green Mode."""
+    """Grey-chamber SoC at end of each hour, in kWh. shape (T,)
+    Zeros in Green Mode."""
 
     revenue: np.ndarray
-    """Hourly revenue in € (export + discharge revenue, net of grid import cost)."""
+    """Hourly revenue in €. shape (T,)
+    = export × eff_price + discharge_green × RTE × eff_price
+      + discharge_grey × RTE × spot  − charge_grid × spot"""
 
     end_soc: float
-    """Total SoC at the end of the last hour (kWh), for day-to-day coupling."""
+    """Total SoC at end of last hour (kWh).  For day-to-day coupling."""
 
     end_soc_green: float
-    """Green SoC at end of last hour.  Equals *end_soc* in Green Mode."""
+    """Green SoC at end of last hour (kWh).  Equals end_soc in Green Mode."""
 
     end_soc_grey: float
-    """Grey SoC at end of last hour.  0.0 in Green Mode."""
+    """Grey SoC at end of last hour (kWh).  0.0 in Green Mode."""
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +194,7 @@ def _effective_green_price(
     spot_prices_eur_per_kwh: np.ndarray,
     price_fixed_eur_per_kwh: float,
 ) -> np.ndarray:
-    """Pre-compute the effective green price per hour.
+    """Pre-compute the effective green price per hour (€/kWh).
 
     ``effective[t] = max(spot[t], fixed)`` when a floor is active,
     otherwise just ``spot[t]``.
@@ -145,8 +211,7 @@ def _effective_green_price(
 
 def _build_green_lp(
     pv_production_kwh: np.ndarray,
-    spot_prices_eur_per_kwh: np.ndarray,
-    price_fixed_eur_per_kwh: float,
+    eff_prices: np.ndarray,
     rte: float,
     soc_min_kwh: float,
     soc_max_kwh: float,
@@ -158,55 +223,23 @@ def _build_green_lp(
     """Construct the Green-Mode LP matrices.
 
     Returns (c, A_ub, b_ub, A_eq, b_eq) suitable for ``scipy.optimize.linprog``.
-    All inequality constraints are expressed as A_ub @ x <= b_ub.
 
-    Parameters
-    ----------
-    pv_production_kwh:
-        PV production per hour (kWh), length T.
-    spot_prices_eur_per_kwh:
-        Spot prices per hour (€/kWh), length T.
-    price_fixed_eur_per_kwh:
-        Fixed floor price (€/kWh) for EEG/PPA.  0.0 when no floor is active.
-    rte:
-        Round-trip efficiency as a fraction (e.g. 0.88).
-    soc_min_kwh:
-        Minimum SoC (kWh).
-    soc_max_kwh:
-        Maximum SoC (kWh).
-    start_soc_kwh:
-        SoC at the start of the day (kWh).
-    max_charge_kw:
-        Maximum charge power (kW = kWh/h).
-    max_discharge_kw:
-        Maximum discharge power (kW = kWh/h).
-    grid_max_kw:
-        Maximum grid export power (kW).
-
-    Returns
-    -------
-    tuple
-        (c, A_ub, b_ub, A_eq, b_eq)
+    All prices in *eff_prices* are €/kWh (already floor-adjusted).
     """
     T = len(pv_production_kwh)
     n_vars = 4 * T  # charge_pv, disch_green, export_pv, curtail
-
-    # Effective green price: max(spot, fixed)
-    eff = _effective_green_price(spot_prices_eur_per_kwh, price_fixed_eur_per_kwh)
 
     # --- Objective: max Σ(export[t]*eff[t] + disch_green[t]*RTE*eff[t]) ---
     # linprog minimises → negate
     c = np.zeros(n_vars)
     for t in range(T):
-        c[2 * T + t] = -eff[t]            # export_pv[t]
-        c[T + t] = -(rte * eff[t])         # discharge_green[t] × RTE × eff
-    # charge_pv and curtail have zero objective coefficients
+        c[2 * T + t] = -eff_prices[t]            # export_pv[t]
+        c[T + t] = -(rte * eff_prices[t])         # discharge_green[t] × RTE × eff
 
     # --- Equality constraints ---
     # PV energy balance: export[t] + charge_pv[t] + curtail[t] = pv[t]  ∀t
-    n_eq = T
-    A_eq = np.zeros((n_eq, n_vars))
-    b_eq = np.zeros(n_eq)
+    A_eq = np.zeros((T, n_vars))
+    b_eq = np.zeros(T)
     for t in range(T):
         A_eq[t, 2 * T + t] = 1.0   # export_pv[t]
         A_eq[t, t] = 1.0            # charge_pv[t]
@@ -268,7 +301,7 @@ def _build_green_lp(
 def _build_grey_lp(
     pv_production_kwh: np.ndarray,
     spot_prices_eur_per_kwh: np.ndarray,
-    price_fixed_eur_per_kwh: float,
+    eff_prices: np.ndarray,
     rte: float,
     soc_min_kwh: float,
     soc_max_kwh: float,
@@ -283,57 +316,26 @@ def _build_grey_lp(
     Grey Mode extends Green Mode with grid charging (``charge_grid``) and
     grey discharging (``discharge_grey``), plus dual-chamber SoC tracking.
 
-    Parameters
-    ----------
-    pv_production_kwh:
-        PV production per hour (kWh), length T.
-    spot_prices_eur_per_kwh:
-        Spot prices per hour (€/kWh), length T.
-    price_fixed_eur_per_kwh:
-        Fixed floor price (€/kWh) for EEG/PPA.
-    rte:
-        Round-trip efficiency as a fraction.
-    soc_min_kwh:
-        Minimum total SoC (kWh).
-    soc_max_kwh:
-        Maximum total SoC (kWh).
-    start_soc_green_kwh:
-        Green chamber SoC at start of day (kWh).
-    start_soc_grey_kwh:
-        Grey chamber SoC at start of day (kWh).
-    max_charge_kw:
-        Maximum charge power (kW).
-    max_discharge_kw:
-        Maximum discharge power (kW).
-    grid_max_kw:
-        Maximum grid export power (kW).
-
-    Returns
-    -------
-    tuple
-        (c, A_ub, b_ub, A_eq, b_eq)
+    *eff_prices* are €/kWh (floor-adjusted, for green energy).
+    *spot_prices_eur_per_kwh* are raw spot (€/kWh, for grey energy).
     """
     T = len(pv_production_kwh)
     n_vars = 6 * T  # charge_pv, disch_green, export_pv, curtail, charge_grid, disch_grey
-
-    # Effective green price: max(spot, fixed)
-    eff = _effective_green_price(spot_prices_eur_per_kwh, price_fixed_eur_per_kwh)
 
     # --- Objective ---
     # max Σ[ export[t]*eff[t] + disch_green[t]*RTE*eff[t]
     #        + disch_grey[t]*RTE*spot[t] - charge_grid[t]*spot[t] ]
     c = np.zeros(n_vars)
     for t in range(T):
-        c[2 * T + t] = -eff[t]                              # export_pv
-        c[T + t] = -(rte * eff[t])                           # discharge_green
-        c[5 * T + t] = -(rte * spot_prices_eur_per_kwh[t])   # discharge_grey revenue
-        c[4 * T + t] = spot_prices_eur_per_kwh[t]            # charge_grid cost
+        c[2 * T + t] = -eff_prices[t]                        # export_pv
+        c[T + t] = -(rte * eff_prices[t])                     # discharge_green
+        c[5 * T + t] = -(rte * spot_prices_eur_per_kwh[t])    # discharge_grey revenue
+        c[4 * T + t] = spot_prices_eur_per_kwh[t]             # charge_grid cost
 
     # --- Equality constraints ---
     # PV energy balance: export[t] + charge_pv[t] + curtail[t] = pv[t]
-    n_eq = T
-    A_eq = np.zeros((n_eq, n_vars))
-    b_eq = np.zeros(n_eq)
+    A_eq = np.zeros((T, n_vars))
+    b_eq = np.zeros(T)
     for t in range(T):
         A_eq[t, 2 * T + t] = 1.0   # export_pv
         A_eq[t, t] = 1.0            # charge_pv
@@ -348,7 +350,6 @@ def _build_grey_lp(
 
     for t in range(T):
         # soc_green[t] ≥ 0
-        # → -(start_green + Σ(cpv[0..t]) - Σ(dg[0..t])) ≤ 0
         # → -Σcpv + Σdg ≤ start_green
         row = np.zeros(n_vars)
         row[0: t + 1] = -1.0         # -charge_pv[0..t]
@@ -420,8 +421,7 @@ def _build_grey_lp(
 def _extract_green_result(
     x: np.ndarray,
     T: int,
-    spot_prices_eur_per_kwh: np.ndarray,
-    price_fixed_eur_per_kwh: float,
+    eff_prices: np.ndarray,
     rte: float,
     start_soc_kwh: float,
 ) -> DailyDispatchResult:
@@ -431,8 +431,6 @@ def _extract_green_result(
     export_pv = x[2 * T: 3 * T]
     curtail = x[3 * T: 4 * T]
 
-    eff = _effective_green_price(spot_prices_eur_per_kwh, price_fixed_eur_per_kwh)
-
     # Reconstruct SoC trajectory
     soc = np.empty(T)
     cumulative = start_soc_kwh
@@ -440,8 +438,8 @@ def _extract_green_result(
         cumulative += charge_pv[t] - discharge_green[t]
         soc[t] = cumulative
 
-    # Revenue per hour
-    revenue = export_pv * eff + discharge_green * rte * eff
+    # Revenue per hour (€)
+    revenue = export_pv * eff_prices + discharge_green * rte * eff_prices
 
     return DailyDispatchResult(
         charge_pv=charge_pv,
@@ -464,7 +462,7 @@ def _extract_grey_result(
     x: np.ndarray,
     T: int,
     spot_prices_eur_per_kwh: np.ndarray,
-    price_fixed_eur_per_kwh: float,
+    eff_prices: np.ndarray,
     rte: float,
     start_soc_green_kwh: float,
     start_soc_grey_kwh: float,
@@ -476,8 +474,6 @@ def _extract_grey_result(
     curtail = x[3 * T: 4 * T]
     charge_grid = x[4 * T: 5 * T]
     discharge_grey = x[5 * T: 6 * T]
-
-    eff = _effective_green_price(spot_prices_eur_per_kwh, price_fixed_eur_per_kwh)
 
     # Reconstruct SoC trajectories
     soc_green = np.empty(T)
@@ -492,10 +488,10 @@ def _extract_grey_result(
 
     soc = soc_green + soc_grey
 
-    # Revenue: green at effective price, grey at spot, minus grid import cost
+    # Revenue (€): green at effective price, grey at spot, minus grid import cost
     revenue = (
-        export_pv * eff
-        + discharge_green * rte * eff
+        export_pv * eff_prices
+        + discharge_green * rte * eff_prices
         + discharge_grey * rte * spot_prices_eur_per_kwh
         - charge_grid * spot_prices_eur_per_kwh
     )
@@ -526,77 +522,65 @@ def optimize_day(
     pv_production_kwh: np.ndarray,
     spot_prices_eur_per_kwh: np.ndarray,
     price_fixed_eur_per_kwh: float,
-    rte: float,
-    soc_min_kwh: float,
-    soc_max_kwh: float,
-    start_soc_kwh: float,
-    max_charge_kw: float,
-    max_discharge_kw: float,
+    bess: BessParams,
     grid_max_kw: float,
-    mode: str,
+    mode: OperatingMode,
+    start_soc_kwh: float,
     start_soc_green_kwh: float | None = None,
     start_soc_grey_kwh: float | None = None,
 ) -> DailyDispatchResult:
     """Solve the daily dispatch LP for one day.
 
-    The effective green price is ``max(spot[t], price_fixed)`` when a floor is
-    active, else ``spot[t]``.  Since prices are known at solve time, this is
-    pre-computed and used directly in the linear objective — no auxiliary
-    revenue-helper variables are needed.
-
     Parameters
     ----------
-    pv_production_kwh:
-        PV production per hour (kWh), length T (typically 24).
-    spot_prices_eur_per_kwh:
-        Day-ahead spot prices per hour (€/kWh), length T.
-    price_fixed_eur_per_kwh:
-        Fixed floor price (€/kWh) for EEG/PPA.
-        Set to 0.0 when no floor is active.
-    rte:
-        Round-trip efficiency as a fraction (e.g. 0.88).
-    soc_min_kwh:
-        Minimum allowable SoC (kWh).
-    soc_max_kwh:
-        Maximum allowable SoC (kWh).
-    start_soc_kwh:
-        Total SoC at the start of the day (kWh).
-    max_charge_kw:
-        Maximum charge power (kW = kWh/h for 1h timesteps).
-    max_discharge_kw:
-        Maximum discharge power (kW).
-    grid_max_kw:
-        Maximum grid export power (kW).
-    mode:
-        Operating mode: ``"green"`` or ``"grey"``.
-    start_soc_green_kwh:
-        Green SoC at start (Grey Mode only). Defaults to *start_soc_kwh*.
-    start_soc_grey_kwh:
-        Grey SoC at start (Grey Mode only). Defaults to 0.0.
+    pv_production_kwh : np.ndarray, shape (T,)
+        PV production per hour in **kWh**.  *T* is typically 24.
+    spot_prices_eur_per_kwh : np.ndarray, shape (T,)
+        Day-ahead spot prices per hour in **€/kWh**.
+    price_fixed_eur_per_kwh : float
+        Fixed floor price in **€/kWh** for EEG/PPA.
+        Set to **0.0** when no floor is active.
+    bess : BessParams
+        Physical BESS parameters (power limits, RTE, SoC bounds).
+    grid_max_kw : float
+        Maximum grid export power in **kW**.
+    mode : ``"green"`` | ``"grey"``
+        Operating mode.
+    start_soc_kwh : float
+        Total SoC at the start of the day in **kWh**.
+    start_soc_green_kwh : float | None
+        Green-chamber SoC at start in **kWh** (Grey Mode only).
+        Defaults to *start_soc_kwh* (entire SoC is green).
+    start_soc_grey_kwh : float | None
+        Grey-chamber SoC at start in **kWh** (Grey Mode only).
+        Defaults to 0.0.
 
     Returns
     -------
     DailyDispatchResult
-        All per-hour dispatch arrays and end-of-day SoC values.
+        All per-hour dispatch arrays (kWh / €) and end-of-day SoC (kWh).
 
     Raises
     ------
     ValueError
-        If mode is neither ``"green"`` nor ``"grey"``.
+        If *mode* is neither ``"green"`` nor ``"grey"``.
     """
     T = len(pv_production_kwh)
+    rte = bess.round_trip_efficiency
+
+    # Pre-compute effective green price: max(spot, fixed) — €/kWh
+    eff = _effective_green_price(spot_prices_eur_per_kwh, price_fixed_eur_per_kwh)
 
     if mode == "green":
         c, A_ub, b_ub, A_eq, b_eq = _build_green_lp(
             pv_production_kwh=pv_production_kwh,
-            spot_prices_eur_per_kwh=spot_prices_eur_per_kwh,
-            price_fixed_eur_per_kwh=price_fixed_eur_per_kwh,
+            eff_prices=eff,
             rte=rte,
-            soc_min_kwh=soc_min_kwh,
-            soc_max_kwh=soc_max_kwh,
+            soc_min_kwh=bess.soc_min_kwh,
+            soc_max_kwh=bess.soc_max_kwh,
             start_soc_kwh=start_soc_kwh,
-            max_charge_kw=max_charge_kw,
-            max_discharge_kw=max_discharge_kw,
+            max_charge_kw=bess.max_charge_kw,
+            max_discharge_kw=bess.max_discharge_kw,
             grid_max_kw=grid_max_kw,
         )
         n_vars = 4 * T
@@ -612,14 +596,14 @@ def optimize_day(
         c, A_ub, b_ub, A_eq, b_eq = _build_grey_lp(
             pv_production_kwh=pv_production_kwh,
             spot_prices_eur_per_kwh=spot_prices_eur_per_kwh,
-            price_fixed_eur_per_kwh=price_fixed_eur_per_kwh,
+            eff_prices=eff,
             rte=rte,
-            soc_min_kwh=soc_min_kwh,
-            soc_max_kwh=soc_max_kwh,
+            soc_min_kwh=bess.soc_min_kwh,
+            soc_max_kwh=bess.soc_max_kwh,
             start_soc_green_kwh=soc_green_start,
             start_soc_grey_kwh=soc_grey_start,
-            max_charge_kw=max_charge_kw,
-            max_discharge_kw=max_discharge_kw,
+            max_charge_kw=bess.max_charge_kw,
+            max_discharge_kw=bess.max_discharge_kw,
             grid_max_kw=grid_max_kw,
         )
         n_vars = 6 * T
@@ -658,13 +642,11 @@ def optimize_day(
     x = result.x
 
     if mode == "green":
-        return _extract_green_result(
-            x, T, spot_prices_eur_per_kwh, price_fixed_eur_per_kwh, rte, start_soc_kwh
-        )
+        return _extract_green_result(x, T, eff, rte, start_soc_kwh)
     else:
         return _extract_grey_result(
-            x, T, spot_prices_eur_per_kwh, price_fixed_eur_per_kwh,
-            rte, soc_green_start, soc_grey_start,
+            x, T, spot_prices_eur_per_kwh, eff, rte,
+            soc_green_start, soc_grey_start,
         )
 
 
@@ -690,20 +672,20 @@ def dispatch_offline_day(
 
     Parameters
     ----------
-    pv_production_kwh:
-        PV production per hour (kWh), length T.
-    spot_prices_eur_per_kwh:
-        Spot prices per hour (€/kWh), length T.
-    price_fixed_eur_per_kwh:
-        Fixed floor price (€/kWh) for revenue calculation.
-    grid_max_kw:
-        Maximum grid export power (kW).
-    start_soc_kwh:
-        Total SoC carried over (frozen, kWh).
-    start_soc_green_kwh:
-        Green SoC carried over. Defaults to *start_soc_kwh*.
-    start_soc_grey_kwh:
-        Grey SoC carried over. Defaults to 0.0.
+    pv_production_kwh : np.ndarray, shape (T,)
+        PV production per hour in **kWh**.
+    spot_prices_eur_per_kwh : np.ndarray, shape (T,)
+        Spot prices per hour in **€/kWh**.
+    price_fixed_eur_per_kwh : float
+        Fixed floor price in **€/kWh**.  0.0 when no floor.
+    grid_max_kw : float
+        Maximum grid export power in **kW**.
+    start_soc_kwh : float
+        Total SoC carried over (frozen) in **kWh**.
+    start_soc_green_kwh : float | None
+        Green SoC carried over in **kWh**.  Defaults to *start_soc_kwh*.
+    start_soc_grey_kwh : float | None
+        Grey SoC carried over in **kWh**.  Defaults to 0.0.
 
     Returns
     -------
