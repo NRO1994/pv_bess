@@ -601,7 +601,7 @@ def reference_optimizer_4h() -> dict:
     Scenario
     --------
     PV production  : [100, 200,  50,   0] kWh
-    Spot prices    : [ 30,  10,  10,  80] €/MWh
+    Spot prices    : [ 30,  10,  10,  80] €/MWh  →  [0.030, 0.010, 0.010, 0.080] €/kWh
     BESS power     : 100 kW
     BESS capacity  : 200 kWh   (SoC limits 10–90 % → 20–180 kWh usable)
     RTE            : 90 %  (losses on discharge only)
@@ -609,25 +609,46 @@ def reference_optimizer_4h() -> dict:
     Grid max export: 150 kW (= 150 kWh per hour)
     Mode           : Green (no grid charging)
 
-    Optimal dispatch (derived analytically)
+    Optimal dispatch (LP-verified)
     ----------------------------------------
-    t=0  price=30: PV=100. No BESS action beneficial (charging < 50 kWh raises
-         revenue only if recovered at higher price; here t=1 has 50 kWh of
-         "free" curtailment headroom). Export 100 kWh. SoC 100 → 100.
+    The LP exploits an inter-temporal arbitrage the naive greedy strategy misses:
+    discharging at t=0 (moderate price, 30 €/MWh) creates SoC headroom so that
+    cheap PV surplus at t=1 can refill the BESS for the expensive t=3 peak.
 
-    t=1  price=10: PV=200, grid limit=150. 50 kWh would be curtailed without
-         BESS. Charging exactly 50 kWh avoids curtailment at zero revenue cost
-         while building SoC for the t=3 peak. Export 150 kWh. SoC 100 → 150.
+    t=0  price=30: PV=100.  Export all 100 kWh PV.  Additionally discharge
+         500/9 ≈ 55.56 kWh from SoC → grid output = 500/9 × 0.9 = 50 kWh.
+         Grid total = 100 + 50 = 150 (limit binding).
+         SoC: 100 → 100 − 500/9 = 400/9 ≈ 44.44.
+         Revenue: 100×0.030 + 500/9×0.9×0.030 = 3.00 + 1.50 = 4.50 €
 
-    t=2  price=10: PV=50. Charging would reduce export revenue without
-         increasing t=3 throughput (SoC already ≥ 120 kWh needed for full
-         discharge). Export 50 kWh. SoC stays 150.
+    t=1  price=10: PV=200.  Charge 680/9 ≈ 75.56 kWh (exactly enough to reach
+         SoC = 120 kWh, enabling full 100 kWh discharge at t=3 down to SoC 20).
+         Export 200 − 680/9 = 1120/9 ≈ 124.44 kWh (below grid limit).
+         SoC: 400/9 + 680/9 = 1080/9 = 120.
+         Revenue: 1120/9 × 0.010 ≈ 1.2444 €
 
-    t=3  price=80: PV=0. Discharge 100 kWh from SoC (power limited).
-         Grid output = 100 × 0.9 = 90 kWh. SoC 150 → 50 ≥ 20 (min) ✓
+    t=2  price=10: PV=50.  No charging needed (SoC 120 already supports full
+         discharge at t=3).  Export 50 kWh.  SoC stays 120.
+         Revenue: 50 × 0.010 = 0.50 €
 
-    Revenue: 100×0.030 + 150×0.010 + 50×0.010 + 90×0.080 = 12.20 €
+    t=3  price=80: PV=0.  Discharge 100 kWh from SoC (power limited).
+         Grid output = 100 × 0.9 = 90 kWh.  SoC: 120 → 20 = min SoC ✓
+         Revenue: 100 × 0.9 × 0.080 = 7.20 €
+
+    Total revenue: 4.50 + 1.2444 + 0.50 + 7.20 = 121/9 ≈ 13.4444 €
+
+    Why this beats the naive 12.20 € strategy (no t=0 discharge):
+    Discharging 500/9 kWh at t=0 earns 500/9 × 0.9 × 0.030 = 1.50 €.
+    Recharging requires 680/9 − 50 = 230/9 ≈ 25.56 kWh of *additional* PV at t=1
+    beyond the 50 kWh of free surplus (which would be curtailed anyway).
+    Cost = 230/9 × 0.010 ≈ 0.2556 €.  Net arbitrage gain ≈ 1.24 €.
     """
+    # Exact fractional values: discharge_t0 = 500/9, charge_t1 = 680/9,
+    # export_t1 = 1120/9, total_revenue = 121/9.
+    disch_t0 = 500.0 / 9.0
+    charge_t1 = 680.0 / 9.0
+    export_t1 = 1120.0 / 9.0
+
     return {
         # Inputs
         "pv_production_kwh": np.array([100.0, 200.0, 50.0, 0.0]),
@@ -642,13 +663,17 @@ def reference_optimizer_4h() -> dict:
         "mode": "green",
         "price_fixed_eur_per_kwh": 0.0,  # no EEG floor active
         # Expected outputs
-        "expected_charge_pv_kwh": np.array([0.0, 50.0, 0.0, 0.0]),
-        "expected_export_pv_kwh": np.array([100.0, 150.0, 50.0, 0.0]),
+        "expected_charge_pv_kwh": np.array([0.0, charge_t1, 0.0, 0.0]),
+        "expected_export_pv_kwh": np.array([100.0, export_t1, 50.0, 0.0]),
         "expected_curtail_kwh": np.array([0.0, 0.0, 0.0, 0.0]),
-        "expected_discharge_green_kwh": np.array([0.0, 0.0, 0.0, 100.0]),
+        "expected_discharge_green_kwh": np.array([disch_t0, 0.0, 0.0, 100.0]),
         # SoC at end of each hour (after charge/discharge applied)
-        "expected_soc_kwh": np.array([100.0, 150.0, 150.0, 50.0]),
+        "expected_soc_kwh": np.array(
+            [100.0 - disch_t0, 120.0, 120.0, 20.0]
+        ),
         # Grid export per hour (PV direct + BESS discharge × RTE)
-        "expected_grid_export_kwh": np.array([100.0, 150.0, 50.0, 90.0]),
-        "expected_total_revenue_eur": 12.20,
+        "expected_grid_export_kwh": np.array(
+            [100.0 + disch_t0 * 0.9, export_t1, 50.0, 90.0]
+        ),
+        "expected_total_revenue_eur": 121.0 / 9.0,  # ≈ 13.4444
     }
