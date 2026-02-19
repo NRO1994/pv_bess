@@ -1,0 +1,4 @@
+scale_pct_of_pv,e_to_p_ratio_h,bess_power_kw,bess_capacity_kwh,capex_total_eur,capex_pv_eur,capex_bess_eur,opex_base_eur,revenue_year1_eur,equity_irr_pct,project_irr_pct,npv_eur,dscr_min,dscr_avg,is_optimal
+0.0000,2.0000,0.0000,0.0000,30500.00,21000.00,500.00,3205.00,69528.42,333.64,178.26,121890.17,2.9598,2.9861,True
+30.0000,2.0000,300.0000,600.0000,48500.00,21000.00,18500.00,3385.00,69541.73,191.10,103.76,104393.12,1.8397,1.8572,False
+60.0000,2.0000,600.0000,1200.0000,66500.00,21000.00,36500.00,3565.00,69555.04,123.45,67.70,86896.07,1.3259,1.3394,False
