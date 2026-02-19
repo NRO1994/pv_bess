@@ -346,6 +346,8 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         afa_years_bess=base.afa_years_bess,
         gewerbesteuer_messzahl=base.gewerbesteuer_messzahl,
         gewerbesteuer_hebesatz=base.gewerbesteuer_hebesatz,
+        koerperschaftsteuer_pct=base.koerperschaftsteuer_pct,
+        solidaritaetszuschlag_pct=base.solidaritaetszuschlag_pct,
         replacement_cost=replacement_cost,
         replacement_year=replacement_year_cf,
     )

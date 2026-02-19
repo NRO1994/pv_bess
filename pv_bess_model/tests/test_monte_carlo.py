@@ -94,6 +94,8 @@ def base_config() -> GridSearchConfig:
         afa_years_bess=5,
         gewerbesteuer_messzahl=0.035,
         gewerbesteuer_hebesatz=400,
+        koerperschaftsteuer_pct=15.0,
+        solidaritaetszuschlag_pct=5.5,
         debt_uses_p90=False,
         max_workers=1,
     )

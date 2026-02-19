@@ -11,6 +11,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from pv_bess_model.config.defaults import (
+    DEFAULT_KOERPERSCHAFTSTEUER_PCT,
+    DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
+)
 from pv_bess_model.finance.debt import AnnuitySchedule, get_debt_service
 from pv_bess_model.finance.inflation import inflate_value
 from pv_bess_model.finance.tax import calculate_tax_for_year
@@ -26,6 +30,9 @@ class AnnualCashflow:
     debt_service: float
     depreciation: float
     gewerbesteuer: float
+    koerperschaftsteuer: float
+    solidaritaetszuschlag: float
+    total_tax: float
     project_cf: float
     equity_cf: float
 
@@ -58,6 +65,8 @@ def build_cashflow_projection(
     afa_years_bess: int,
     gewerbesteuer_messzahl: float,
     gewerbesteuer_hebesatz: float,
+    koerperschaftsteuer_pct: float = DEFAULT_KOERPERSCHAFTSTEUER_PCT,
+    solidaritaetszuschlag_pct: float = DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
     replacement_cost: float = 0.0,
     replacement_year: int | None = None,
 ) -> CashflowProjection:
@@ -77,6 +86,8 @@ def build_cashflow_projection(
         afa_years_bess: BESS depreciation period in years.
         gewerbesteuer_messzahl: GewSt Messzahl.
         gewerbesteuer_hebesatz: GewSt Hebesatz.
+        koerperschaftsteuer_pct: KSt rate in percent (default from defaults.py).
+        solidaritaetszuschlag_pct: Soli rate in percent (default from defaults.py).
         replacement_cost: BESS replacement cost (added as OPEX in replacement year).
         replacement_year: Year of BESS replacement (1-indexed), or None.
 
@@ -100,6 +111,9 @@ def build_cashflow_projection(
             debt_service=0.0,
             depreciation=0.0,
             gewerbesteuer=0.0,
+            koerperschaftsteuer=0.0,
+            solidaritaetszuschlag=0.0,
+            total_tax=0.0,
             project_cf=-capex_total,
             equity_cf=-equity_investment,
         )
@@ -131,14 +145,16 @@ def build_cashflow_projection(
             loss_carryforward_in=loss_carryforward,
             messzahl=gewerbesteuer_messzahl,
             hebesatz=gewerbesteuer_hebesatz,
+            kst_rate_pct=koerperschaftsteuer_pct,
+            soli_rate_pct=solidaritaetszuschlag_pct,
         )
         loss_carryforward = tax_result.loss_carryforward_remaining
 
         # Project CF (pre-leverage): Revenue - OPEX - Tax
-        proj_cf = revenue - opex - tax_result.gewerbesteuer
+        proj_cf = revenue - opex - tax_result.total_tax
 
         # Equity CF (post-leverage): Revenue - OPEX - Debt Service - Tax
-        eq_cf = revenue - opex - debt_svc - tax_result.gewerbesteuer
+        eq_cf = revenue - opex - debt_svc - tax_result.total_tax
 
         equity_cf_array[y] = eq_cf
         project_cf_array[y] = proj_cf
@@ -151,6 +167,9 @@ def build_cashflow_projection(
                 debt_service=debt_svc,
                 depreciation=tax_result.depreciation_total,
                 gewerbesteuer=tax_result.gewerbesteuer,
+                koerperschaftsteuer=tax_result.koerperschaftsteuer,
+                solidaritaetszuschlag=tax_result.solidaritaetszuschlag,
+                total_tax=tax_result.total_tax,
                 project_cf=proj_cf,
                 equity_cf=eq_cf,
             )

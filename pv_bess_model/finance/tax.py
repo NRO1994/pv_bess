@@ -1,8 +1,10 @@
-"""Simplified German tax treatment: linear AfA depreciation and Gewerbesteuer.
+"""Simplified German tax treatment: AfA, Gewerbesteuer, KSt, Soli.
 
-Two tax components:
+Tax components:
 1. Linear depreciation (AfA) with separate periods for PV and BESS.
 2. Gewerbesteuer (GewSt) with Verlustvortrag (loss carry-forward).
+3. Körperschaftsteuer (KSt) on adjusted taxable income.
+4. Solidaritätszuschlag (Soli) on KSt amount.
 """
 
 from __future__ import annotations
@@ -14,6 +16,8 @@ from pv_bess_model.config.defaults import (
     DEFAULT_AFA_YEARS_PV,
     DEFAULT_GEWERBESTEUER_HEBESATZ,
     DEFAULT_GEWERBESTEUER_MESSZAHL,
+    DEFAULT_KOERPERSCHAFTSTEUER_PCT,
+    DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
 )
 
 
@@ -29,6 +33,9 @@ class TaxResult:
         loss_carryforward_applied: Amount of prior losses offset against this year's income.
         adjusted_taxable_income: Taxable income after applying loss carry-forward.
         gewerbesteuer: Gewerbesteuer payable for this year.
+        koerperschaftsteuer: Körperschaftsteuer payable for this year.
+        solidaritaetszuschlag: Solidaritätszuschlag payable for this year.
+        total_tax: Sum of GewSt + KSt + Soli.
         loss_carryforward_remaining: Cumulative loss carry-forward after this year.
     """
 
@@ -39,6 +46,9 @@ class TaxResult:
     loss_carryforward_applied: float
     adjusted_taxable_income: float
     gewerbesteuer: float
+    koerperschaftsteuer: float
+    solidaritaetszuschlag: float
+    total_tax: float
     loss_carryforward_remaining: float
 
 
@@ -84,6 +94,46 @@ def calculate_gewerbesteuer(
     return taxable_income * messzahl * hebesatz / 100.0
 
 
+def calculate_koerperschaftsteuer(
+    taxable_income: float,
+    kst_rate_pct: float = DEFAULT_KOERPERSCHAFTSTEUER_PCT,
+) -> float:
+    """Calculate Körperschaftsteuer for a given taxable income.
+
+    Formula: KSt = max(0, taxable_income) × kst_rate_pct / 100
+
+    Args:
+        taxable_income: Taxable income in euros (after Verlustvortrag adjustment).
+        kst_rate_pct: KSt rate in percent (default 15 %).
+
+    Returns:
+        Körperschaftsteuer amount in euros (always >= 0).
+    """
+    if taxable_income <= 0.0:
+        return 0.0
+    return taxable_income * kst_rate_pct / 100.0
+
+
+def calculate_solidaritaetszuschlag(
+    koerperschaftsteuer: float,
+    soli_rate_pct: float = DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
+) -> float:
+    """Calculate Solidaritätszuschlag on the KSt amount.
+
+    Formula: Soli = KSt × soli_rate_pct / 100
+
+    Args:
+        koerperschaftsteuer: KSt amount in euros.
+        soli_rate_pct: Soli rate in percent (default 5.5 %).
+
+    Returns:
+        Solidaritätszuschlag amount in euros (always >= 0).
+    """
+    if koerperschaftsteuer <= 0.0:
+        return 0.0
+    return koerperschaftsteuer * soli_rate_pct / 100.0
+
+
 def calculate_tax_for_year(
     revenue: float,
     opex: float,
@@ -95,14 +145,16 @@ def calculate_tax_for_year(
     loss_carryforward_in: float,
     messzahl: float = DEFAULT_GEWERBESTEUER_MESSZAHL,
     hebesatz: float = DEFAULT_GEWERBESTEUER_HEBESATZ,
+    kst_rate_pct: float = DEFAULT_KOERPERSCHAFTSTEUER_PCT,
+    soli_rate_pct: float = DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
 ) -> TaxResult:
     """Calculate tax for a single project year with Verlustvortrag.
 
     The Verlustvortrag logic follows these steps:
     1. Compute taxable_income = revenue - opex - depreciation
     2. Apply loss carry-forward: taxable_income += loss_carryforward_in (negative)
-    3. If taxable_income < 0 after carry-forward: update carry-forward, GewSt = 0
-    4. If taxable_income >= 0: compute GewSt, carry-forward = 0
+    3. If taxable_income < 0 after carry-forward: update carry-forward, all taxes = 0
+    4. If taxable_income >= 0: compute GewSt, KSt, Soli; carry-forward = 0
 
     Args:
         revenue: Total revenue for this year.
@@ -116,6 +168,8 @@ def calculate_tax_for_year(
             (negative value or 0).
         messzahl: GewSt Messzahl.
         hebesatz: GewSt Hebesatz.
+        kst_rate_pct: Körperschaftsteuer rate in percent.
+        soli_rate_pct: Solidaritätszuschlag rate in percent (on KSt).
 
     Returns:
         :class:`TaxResult` with full breakdown.
@@ -131,12 +185,12 @@ def calculate_tax_for_year(
     # 2. Apply Verlustvortrag: add prior losses (negative value)
     adjusted = taxable_income + loss_carryforward_in
 
-    # 3. If adjusted taxable income < 0: no GewSt, accumulate loss
+    # 3. If adjusted taxable income < 0: no taxes, accumulate loss
     if adjusted < 0.0:
         gewst = 0.0
+        kst = 0.0
+        soli = 0.0
         loss_carryforward_out = adjusted  # carry the full negative amount forward
-        loss_applied = -loss_carryforward_in  # all prior losses were "used" but not enough
-        # Actually: we applied all prior losses plus this year's loss is added
         loss_applied = 0.0  # no taxable income was offset (still negative)
         # Clarification: loss_carryforward_applied = amount that actually reduced
         # positive income to zero. Since adjusted < 0, either:
@@ -147,12 +201,16 @@ def calculate_tax_for_year(
             loss_applied = taxable_income
         adjusted_for_result = 0.0
     else:
-        # 4. Positive adjusted income: compute GewSt, reset carry-forward
+        # 4. Positive adjusted income: compute all taxes, reset carry-forward
         gewst = calculate_gewerbesteuer(adjusted, messzahl, hebesatz)
+        kst = calculate_koerperschaftsteuer(adjusted, kst_rate_pct)
+        soli = calculate_solidaritaetszuschlag(kst, soli_rate_pct)
         # The carry-forward that was actually used to offset income
         loss_applied = -loss_carryforward_in  # full amount was consumed
         loss_carryforward_out = 0.0
         adjusted_for_result = adjusted
+
+    total_tax = gewst + kst + soli
 
     return TaxResult(
         depreciation_pv=depr_pv,
@@ -162,5 +220,8 @@ def calculate_tax_for_year(
         loss_carryforward_applied=loss_applied,
         adjusted_taxable_income=adjusted_for_result,
         gewerbesteuer=gewst,
+        koerperschaftsteuer=kst,
+        solidaritaetszuschlag=soli,
+        total_tax=total_tax,
         loss_carryforward_remaining=loss_carryforward_out,
     )

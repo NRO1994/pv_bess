@@ -1,6 +1,11 @@
 """Inflation escalation logic for OPEX, PPA price, EEG price, and spot prices.
 
-Formula: inflated_value[year] = base_value × (1 + inflation_rate) ^ year
+Year 1 is the base year (no inflation applied). Inflation begins in year 2:
+
+    inflated_value[year] = base_value × (1 + inflation_rate) ^ max(0, year - 1)
+
+This means year 1 returns the base value unchanged, year 2 returns
+``base × (1 + rate)``, year 3 returns ``base × (1 + rate)²``, etc.
 """
 
 from __future__ import annotations
@@ -15,17 +20,19 @@ def inflate_value(
     inflation_rate: float,
     year: int,
 ) -> float:
-    """Apply compound inflation to a base value for a given year.
+    """Apply compound inflation to a base value for a given project year.
+
+    Year 1 is the base year (factor = 1.0). Inflation starts from year 2.
 
     Args:
-        base_value: The value in year 0 (base year).
+        base_value: The value in the base year (year 1).
         inflation_rate: Annual inflation rate as decimal (e.g. 0.02 for 2 %).
-        year: Number of years of inflation to apply (0-indexed: year 0 = no inflation).
+        year: Project year (1-indexed). Year 1 = no inflation.
 
     Returns:
         Inflated value.
     """
-    return base_value * (1.0 + inflation_rate) ** year
+    return base_value * (1.0 + inflation_rate) ** max(0, year - 1)
 
 
 def inflate_series(
@@ -33,17 +40,19 @@ def inflate_series(
     inflation_rate: float,
     year: int,
 ) -> np.ndarray:
-    """Apply compound inflation to an array of base values for a given year.
+    """Apply compound inflation to an array of base values for a given project year.
+
+    Year 1 is the base year (factor = 1.0). Inflation starts from year 2.
 
     Args:
         base_values: Array of values in the base year.
         inflation_rate: Annual inflation rate as decimal.
-        year: Number of years of inflation to apply.
+        year: Project year (1-indexed). Year 1 = no inflation.
 
     Returns:
         Inflated array (same shape as input).
     """
-    factor = (1.0 + inflation_rate) ** year
+    factor = (1.0 + inflation_rate) ** max(0, year - 1)
     return base_values * factor
 
 
@@ -53,9 +62,12 @@ def build_inflation_factors(
 ) -> np.ndarray:
     """Build an array of cumulative inflation factors for each project year.
 
+    Index 0 corresponds to year 1 (factor = 1.0, no inflation).
+    Index 1 corresponds to year 2 (factor = (1 + rate)^1), etc.
+
     Args:
         inflation_rate: Annual inflation rate as decimal.
-        n_years: Number of years (length of output array).
+        n_years: Number of project years (length of output array).
 
     Returns:
         Array of shape ``(n_years,)`` where element ``i`` equals

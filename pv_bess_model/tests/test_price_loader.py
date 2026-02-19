@@ -56,7 +56,7 @@ def _write_price_csv(
             row_vals.append(val)
         data[col] = row_vals
     df = pd.DataFrame(data)
-    df.to_csv(path, index=False)
+    df.to_csv(path, index=False, sep=";")
 
 
 def _write_price_csv_constant(
@@ -69,7 +69,7 @@ def _write_price_csv_constant(
     data: dict[str, list] = {"timestamp": timestamps}
     for col, val in columns.items():
         data[col] = [val] * n_rows
-    pd.DataFrame(data).to_csv(path, index=False)
+    pd.DataFrame(data).to_csv(path, index=False, sep=";")
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +164,7 @@ class TestLoadMarketPricesConversion:
         # Write alternating 40 / 60 values
         timestamps = [f"2020-01-01T{h % 24:02d}:00:00" for h in range(HOURS_PER_YEAR)]
         vals = [40.0 if i % 2 == 0 else 60.0 for i in range(HOURS_PER_YEAR)]
-        pd.DataFrame({"timestamp": timestamps, "MID": vals}).to_csv(csv, index=False)
+        pd.DataFrame({"timestamp": timestamps, "MID": vals}).to_csv(csv, index=False, sep=";")
 
         mp = load_market_prices(
             csv_path=csv,
@@ -201,7 +201,7 @@ class TestLoadMarketPricesConversion:
         csv = tmp_path / "prices.csv"
         timestamps = [f"2020-01-01T{h % 24:02d}:00:00" for h in range(HOURS_PER_YEAR)]
         vals = [-20.0] * HOURS_PER_YEAR
-        pd.DataFrame({"timestamp": timestamps, "MID": vals}).to_csv(csv, index=False)
+        pd.DataFrame({"timestamp": timestamps, "MID": vals}).to_csv(csv, index=False, sep=";")
 
         mp = load_market_prices(
             csv_path=csv,
@@ -321,7 +321,7 @@ class TestLoadMarketPricesValidation:
         csv = tmp_path / "prices.csv"
         # Write only 100 rows
         timestamps = [f"2020-01-01T{h % 24:02d}:00:00" for h in range(100)]
-        pd.DataFrame({"timestamp": timestamps, "MID": [50.0] * 100}).to_csv(csv, index=False)
+        pd.DataFrame({"timestamp": timestamps, "MID": [50.0] * 100}).to_csv(csv, index=False, sep=";")
 
         with pytest.raises(ValueError, match="8760"):
             load_market_prices(
@@ -337,7 +337,7 @@ class TestLoadMarketPricesValidation:
         vals = [50.0] * HOURS_PER_YEAR
         vals[100] = float("nan")
         timestamps = [f"2020-01-01T{h % 24:02d}:00:00" for h in range(HOURS_PER_YEAR)]
-        pd.DataFrame({"timestamp": timestamps, "MID": vals}).to_csv(csv, index=False)
+        pd.DataFrame({"timestamp": timestamps, "MID": vals}).to_csv(csv, index=False, sep=";")
 
         with pytest.raises(ValueError, match="NaN"):
             load_market_prices(

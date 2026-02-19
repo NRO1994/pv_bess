@@ -29,9 +29,36 @@ from pathlib import Path
 import numpy as np
 
 from pv_bess_model.config.defaults import (
+    DEFAULT_AFA_YEARS_BESS,
+    DEFAULT_AFA_YEARS_PV,
+    DEFAULT_BESS_AVAILABILITY_PCT,
+    DEFAULT_BESS_DEGRADATION_RATE_PCT,
+    DEFAULT_BESS_MAX_SOC_PCT,
+    DEFAULT_BESS_MIN_SOC_PCT,
+    DEFAULT_BESS_RTE_PCT,
+    DEFAULT_DISCOUNT_RATE,
+    DEFAULT_GEWERBESTEUER_HEBESATZ,
+    DEFAULT_GEWERBESTEUER_MESSZAHL,
+    DEFAULT_KOERPERSCHAFTSTEUER_PCT,
+    DEFAULT_INFLATION_RATE,
+    DEFAULT_INTEREST_RATE_PCT,
+    DEFAULT_LEVERAGE_PCT,
     DEFAULT_LIFETIME_YEARS,
+    DEFAULT_LOAN_TENOR_YEARS,
+    DEFAULT_MC_ITERATIONS,
+    DEFAULT_MC_SIGMA_BESS_AVAILABILITY_PCT,
+    DEFAULT_MC_SIGMA_CAPEX_PCT,
+    DEFAULT_MC_SIGMA_OPEX_PCT,
+    DEFAULT_MC_SIGMA_PV_YIELD_PCT,
     DEFAULT_OUTPUT_DIR,
+    DEFAULT_PV_DEGRADATION_RATE_PCT,
+    DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
+    DEFAULT_SYSTEM_LOSS_PCT,
     HOURS_PER_YEAR,
+    MARKETING_TYPE_EEG,
+    PPA_TYPE_FLOOR,
+    PPA_TYPE_NONE,
+    PPA_TYPE_PAY_AS_PRODUCED,
 )
 from pv_bess_model.config.loader import (
     PriceData,
@@ -48,9 +75,6 @@ from pv_bess_model.finance.inflation import inflate_value
 from pv_bess_model.finance.metrics import compute_all_metrics
 from pv_bess_model.market.eeg import EegConfig, eeg_config_from_dict, effective_eeg_price
 from pv_bess_model.market.ppa import (
-    PPA_TYPE_FLOOR,
-    PPA_TYPE_NONE,
-    PPA_TYPE_PAY_AS_PRODUCED,
     PpaConfig,
     pay_as_produced_price,
     ppa_config_from_dict,
@@ -175,7 +199,10 @@ def _build_fixed_prices_yearly(
             ppa_cfg = ppa_config_from_dict(ppa_dict)
             if year <= ppa_cfg.duration_years:
                 base = ppa_cfg.floor_price_eur_per_kwh or 0.0
-                price = base * ((1.0 + inflation_rate) ** year if ppa_cfg.inflation_enabled else 1.0)
+                if ppa_cfg.inflation_enabled:
+                    price = inflate_value(base, inflation_rate, year)
+                else:
+                    price = base
                 price += ppa_cfg.goo_premium_eur_per_kwh
 
         elif ppa_type == PPA_TYPE_PAY_AS_PRODUCED:
@@ -305,6 +332,8 @@ def run(args: argparse.Namespace) -> int:
     afa_years_bess = int(tax.get("afa_years_bess", 10))
     gewerbesteuer_hebesatz = int(tax.get("gewerbesteuer_hebesatz", 400))
     gewerbesteuer_messzahl = float(tax.get("gewerbesteuer_messzahl", 0.035))
+    koerperschaftsteuer_pct = float(tax.get("koerperschaftsteuer_pct", DEFAULT_KOERPERSCHAFTSTEUER_PCT))
+    solidaritaetszuschlag_pct = float(tax.get("solidaritaetszuschlag_pct", DEFAULT_SOLIDARITAETSZUSCHLAG_PCT))
 
     # PV parameters
     pv = scenario.pv
@@ -496,6 +525,8 @@ def run(args: argparse.Namespace) -> int:
         afa_years_bess=afa_years_bess,
         gewerbesteuer_messzahl=gewerbesteuer_messzahl,
         gewerbesteuer_hebesatz=gewerbesteuer_hebesatz,
+        koerperschaftsteuer_pct=koerperschaftsteuer_pct,
+        solidaritaetszuschlag_pct=solidaritaetszuschlag_pct,
         debt_uses_p90=debt_uses_p90,
         pv_base_timeseries_p90=p90_timeseries if debt_uses_p90 else None,
         spot_prices_yearly_p90=spot_prices_yearly_p90 if debt_uses_p90 else None,
@@ -592,6 +623,8 @@ def run(args: argparse.Namespace) -> int:
         afa_years_bess=afa_years_bess,
         gewerbesteuer_messzahl=gewerbesteuer_messzahl,
         gewerbesteuer_hebesatz=gewerbesteuer_hebesatz,
+        koerperschaftsteuer_pct=koerperschaftsteuer_pct,
+        solidaritaetszuschlag_pct=solidaritaetszuschlag_pct,
         replacement_cost=replacement_cost if replacement_enabled else 0.0,
         replacement_year=replacement_year if replacement_enabled else None,
     )

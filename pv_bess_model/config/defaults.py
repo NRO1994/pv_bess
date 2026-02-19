@@ -167,7 +167,7 @@ DEFAULT_OUTPUT_DIR: str = "output"
 DISPATCH_SAMPLE_YEAR: int = 1
 """Project year exported to the dispatch sample CSV (1-indexed)."""
 
-CSV_DELIMITER: str = ","
+CSV_DELIMITER: str = ";"
 """Delimiter used in all input and output CSV files."""
 
 CSV_TIMESTAMP_FORMAT: str = "%Y-%m-%dT%H:%M:%S"
@@ -185,3 +185,71 @@ CURRENCY_PRECISION: int = 2
 
 GRID_SEARCH_SCALE_ZERO_PCT: float = 0.0
 """Scale percentage representing the PV-only baseline (no BESS)."""
+
+# ---------------------------------------------------------------------------
+# PPA type identifiers
+# ---------------------------------------------------------------------------
+
+PPA_TYPE_NONE: str = "none"
+"""PPA type: no PPA active."""
+
+PPA_TYPE_PAY_AS_PRODUCED: str = "ppa_pay_as_produced"
+"""PPA type: buyer pays fixed price per kWh produced."""
+
+PPA_TYPE_BASELOAD: str = "ppa_baseload"
+"""PPA type: seller commits to flat baseload profile."""
+
+PPA_TYPE_FLOOR: str = "ppa_floor"
+"""PPA type: minimum price guaranteed (floor), seller keeps upside."""
+
+PPA_TYPE_COLLAR: str = "ppa_collar"
+"""PPA type: floor and cap price boundaries."""
+
+# ---------------------------------------------------------------------------
+# Marketing type identifiers
+# ---------------------------------------------------------------------------
+
+MARKETING_TYPE_EEG: str = "eeg"
+"""Marketing type: EEG feed-in tariff (floor price)."""
+
+MARKETING_TYPE_PPA: str = "ppa"
+"""Marketing type: Power Purchase Agreement."""
+
+MARKETING_TYPE_MARKET: str = "market"
+"""Marketing type: pure market (spot) pricing."""
+
+# ---------------------------------------------------------------------------
+# Additional tax defaults (Germany)
+# ---------------------------------------------------------------------------
+
+DEFAULT_KOERPERSCHAFTSTEUER_PCT: float = 15.0
+"""Default Körperschaftsteuer rate in percent (§ 23 KStG)."""
+
+DEFAULT_SOLIDARITAETSZUSCHLAG_PCT: float = 5.5
+"""Default Solidaritätszuschlag rate in percent (on KSt)."""
+
+# ---------------------------------------------------------------------------
+# BESS performance defaults
+# ---------------------------------------------------------------------------
+
+DEFAULT_BESS_RTE_PCT: float = 88.0
+"""Default round-trip efficiency for BESS in percent."""
+
+DEFAULT_BESS_MIN_SOC_PCT: float = 10.0
+"""Default minimum SoC as percentage of capacity."""
+
+DEFAULT_BESS_MAX_SOC_PCT: float = 90.0
+"""Default maximum SoC as percentage of capacity."""
+
+DEFAULT_BESS_DEGRADATION_RATE_PCT: float = 2.0
+"""Default annual BESS capacity degradation rate in percent."""
+
+# ---------------------------------------------------------------------------
+# PV performance defaults
+# ---------------------------------------------------------------------------
+
+DEFAULT_PV_DEGRADATION_RATE_PCT: float = 0.4
+"""Default annual PV production degradation rate in percent."""
+
+DEFAULT_SYSTEM_LOSS_PCT: float = 14.0
+"""Default system loss in percent."""

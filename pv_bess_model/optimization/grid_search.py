@@ -199,6 +199,8 @@ class GridSearchConfig:
     afa_years_bess: int
     gewerbesteuer_messzahl: float
     gewerbesteuer_hebesatz: float
+    koerperschaftsteuer_pct: float
+    solidaritaetszuschlag_pct: float
 
     # P90 for conservative debt analysis (optional)
     debt_uses_p90: bool = False
@@ -346,6 +348,8 @@ class _GridPointArgs:
     afa_years_bess: int
     gewerbesteuer_messzahl: float
     gewerbesteuer_hebesatz: float
+    koerperschaftsteuer_pct: float
+    solidaritaetszuschlag_pct: float
 
     # P90 (optional)
     pv_base_timeseries_p90: np.ndarray | None = None
@@ -443,6 +447,8 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         afa_years_bess=args.afa_years_bess,
         gewerbesteuer_messzahl=args.gewerbesteuer_messzahl,
         gewerbesteuer_hebesatz=args.gewerbesteuer_hebesatz,
+        koerperschaftsteuer_pct=args.koerperschaftsteuer_pct,
+        solidaritaetszuschlag_pct=args.solidaritaetszuschlag_pct,
         replacement_cost=replacement_cost,
         replacement_year=replacement_year_cf,
     )
@@ -616,6 +622,8 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     afa_years_bess=config.afa_years_bess,
                     gewerbesteuer_messzahl=config.gewerbesteuer_messzahl,
                     gewerbesteuer_hebesatz=config.gewerbesteuer_hebesatz,
+                    koerperschaftsteuer_pct=config.koerperschaftsteuer_pct,
+                    solidaritaetszuschlag_pct=config.solidaritaetszuschlag_pct,
                     pv_base_timeseries_p90=(
                         config.pv_base_timeseries_p90
                         if config.debt_uses_p90

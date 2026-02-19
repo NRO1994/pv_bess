@@ -48,7 +48,7 @@ def _make_price_csv(
     if columns is None:
         columns = ["MID"]
     rng = np.random.default_rng(0)
-    lines = ["timestamp," + ",".join(columns)]
+    lines = ["timestamp;" + ";".join(columns)]
     for i in range(n_rows):
         ts = f"2023-01-01T{i:05d}"  # dummy timestamp, not parsed
         values = []
@@ -57,7 +57,7 @@ def _make_price_csv(
                 values.append("")
             else:
                 values.append(f"{rng.uniform(10, 90):.4f}")
-        lines.append(ts + "," + ",".join(values))
+        lines.append(ts + ";" + ";".join(values))
     p = tmp_path / filename
     p.write_text("\n".join(lines), encoding="utf-8")
     return p
@@ -220,8 +220,8 @@ class TestLoadPriceCSVHappyPath:
     def test_unit_mwh_to_kwh_conversion(self, tmp_path):
         """Prices in €/MWh must be divided by 1000 to yield €/kWh."""
         p = tmp_path / "prices.csv"
-        rows = ["timestamp,MID"] + [
-            f"2023-01-01T{i:05d},1000.0" for i in range(HOURS_PER_YEAR)
+        rows = ["timestamp;MID"] + [
+            f"2023-01-01T{i:05d};1000.0" for i in range(HOURS_PER_YEAR)
         ]
         p.write_text("\n".join(rows))
         data = load_price_csv(p, required_columns=["MID"], price_unit="eur_per_mwh")
@@ -230,8 +230,8 @@ class TestLoadPriceCSVHappyPath:
     def test_unit_kwh_no_conversion(self, tmp_path):
         """Prices already in €/kWh must not be modified."""
         p = tmp_path / "prices.csv"
-        rows = ["timestamp,MID"] + [
-            f"2023-01-01T{i:05d},0.05" for i in range(HOURS_PER_YEAR)
+        rows = ["timestamp;MID"] + [
+            f"2023-01-01T{i:05d};0.05" for i in range(HOURS_PER_YEAR)
         ]
         p.write_text("\n".join(rows))
         data = load_price_csv(p, required_columns=["MID"], price_unit="eur_per_kwh")
@@ -253,8 +253,8 @@ class TestLoadPriceCSVHappyPath:
     def test_negative_prices_preserved(self, tmp_path):
         """Negative spot prices are valid and must not be clipped."""
         p = tmp_path / "prices.csv"
-        rows = "timestamp,MID\n"
-        rows += "2023-01-01T00:00:00,-50.0\n" * HOURS_PER_YEAR
+        rows = "timestamp;MID\n"
+        rows += "2023-01-01T00:00:00;-50.0\n" * HOURS_PER_YEAR
         p.write_text(rows)
         data = load_price_csv(p, required_columns=["MID"], price_unit="eur_per_mwh")
         assert data.columns["MID"][0] < 0
@@ -349,11 +349,11 @@ class TestLoadPriceCSVErrors:
     def test_multiple_nan_columns_all_listed(self, tmp_path):
         """Both affected columns must appear in the error message."""
         p = tmp_path / "prices.csv"
-        rows = ["timestamp,LOW,HIGH"]
+        rows = ["timestamp;LOW;HIGH"]
         for i in range(HOURS_PER_YEAR):
             low = "" if i == 10 else "20.0"
             high = "" if i == 20 else "80.0"
-            rows.append(f"ts,{low},{high}")
+            rows.append(f"ts;{low};{high}")
         p.write_text("\n".join(rows))
         with pytest.raises(ValueError) as exc_info:
             load_price_csv(

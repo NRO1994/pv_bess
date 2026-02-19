@@ -332,6 +332,8 @@ _TAX = {
         "afa_years_bess": {"type": "integer", "minimum": 1},
         "gewerbesteuer_hebesatz": {"type": "number", "minimum": 0},
         "gewerbesteuer_messzahl": {"type": "number", "minimum": 0, "maximum": 1},
+        "koerperschaftsteuer_pct": {"type": "number", "minimum": 0, "maximum": 100},
+        "solidaritaetszuschlag_pct": {"type": "number", "minimum": 0, "maximum": 100},
     },
     "additionalProperties": False,
 }

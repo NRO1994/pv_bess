@@ -139,6 +139,7 @@ class TestYearZero:
         assert y0.opex == 0.0
         assert y0.debt_service == 0.0
         assert y0.gewerbesteuer == 0.0
+        assert y0.total_tax == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +163,7 @@ class TestEquityCfIdentity:
             messzahl=0.0,  # disable GewSt
         )
         for y in proj.years[1:]:
-            expected = y.revenue - y.opex - y.debt_service - y.gewerbesteuer
+            expected = y.revenue - y.opex - y.debt_service - y.total_tax
             assert math.isclose(y.equity_cf, expected, rel_tol=1e-9)
 
     def test_equity_cf_with_debt(self) -> None:
@@ -176,7 +177,7 @@ class TestEquityCfIdentity:
             leverage=75.0,
         )
         for y in proj.years[1:]:
-            expected = y.revenue - y.opex - y.debt_service - y.gewerbesteuer
+            expected = y.revenue - y.opex - y.debt_service - y.total_tax
             assert math.isclose(y.equity_cf, expected, rel_tol=1e-9)
 
     def test_equity_cf_array_matches_year_objects(self) -> None:
@@ -293,8 +294,12 @@ class TestVerlustvortrag:
         # Year 2: equity CF = 260k - 200k - 0 - 0 = 60k
         assert math.isclose(proj.years[2].equity_cf, 60_000.0)
 
-        # Year 3: equity CF = 280k - 200k - 0 - 5 600 = 74 400
-        assert math.isclose(proj.years[3].equity_cf, 280_000.0 - 200_000.0 - 5_600.0)
+        # Year 3: equity CF = 280k - 200k - 0 - total_tax
+        # total_tax = GewSt(5600) + KSt(40000*0.15=6000) + Soli(6000*0.055=330) = 11930
+        expected_total_tax = 5_600.0 + 6_000.0 + 330.0
+        assert math.isclose(
+            proj.years[3].equity_cf, 280_000.0 - 200_000.0 - expected_total_tax
+        )
 
 
 # ---------------------------------------------------------------------------

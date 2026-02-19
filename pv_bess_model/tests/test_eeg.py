@@ -93,14 +93,13 @@ class TestEffectiveEegPrice:
         assert price == 0.0
 
     def test_with_inflation_year_1(self, eeg_with_inflation: EegConfig) -> None:
-        """Year 1 with 2% inflation: 0.0735 × 1.02^1."""
+        """Year 1 is the base year – no inflation applied."""
         price = effective_eeg_price(eeg_with_inflation, year=1, inflation_rate=0.02)
-        expected = 0.0735 * (1.02 ** 1)
-        assert math.isclose(price, expected, rel_tol=1e-9)
+        assert math.isclose(price, 0.0735, rel_tol=1e-9)
 
     def test_with_inflation_year_10(self, eeg_with_inflation: EegConfig) -> None:
         price = effective_eeg_price(eeg_with_inflation, year=10, inflation_rate=0.02)
-        expected = 0.0735 * (1.02 ** 10)
+        expected = 0.0735 * (1.02 ** 9)
         assert math.isclose(price, expected, rel_tol=1e-9)
 
     def test_with_inflation_after_period_still_zero(self, eeg_with_inflation: EegConfig) -> None:

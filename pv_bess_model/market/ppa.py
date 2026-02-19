@@ -31,16 +31,17 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from pv_bess_model.config.defaults import HOURS_PER_YEAR
+from pv_bess_model.config.defaults import (
+    HOURS_PER_YEAR,
+    PPA_TYPE_BASELOAD,
+    PPA_TYPE_COLLAR,
+    PPA_TYPE_FLOOR,
+    PPA_TYPE_NONE,
+    PPA_TYPE_PAY_AS_PRODUCED,
+)
+from pv_bess_model.finance.inflation import inflate_value
 
 logger = logging.getLogger(__name__)
-
-# Valid PPA type identifiers (matches the scenario JSON schema).
-PPA_TYPE_NONE: str = "none"
-PPA_TYPE_PAY_AS_PRODUCED: str = "ppa_pay_as_produced"
-PPA_TYPE_BASELOAD: str = "ppa_baseload"
-PPA_TYPE_FLOOR: str = "ppa_floor"
-PPA_TYPE_COLLAR: str = "ppa_collar"
 
 _VALID_PPA_TYPES: frozenset[str] = frozenset(
     {
@@ -136,18 +137,6 @@ def ppa_config_from_dict(ppa_dict: dict) -> PpaConfig:
 
 
 # ---------------------------------------------------------------------------
-# Inflation helper
-# ---------------------------------------------------------------------------
-
-
-def _inflate(base: float, inflation_rate: float, year: int, enabled: bool) -> float:
-    """Escalate *base* by *inflation_rate* for *year* if *enabled*."""
-    if not enabled:
-        return base
-    return base * (1.0 + inflation_rate) ** year
-
-
-# ---------------------------------------------------------------------------
 # Pay-as-produced
 # ---------------------------------------------------------------------------
 
@@ -178,7 +167,9 @@ def pay_as_produced_price(
     if year > config.duration_years:
         return 0.0
     base = config.pay_as_produced_price_eur_per_kwh or 0.0
-    return _inflate(base, inflation_rate, year, config.inflation_enabled)
+    if config.inflation_enabled:
+        return inflate_value(base, inflation_rate, year)
+    return base
 
 
 def apply_pay_as_produced(
@@ -315,7 +306,10 @@ def effective_floor_price(
     if year > config.duration_years:
         return 0.0
     base = config.floor_price_eur_per_kwh or 0.0
-    inflated = _inflate(base, inflation_rate, year, config.inflation_enabled)
+    if config.inflation_enabled:
+        inflated = inflate_value(base, inflation_rate, year)
+    else:
+        inflated = base
     return inflated + config.goo_premium_eur_per_kwh
 
 
@@ -376,8 +370,12 @@ def effective_collar_prices(
         return 0.0, 0.0
     base_floor = config.floor_price_eur_per_kwh or 0.0
     base_cap = config.cap_price_eur_per_kwh or 0.0
-    floor = _inflate(base_floor, inflation_rate, year, config.inflation_enabled)
-    cap = _inflate(base_cap, inflation_rate, year, config.inflation_enabled)
+    if config.inflation_enabled:
+        floor = inflate_value(base_floor, inflation_rate, year)
+        cap = inflate_value(base_cap, inflation_rate, year)
+    else:
+        floor = base_floor
+        cap = base_cap
     floor += config.goo_premium_eur_per_kwh
     return floor, cap
 
@@ -495,9 +493,10 @@ def effective_ppa_price_for_year(
                 "grid_export_kwh is required for baseload PPA revenue calculation."
             )
         base_price = config.pay_as_produced_price_eur_per_kwh or 0.0
-        inflated_price = _inflate(
-            base_price, inflation_rate, year, config.inflation_enabled
-        )
+        if config.inflation_enabled:
+            inflated_price = inflate_value(base_price, inflation_rate, year)
+        else:
+            inflated_price = base_price
         bl = baseload_level_kwh(
             config.baseload_mw,
             annual_production_kwh or 0.0,

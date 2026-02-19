@@ -165,7 +165,7 @@ class TestPayAsProduced:
 
     def test_price_with_inflation(self, pap_config_inflation: PpaConfig) -> None:
         price = pay_as_produced_price(pap_config_inflation, year=5, inflation_rate=0.02)
-        expected = 0.065 * (1.02 ** 5)
+        expected = 0.065 * (1.02 ** 4)
         assert math.isclose(price, expected, rel_tol=1e-9)
 
     def test_apply_revenue(self) -> None:
@@ -296,7 +296,7 @@ class TestFloorPPA:
 
     def test_floor_price_with_inflation(self, floor_config_inflation: PpaConfig) -> None:
         price = effective_floor_price(floor_config_inflation, year=5, inflation_rate=0.02)
-        expected = 0.055 * (1.02 ** 5) + 0.005
+        expected = 0.055 * (1.02 ** 4) + 0.005
         assert math.isclose(price, expected, rel_tol=1e-9)
 
     def test_apply_floor_spot_above(self) -> None:
@@ -375,8 +375,8 @@ class TestCollarPPA:
 
     def test_collar_prices_with_inflation(self, collar_config_inflation: PpaConfig) -> None:
         floor, cap = effective_collar_prices(collar_config_inflation, year=5, inflation_rate=0.02)
-        expected_floor = 0.04 * (1.02 ** 5) + 0.003
-        expected_cap = 0.10 * (1.02 ** 5)
+        expected_floor = 0.04 * (1.02 ** 4) + 0.003
+        expected_cap = 0.10 * (1.02 ** 4)
         assert math.isclose(floor, expected_floor, rel_tol=1e-9)
         assert math.isclose(cap, expected_cap, rel_tol=1e-9)
 
@@ -622,7 +622,7 @@ class TestPpaInflation:
             goo_premium_eur_per_kwh=0.005,
         )
         price = pay_as_produced_price(cfg, year=5, inflation_rate=0.03)
-        expected = 0.065 * (1.03 ** 5)
+        expected = 0.065 * (1.03 ** 4)
         assert math.isclose(price, expected, rel_tol=1e-9)
 
     def test_collar_inflation_floor_and_cap(self) -> None:
@@ -637,8 +637,8 @@ class TestPpaInflation:
             goo_premium_eur_per_kwh=0.003,
         )
         floor, cap = effective_collar_prices(cfg, year=3, inflation_rate=0.02)
-        expected_floor = 0.04 * (1.02 ** 3) + 0.003
-        expected_cap = 0.10 * (1.02 ** 3)
+        expected_floor = 0.04 * (1.02 ** 2) + 0.003
+        expected_cap = 0.10 * (1.02 ** 2)
         assert math.isclose(floor, expected_floor, rel_tol=1e-9)
         assert math.isclose(cap, expected_cap, rel_tol=1e-9)
 
