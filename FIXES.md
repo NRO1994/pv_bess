@@ -13,6 +13,8 @@
 - [ ] CAPEX und OPEX fallen beide im ersten Jahr an. Es wird ein Betriebsbeginn am 1.1. des Inbetriebnahmejahres angenommen. Dieses Jahr muss als Userinput mitaufgenommen werden.
 - [ ] Beginnt die Preiszeitreihe aus der CSV Datei früher als das Inbetriebnahme Jahr, so sind alle vorherigen Jahre zu vernachlässigen.
 - [ ] Es sollen alle drei Preiszeitreihen verlängert werden, nicht nur das "MID" Szenario.
+- [ ] Nehme noch die Körperschaftssteuer (default 15%) auf. Diese wird auf derselben Basis wie die Gewerbesteuer berechnet.
+- [ ] Nehme noch den Solidaritätszuschlag (default 5,5%) auf. Diese wird von der Körperschaftssteuer ermittelt.
 
 ## Kosmetik
 - [ ] timeseries.percentile_timeseries ist nicht notwendig. Es werden außer P50/P90 keine weiteren Perzentile berechnet #TODO!!!
