@@ -22,7 +22,7 @@
 - [ ] main.py enthält magic numbers, die in config/defaults.py definiert sind.
 - [ ] Erstelle einen Integrationtest, der den fetch vom PVGIS testet. 
 - [ ] Passe den pytest Aufruf entsprechend an, dass die integrationstests nicht im Standardablauf enthalten sind. Diese sollen immer separat (und nur vom developer, nicht von claude!) getriggert werden.
-- [ ] Alle Dateien mit (Test-)Daten sollen im Verzeichnis /.data abgelegt werden. Dies gilt insbesondere für die Testdateien, die im Rahmen der Unittests erstellt werden. Stelle zudem sicher, dass die Logik auch auf einem Windows PC läuft.
+- [ ] Alle Dateien mit (Test-)Daten sollen im Verzeichnis /.data abgelegt werden. Dies gilt insbesondere für die Testdateien, die im Rahmen der Unittests erstellt werden.
 - [ ] Passe die CLAUDE.md mit deinen Änderungen an. Dies sind zum Beispiel die hier angesprochenen Anpassungen, aber auch Designentscheidungen wie das weglassen der revenue-hilfsvariablen in der LP Optimierung. Prüfe auch auf weitere Anpassungen, sodass die CLAUDE.md das korrekte Metadokument dieses Projektes bleibt
 - [ ] Verwende den CSV_DELIMITER auch in allen Unit tests. Er soll zudem auf Semikolon umgestellt werden.
 - [ ] der pv cache soll ebenfalls im .data Verzeichnis im project liegen
