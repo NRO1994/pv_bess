@@ -1,0 +1,2 @@
+scenario_name,pv_peak_kwp,optimal_bess_scale_pct,optimal_e_to_p_ratio_h,optimal_bess_power_kw,optimal_bess_capacity_kwh,operating_mode,marketing_type,lifetime_years,total_capex_eur,total_revenue_eur,total_opex_eur,total_production_mwh,equity_irr_pct,project_irr_pct,npv_eur,dscr_min,dscr_avg,lcoe_eur_per_kwh,payback_year
+Smoke_Test,1000.0000,0.0000,2.0000,0.0000,0.0000,green,eeg,3,30500.00,207752.03,10004.75,2826.5583,333.64,178.26,121890.17,11.8200,11.8820,0.014330,1
