@@ -202,6 +202,9 @@ class GridSearchConfig:
     koerperschaftsteuer_pct: float
     solidaritaetszuschlag_pct: float
 
+    # GoO premiums per year (optional – 0.0 for years without active PPA GoO clause)
+    goo_prices_yearly: list[float] = field(default_factory=list)
+
     # P90 for conservative debt analysis (optional)
     debt_uses_p90: bool = False
     pv_base_timeseries_p90: np.ndarray | None = None
@@ -327,6 +330,7 @@ class _GridPointArgs:
     # Prices per year
     spot_prices_yearly: list  # list[np.ndarray]
     fixed_prices_yearly: list  # list[float]
+    goo_prices_yearly: list  # list[float]
     offline_days_yearly: list  # list[set[int]]
 
     # Pre-computed costs
@@ -403,6 +407,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         spot_prices_yearly=args.spot_prices_yearly,
         fixed_prices_yearly=args.fixed_prices_yearly,
         offline_days_yearly=args.offline_days_yearly,
+        goo_prices_yearly=args.goo_prices_yearly,
     )
 
     annual_revenues_p50 = [r.total_revenue for r in sim_p50.annual_results]
@@ -418,6 +423,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
             spot_prices_yearly=p90_prices,
             fixed_prices_yearly=args.fixed_prices_yearly,
             offline_days_yearly=args.offline_days_yearly,
+            goo_prices_yearly=args.goo_prices_yearly,
         )
         annual_revenues_p90 = [r.total_revenue for r in sim_p90.annual_results]
 
@@ -605,6 +611,7 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     pv_base_timeseries=config.pv_base_timeseries_p50,
                     spot_prices_yearly=config.spot_prices_yearly,
                     fixed_prices_yearly=config.fixed_prices_yearly,
+                    goo_prices_yearly=config.goo_prices_yearly if config.goo_prices_yearly else [0.0] * config.lifetime_years,
                     offline_days_yearly=offline_days_yearly,
                     capex_pv=costs.capex_pv,
                     capex_bess=costs.capex_bess,

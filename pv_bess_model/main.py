@@ -56,6 +56,7 @@ from pv_bess_model.config.defaults import (
     DEFAULT_SYSTEM_LOSS_PCT,
     HOURS_PER_YEAR,
     MARKETING_TYPE_EEG,
+    PPA_TYPE_COLLAR,
     PPA_TYPE_FLOOR,
     PPA_TYPE_NONE,
     PPA_TYPE_PAY_AS_PRODUCED,
@@ -203,7 +204,8 @@ def _build_fixed_prices_yearly(
                     price = inflate_value(base, inflation_rate, year)
                 else:
                     price = base
-                price += ppa_cfg.goo_premium_eur_per_kwh
+                # GoO premium is NOT added here; it is passed separately via
+                # _build_goo_prices_yearly() and added after the floor comparison.
 
         elif ppa_type == PPA_TYPE_PAY_AS_PRODUCED:
             ppa_cfg = ppa_config_from_dict(ppa_dict)
@@ -214,6 +216,40 @@ def _build_fixed_prices_yearly(
         fixed_prices.append(price)
 
     return fixed_prices
+
+
+def _build_goo_prices_yearly(
+    scenario: ScenarioConfig,
+) -> list[float]:
+    """Build the per-year GoO premium list for the dispatch engine.
+
+    Returns the Guarantee-of-Origin (GoO) premium in €/kWh for each project
+    year.  The premium is non-zero only during the active PPA period for floor
+    and collar PPA types.  Pay-as-produced GoO is already baked into the
+    ``fixed_prices_yearly`` value and should not be doubled here.
+
+    Parameters
+    ----------
+    scenario:
+        Validated scenario configuration.
+
+    Returns
+    -------
+    list[float]
+        GoO premium in €/kWh for each project year (length = lifetime_years).
+        Index 0 = year 1.  0.0 for years outside the PPA period.
+    """
+    lifetime = scenario.lifetime_years
+    ppa_dict = scenario.finance.get("revenue_streams", {}).get("ppa", {})
+    ppa_type = ppa_dict.get("type", PPA_TYPE_NONE)
+
+    if ppa_type in (PPA_TYPE_FLOOR, PPA_TYPE_COLLAR):
+        ppa_cfg = ppa_config_from_dict(ppa_dict)
+        goo = ppa_cfg.goo_premium_eur_per_kwh
+        duration = ppa_cfg.duration_years
+        return [goo if year <= duration else 0.0 for year in range(1, lifetime + 1)]
+
+    return [0.0] * lifetime
 
 
 def _build_spot_prices_yearly(
@@ -479,8 +515,10 @@ def run(args: argparse.Namespace) -> int:
     # P90 prices (same column unless specifically configured)
     spot_prices_yearly_p90 = spot_prices_yearly  # conservative: same as P50
 
-    # Fixed prices per year (EEG / PPA floor)
+    # Fixed prices per year (EEG / PPA floor, WITHOUT GoO)
     fixed_prices_yearly = _build_fixed_prices_yearly(scenario, inflation_rate)
+    # GoO premium per year (for floor and collar PPA types)
+    goo_prices_yearly = _build_goo_prices_yearly(scenario)
 
     # ------------------------------------------------------------------
     # Step 5: Grid Search
@@ -515,6 +553,7 @@ def run(args: argparse.Namespace) -> int:
         operating_mode=scenario.operating_mode,
         spot_prices_yearly=spot_prices_yearly,
         fixed_prices_yearly=fixed_prices_yearly,
+        goo_prices_yearly=goo_prices_yearly,
         lifetime_years=lifetime,
         leverage_pct=leverage_pct,
         interest_rate_pct=interest_rate_pct,
@@ -590,6 +629,7 @@ def run(args: argparse.Namespace) -> int:
         spot_prices_yearly=spot_prices_yearly,
         fixed_prices_yearly=fixed_prices_yearly,
         offline_days_yearly=offline_days_yearly,
+        goo_prices_yearly=goo_prices_yearly,
     )
 
     annual_revenues = [r.total_revenue for r in sim.annual_results]
