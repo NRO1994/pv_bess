@@ -3,7 +3,7 @@
 ## Integration
 
 ### FIX-01: BatteryState wird im LP-Optimizer nicht verwendet
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `bess/battery.py`, `dispatch/optimizer.py`, `dispatch/engine.py`
 
 **Problem:** Die Klasse `BatteryState` in `bess/battery.py` implementiert Charge/Discharge-Logik mit SoC-Tracking, Effizienz-Modell und Degradation. Der LP-Optimizer (`dispatch/optimizer.py`) verwendet stattdessen einen eigenen `BessParams`-Dataclass und modelliert SoC implizit über kumulative Constraints. Die `BatteryState`-Klasse wird nirgends im Dispatch-Pfad aufgerufen.
@@ -303,7 +303,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 
 | # | Beschreibung | Status | Priorität |
 |---|---|---|---|
-| FIX-01 | BatteryState im LP nicht verwendet | OFFEN | Niedrig (Kosmetik) |
+| FIX-01 | BatteryState im LP nicht verwendet | ERLEDIGT | - |
 | FIX-02 | Einheitliche Inflation | ERLEDIGT | - |
 | FIX-03 | Gemeinsame Degradation-Logik | ERLEDIGT | - |
 | FIX-04 | Baseload als User-Input | ERLEDIGT | - |
