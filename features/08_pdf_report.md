@@ -18,6 +18,7 @@ alle Analyseergebnisse zusammen und enthält Diagramme + LLM-generierte Texte.
 ## Corporate Design
 
 **Farbpalette:**
+
 | Level | Hex | Verwendung |
 |-------|-----|-----------|
 | 1 | `#FF8200` | Primärfarbe, Akzente, Überschriften |
@@ -156,7 +157,7 @@ def create_ppa_baseload_chart(
     """PPA-Preis vs. IRR, Kurvenschar für Baseload-Level."""
 ```
 
-Alle Charts werden als PNG gespeichert (`output/{scenario_name}/charts/`).
+Alle Charts werden als PNG gespeichert (`.data/output/{scenario_name}/charts/`).
 
 ### LLM-Client (`llm_client.py`)
 
@@ -264,16 +265,16 @@ if report_cfg.get("enabled", False) and not args.no_report:
 
 ## Betroffene Dateien
 
-| Datei | Änderung |
-|-------|----------|
-| `output/report/__init__.py` | **NEU** |
-| `output/report/charts.py` | **NEU**: 6 Chart-Funktionen |
-| `output/report/pdf_builder.py` | **NEU**: PDF-Assembly |
-| `output/report/llm_client.py` | **NEU**: LLM-API-Client |
-| `output/report/templates/report.html` | **NEU**: HTML/CSS-Template |
-| `config/schema.py` | Report-Block im Schema |
-| `main.py` | Report-Erstellung nach CSV-Output, CLI-Flags |
-| `pyproject.toml` | Neue Dependencies (matplotlib, weasyprint, anthropic) |
+| Datei                                 | Änderung |
+|---------------------------------------|----------|
+| `.data/output/report/__init__.py`     | **NEU** |
+| `.data/output/report/charts.py`             | **NEU**: 6 Chart-Funktionen |
+| `.data/output/report/pdf_builder.py`        | **NEU**: PDF-Assembly |
+| `.data/output/report/llm_client.py`         | **NEU**: LLM-API-Client |
+| `.data/output/report/templates/report.html` | **NEU**: HTML/CSS-Template |
+| `config/schema.py`                    | Report-Block im Schema |
+| `main.py`                             | Report-Erstellung nach CSV-Output, CLI-Flags |
+| `pyproject.toml`                      | Neue Dependencies (matplotlib, weasyprint, anthropic) |
 
 ## Tests
 

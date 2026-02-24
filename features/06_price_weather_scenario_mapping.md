@@ -40,14 +40,13 @@ Grundlegende Umstellung des Ertrags- und Preismodells:
 
 ```json
 "price_inputs": {
-    "price_csv": "data/forward_curves.csv",
-    "price_unit": "eur_per_mwh",
-    "inflation_on_input_data": true,
-    "forecast_year": 2030,
     "scenarios": [
         {
             "name": "low_bad",
             "label": "Low Price / Bad Weather",
+            "price_csv": "data/forward_curves.csv",
+            "price_unit": "eur_per_mwh",
+            "inflation_on_input_data": true,
             "csv_column": "LOW_BAD",
             "weather_year": 2021,
             "weight": 0.05,
@@ -56,6 +55,9 @@ Grundlegende Umstellung des Ertrags- und Preismodells:
         {
             "name": "low_mid",
             "label": "Low Price / Mid Weather",
+            "price_csv": "data/forward_curves.csv",
+            "price_unit": "eur_per_mwh",
+            "inflation_on_input_data": true,
             "csv_column": "LOW_MID",
             "weather_year": 2018,
             "weight": 0.10,
@@ -64,6 +66,9 @@ Grundlegende Umstellung des Ertrags- und Preismodells:
         {
             "name": "mid_mid",
             "label": "Mid Price / Mid Weather",
+            "price_csv": "data/forward_curves.csv",
+            "price_unit": "eur_per_mwh",
+            "inflation_on_input_data": true,
             "csv_column": "MID_MID",
             "weather_year": 2019,
             "weight": 0.20,
@@ -77,9 +82,8 @@ Grundlegende Umstellung des Ertrags- und Preismodells:
 **Validierung:**
 - Genau ein Szenario muss `is_central: true` haben
 - Weights müssen sich zu 1.0 summieren
-- Alle `csv_column` müssen in der CSV-Datei vorhanden sein
+- Alle `csv_column` müssen in der jeweiligen CSV-Datei vorhanden sein
 - `weather_year` muss in PVGIS verfügbar sein
-- `forecast_year` ist das Jahr, auf dem die Preisprogrose basiert (bestimmt den Startwochentag)
 
 ### 2. Wochentag-Alignment der PV-Ertragszeitreihe
 
@@ -154,7 +158,8 @@ def hourly_to_quarter_hourly(hourly_ts: np.ndarray) -> np.ndarray:
 
 **Preisdaten:** Die CSV muss ebenfalls 35.040 Werte pro Jahr enthalten (15min-Auflösung).
 Falls die Preisdaten stündlich sind, wird jeder Stundenwert auf 4 Intervalle kopiert
-(gleicher Wert, NICHT geteilt - Preise sind pro kWh, nicht pro Intervall).
+(gleicher Wert, NICHT geteilt - Preise sind pro kWh, nicht pro Intervall). In der Regel beinhaltet die CSV Datei um die 
+20 Jahre. Für jedes Preisjahr (Forecast year) muss align_weather_to_forecast_year() aufgerufen werden
 
 ### 4. PVGIS-Download: Nur spezifische Wetterjahre
 
@@ -184,8 +189,9 @@ Für ein einzelnes Jahr: `startyear=2017&endyear=2017`.
 
 - `pv/timeseries.py` (`compute_p50_p90`) wird für diesen Workflow nicht mehr verwendet
 - Stattdessen: Pro Szenario ein festes Wetterjahr → eine feste PV-Zeitreihe
-- **Kein P90 für Debt-Sizing:** Das Central-Szenario wird für die Debt-Berechnung verwendet
-  (oder alternativ das konservativste Szenario)
+- **Kein P90 für Debt-Sizing:** Das Central-Szenario wird für die Debt-Berechnung verwendet. 
+  Es bedarf eines zusätzlichen "finance.debt_sizing_downside_percentage" User-Inputparameter, 
+  der die Ertragszeitreihe prozentual reduziert. z.B.: debt_sizing_downside_percentage = 0.08 --> P_90_t = P_t * ( 1 - 0.08)
 
 ### 6. Integration in Grid Search
 
@@ -247,8 +253,8 @@ JSON → Szenarien-Liste (9 Einträge)
 
 ## Migration / Abwärtskompatibilität
 
-Die alte JSON-Struktur (`price_scenarios` mit 3 Einträgen) soll weiterhin unterstützt werden.
-Erkennung: Wenn `scenarios`-Array fehlt, wird die alte Logik verwendet (P50/P90, stündlich).
+Es bedarf keiner Abwärtskompatibilität. Entwickle das neue Vorgehen, 
+ohne Rücksicht auf bestehende Inputdateien zu haben - es gibt keine.
 
 ## Tests
 
