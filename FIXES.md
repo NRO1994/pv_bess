@@ -118,7 +118,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 ---
 
 ### FIX-10: Alle Preisszenarien verlängern (nicht nur MID)
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `main.py`
 
 **Problem:** In `main.py` (Zeilen 469-477) wird nur die `mid_column` für den Grid-Search-Pfad verlängert. Zwar werden im MC-Abschnitt (Zeilen 669-679) alle Szenarien verlängert, aber diese Logik greift nur, wenn MC aktiviert ist.
@@ -312,7 +312,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 | FIX-07 | Inflation ab Jahr 2 | ERLEDIGT | - |
 | FIX-08 | CAPEX/OPEX in Jahr 1 + Inbetriebnahmejahr | ERLEDIGT | - |
 | FIX-09 | Preis-CSV ab Inbetriebnahmejahr filtern | ERLEDIGT | Mittel |
-| FIX-10 | Alle Preisszenarien verlängern | OFFEN | Mittel |
+| FIX-10 | Alle Preisszenarien verlängern | ERLEDIGT | - |
 | FIX-11 | Körperschaftsteuer | ERLEDIGT | - |
 | FIX-12 | Solidaritätszuschlag | ERLEDIGT | - |
 | FIX-13 | percentile_timeseries entfernen | OFFEN | Niedrig |

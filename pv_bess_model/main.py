@@ -289,6 +289,46 @@ def _build_spot_prices_yearly(
 
 
 # ---------------------------------------------------------------------------
+# Price extension helper
+# ---------------------------------------------------------------------------
+
+
+def _extend_all_price_columns(
+    price_data: PriceData,
+    required_columns: list[str],
+    target_years: int,
+) -> dict[str, np.ndarray]:
+    """Extend all required price columns to cover the full project lifetime.
+
+    Each column in *required_columns* is extended using the repeat-last-year
+    logic from :func:`extend_price_timeseries`.
+
+    Parameters
+    ----------
+    price_data:
+        Loaded price data with column arrays.
+    required_columns:
+        List of column names to extend.
+    target_years:
+        Project lifetime in years.
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        Mapping of column name → extended price array (length =
+        ``target_years × HOURS_PER_YEAR``).
+    """
+    extended: dict[str, np.ndarray] = {}
+    for col in required_columns:
+        extended[col] = extend_price_timeseries(
+            price_data.get_column(col),
+            target_years=target_years,
+            hours_per_year=HOURS_PER_YEAR,
+        )
+    return extended
+
+
+# ---------------------------------------------------------------------------
 # Cost helpers (extract from scenario JSON)
 # ---------------------------------------------------------------------------
 
@@ -502,15 +542,12 @@ def run(args: argparse.Namespace) -> int:
 
     lifetime = scenario.lifetime_years
 
-    # Extend the "mid" price column to full project lifetime
+    # Extend ALL required price columns to full project lifetime
     mid_column = required_columns[0]
-    mid_prices_extended = extend_price_timeseries(
-        price_data.get_column(mid_column),
-        target_years=lifetime,
-        hours_per_year=HOURS_PER_YEAR,
-    )
+    extended_prices = _extend_all_price_columns(price_data, required_columns, lifetime)
+
     spot_prices_yearly = _build_spot_prices_yearly(
-        mid_prices_extended, lifetime, inflation_rate, inflation_on_prices
+        extended_prices[mid_column], lifetime, inflation_rate, inflation_on_prices
     )
 
     # P90 prices (same column unless specifically configured)
@@ -705,18 +742,13 @@ def run(args: argparse.Namespace) -> int:
         sigma_opex = float(mc_cfg.get("sigma_opex_pct", 5.0)) / 100.0
         sigma_avail = float(mc_cfg.get("sigma_bess_availability_pct", 2.0)) / 100.0
 
-        # Build scenario price mapping
+        # Build scenario price mapping (using already-extended prices)
         scenario_prices: dict[str, list[np.ndarray]] = {}
         if price_scenarios_cfg:
             for name, cfg in price_scenarios_cfg.items():
                 col = cfg["csv_column"]
-                extended = extend_price_timeseries(
-                    price_data.get_column(col),
-                    target_years=lifetime,
-                    hours_per_year=HOURS_PER_YEAR,
-                )
                 scenario_prices[name] = _build_spot_prices_yearly(
-                    extended, lifetime, inflation_rate, inflation_on_prices
+                    extended_prices[col], lifetime, inflation_rate, inflation_on_prices
                 )
             mc_price_scenarios = {
                 k: {"csv_column": v["csv_column"], "weight": float(v["weight"])}
