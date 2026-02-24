@@ -38,7 +38,7 @@
 ## Logik
 
 ### FIX-04: Baseload-PPA – Baseload als reiner User-Input
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `market/ppa.py`, `config/schema.py`
 
 **Problem:** `ppa.py:baseload_level_kwh()` (Zeile 207-230) berechnet den Baseload automatisch aus der Jahresproduktion, wenn `baseload_mw is None`. Laut FIXES.md soll der Baseload ein reiner User-Input sein – keine Berechnungslogik nötig.
@@ -306,7 +306,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 | FIX-01 | BatteryState im LP nicht verwendet | OFFEN | Niedrig (Kosmetik) |
 | FIX-02 | Einheitliche Inflation | ERLEDIGT | - |
 | FIX-03 | Gemeinsame Degradation-Logik | ERLEDIGT | - |
-| FIX-04 | Baseload als User-Input | OFFEN | Mittel |
+| FIX-04 | Baseload als User-Input | ERLEDIGT | - |
 | FIX-05 | Baseload Überschuss zum Spot | ERLEDIGT | - |
 | FIX-06 | GoO auf finalen Preis | ERLEDIGT | - |
 | FIX-07 | Inflation ab Jahr 2 | ERLEDIGT | - |

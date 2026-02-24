@@ -192,13 +192,23 @@ class TestBaseloadPPA:
 
     def test_baseload_from_mw(self) -> None:
         """2.5 MW → 2500 kWh/h."""
-        bl = baseload_level_kwh(baseload_mw=2.5, annual_production_kwh=0.0)
+        bl = baseload_level_kwh(baseload_mw=2.5)
         assert math.isclose(bl, 2500.0)
 
-    def test_baseload_auto_from_production(self) -> None:
-        """Auto-derive: 8760000 kWh / 8760 h = 1000 kWh/h."""
-        bl = baseload_level_kwh(baseload_mw=None, annual_production_kwh=8_760_000.0)
-        assert math.isclose(bl, 1000.0)
+    def test_baseload_none_raises_value_error(self) -> None:
+        """baseload_mw=None must raise ValueError (no auto-calculation)."""
+        with pytest.raises(ValueError, match="baseload_mw must be specified"):
+            baseload_level_kwh(baseload_mw=None)
+
+    def test_baseload_zero_mw(self) -> None:
+        """0 MW → 0 kWh/h."""
+        bl = baseload_level_kwh(baseload_mw=0.0)
+        assert bl == 0.0
+
+    def test_baseload_small_value(self) -> None:
+        """0.5 MW → 500 kWh/h."""
+        bl = baseload_level_kwh(baseload_mw=0.5)
+        assert math.isclose(bl, 500.0)
 
     def test_revenue_export_exceeds_baseload(self) -> None:
         """When export > baseload → excess sold at spot, ppa revenue on baseload."""

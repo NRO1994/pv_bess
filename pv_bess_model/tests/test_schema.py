@@ -540,13 +540,114 @@ class TestMarketingAndPPA:
         for ppa_type in (
             "none",
             "ppa_pay_as_produced",
-            "ppa_baseload",
             "ppa_floor",
             "ppa_collar",
         ):
             cfg = copy.deepcopy(sample_scenario_config_green)
             cfg["project_settings"]["finance"]["revenue_streams"]["ppa"] = {
                 "type": ppa_type
+            }
+            validate_scenario(cfg)  # must not raise
+
+    def test_baseload_ppa_with_valid_baseload_mw_accepted(
+        self, sample_scenario_config_green
+    ):
+        cfg = copy.deepcopy(sample_scenario_config_green)
+        cfg["project_settings"]["finance"]["revenue_streams"]["ppa"] = {
+            "type": "ppa_baseload",
+            "baseload_mw": 2.0,
+        }
+        validate_scenario(cfg)  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# Baseload PPA cross-field validation
+# ---------------------------------------------------------------------------
+
+
+class TestBaseloadPpaValidation:
+    """Tests for _validate_baseload_ppa() cross-field checks."""
+
+    def test_baseload_ppa_missing_baseload_mw_raises(
+        self, sample_scenario_config_green
+    ):
+        """baseload_mw=None when type=ppa_baseload must raise."""
+        cfg = copy.deepcopy(sample_scenario_config_green)
+        cfg["project_settings"]["finance"]["revenue_streams"]["ppa"] = {
+            "type": "ppa_baseload",
+            "baseload_mw": None,
+            "duration_years": 10,
+            "inflation_on_ppa": False,
+            "guarantee_of_origin_eur_per_kwh": 0.005,
+        }
+        with pytest.raises(ValueError, match="baseload_mw is required"):
+            validate_scenario(cfg)
+
+    def test_baseload_ppa_without_baseload_mw_key_raises(
+        self, sample_scenario_config_green
+    ):
+        """Missing baseload_mw key entirely when type=ppa_baseload must raise."""
+        cfg = copy.deepcopy(sample_scenario_config_green)
+        cfg["project_settings"]["finance"]["revenue_streams"]["ppa"] = {
+            "type": "ppa_baseload",
+        }
+        with pytest.raises(ValueError, match="baseload_mw is required"):
+            validate_scenario(cfg)
+
+    def test_baseload_mw_exceeds_pv_peak_raises(
+        self, sample_scenario_config_green
+    ):
+        """baseload_mw * 1000 > pv_peak_kwp must raise."""
+        cfg = copy.deepcopy(sample_scenario_config_green)
+        # PV peak = 5000 kWp in the fixture, so 6.0 MW = 6000 kW > 5000 kWp
+        cfg["project_settings"]["finance"]["revenue_streams"]["ppa"] = {
+            "type": "ppa_baseload",
+            "baseload_mw": 6.0,
+            "duration_years": 10,
+            "inflation_on_ppa": False,
+            "guarantee_of_origin_eur_per_kwh": 0.005,
+        }
+        with pytest.raises(ValueError, match="exceeds PV peak power"):
+            validate_scenario(cfg)
+
+    def test_baseload_mw_equals_pv_peak_passes(
+        self, sample_scenario_config_green
+    ):
+        """baseload_mw * 1000 == pv_peak_kwp is allowed."""
+        cfg = copy.deepcopy(sample_scenario_config_green)
+        # PV peak = 5000 kWp, so 5.0 MW = 5000 kW == 5000 kWp
+        cfg["project_settings"]["finance"]["revenue_streams"]["ppa"] = {
+            "type": "ppa_baseload",
+            "baseload_mw": 5.0,
+            "duration_years": 10,
+            "inflation_on_ppa": False,
+            "guarantee_of_origin_eur_per_kwh": 0.005,
+        }
+        validate_scenario(cfg)  # must not raise
+
+    def test_baseload_mw_below_pv_peak_passes(
+        self, sample_scenario_config_green
+    ):
+        """baseload_mw * 1000 < pv_peak_kwp is allowed."""
+        cfg = copy.deepcopy(sample_scenario_config_green)
+        cfg["project_settings"]["finance"]["revenue_streams"]["ppa"] = {
+            "type": "ppa_baseload",
+            "baseload_mw": 2.0,
+            "duration_years": 10,
+            "inflation_on_ppa": False,
+            "guarantee_of_origin_eur_per_kwh": 0.005,
+        }
+        validate_scenario(cfg)  # must not raise
+
+    def test_non_baseload_ppa_type_skips_validation(
+        self, sample_scenario_config_green
+    ):
+        """Non-baseload PPA types should not trigger baseload validation."""
+        for ppa_type in ("none", "ppa_floor", "ppa_collar", "ppa_pay_as_produced"):
+            cfg = copy.deepcopy(sample_scenario_config_green)
+            cfg["project_settings"]["finance"]["revenue_streams"]["ppa"] = {
+                "type": ppa_type,
+                "baseload_mw": None,
             }
             validate_scenario(cfg)  # must not raise
 

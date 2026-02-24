@@ -32,7 +32,6 @@ from dataclasses import dataclass
 import numpy as np
 
 from pv_bess_model.config.defaults import (
-    HOURS_PER_YEAR,
     PPA_TYPE_BASELOAD,
     PPA_TYPE_COLLAR,
     PPA_TYPE_FLOOR,
@@ -66,8 +65,8 @@ class PpaConfig:
     pay_as_produced_price_eur_per_kwh:
         Fixed price for pay-as-produced PPA (€/kWh). ``None`` if unused.
     baseload_mw:
-        Committed baseload level in MW. ``None`` for auto-calculation or if
-        unused.
+        Committed baseload level in MW. Required for ``ppa_baseload``,
+        ``None`` if unused.
     floor_price_eur_per_kwh:
         Floor price for floor/collar PPA (€/kWh). ``None`` if unused.
     cap_price_eur_per_kwh:
@@ -205,29 +204,33 @@ def apply_pay_as_produced(
 
 
 def baseload_level_kwh(
-    baseload_mw: float | None,
-    annual_production_kwh: float,
+    baseload_mw: float,
 ) -> float:
     """Determine the hourly baseload commitment in kWh.
 
-    If *baseload_mw* is provided, convert to kWh per hour (``MW × 1000``).
-    Otherwise, derive from annual production: ``annual / HOURS_PER_YEAR``.
+    Converts *baseload_mw* to kWh per hour (``MW × 1000``).
 
     Parameters
     ----------
     baseload_mw:
-        Explicit baseload level in MW, or ``None`` for auto-calculation.
-    annual_production_kwh:
-        Total annual production in kWh (used for auto-calculation).
+        Baseload level in MW (required user input).
 
     Returns
     -------
     float
         Hourly baseload commitment in kWh.
+
+    Raises
+    ------
+    ValueError
+        If *baseload_mw* is ``None`` (must be an explicit user input).
     """
-    if baseload_mw is not None:
-        return baseload_mw * 1000.0  # MW → kW = kWh/h
-    return annual_production_kwh / HOURS_PER_YEAR
+    if baseload_mw is None:
+        raise ValueError(
+            "baseload_mw must be specified for baseload PPA. "
+            "Auto-calculation from annual production is not supported."
+        )
+    return baseload_mw * 1000.0  # MW → kW = kWh/h
 
 
 def baseload_revenue(
@@ -457,7 +460,6 @@ def effective_ppa_price_for_year(
     inflation_rate: float,
     spot_prices_eur_per_kwh: np.ndarray,
     grid_export_kwh: np.ndarray | None = None,
-    annual_production_kwh: float | None = None,
 ) -> np.ndarray:
     """Compute the effective hourly price or revenue array for any PPA type.
 
@@ -490,8 +492,6 @@ def effective_ppa_price_for_year(
         Hourly spot prices (€/kWh) for this year.
     grid_export_kwh:
         Hourly grid export (kWh); required for ``ppa_baseload``.
-    annual_production_kwh:
-        Total annual production (kWh); used for auto-deriving baseload level.
 
     Returns
     -------
@@ -532,10 +532,7 @@ def effective_ppa_price_for_year(
             inflated_price = inflate_value(base_price, inflation_rate, year)
         else:
             inflated_price = base_price
-        bl = baseload_level_kwh(
-            config.baseload_mw,
-            annual_production_kwh or 0.0,
-        )
+        bl = baseload_level_kwh(config.baseload_mw)
         return baseload_revenue(
             grid_export_kwh=grid_export_kwh,
             spot_prices_eur_per_kwh=spot_prices_eur_per_kwh,
