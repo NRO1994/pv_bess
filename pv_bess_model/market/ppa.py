@@ -31,16 +31,16 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from pv_bess_model.config.defaults import HOURS_PER_YEAR
+from pv_bess_model.config.defaults import (
+    PPA_TYPE_BASELOAD,
+    PPA_TYPE_COLLAR,
+    PPA_TYPE_FLOOR,
+    PPA_TYPE_NONE,
+    PPA_TYPE_PAY_AS_PRODUCED,
+)
+from pv_bess_model.finance.inflation import inflate_value
 
 logger = logging.getLogger(__name__)
-
-# Valid PPA type identifiers (matches the scenario JSON schema).
-PPA_TYPE_NONE: str = "none"
-PPA_TYPE_PAY_AS_PRODUCED: str = "ppa_pay_as_produced"
-PPA_TYPE_BASELOAD: str = "ppa_baseload"
-PPA_TYPE_FLOOR: str = "ppa_floor"
-PPA_TYPE_COLLAR: str = "ppa_collar"
 
 _VALID_PPA_TYPES: frozenset[str] = frozenset(
     {
@@ -65,8 +65,8 @@ class PpaConfig:
     pay_as_produced_price_eur_per_kwh:
         Fixed price for pay-as-produced PPA (€/kWh). ``None`` if unused.
     baseload_mw:
-        Committed baseload level in MW. ``None`` for auto-calculation or if
-        unused.
+        Committed baseload level in MW. Required for ``ppa_baseload``,
+        ``None`` if unused.
     floor_price_eur_per_kwh:
         Floor price for floor/collar PPA (€/kWh). ``None`` if unused.
     cap_price_eur_per_kwh:
@@ -136,18 +136,6 @@ def ppa_config_from_dict(ppa_dict: dict) -> PpaConfig:
 
 
 # ---------------------------------------------------------------------------
-# Inflation helper
-# ---------------------------------------------------------------------------
-
-
-def _inflate(base: float, inflation_rate: float, year: int, enabled: bool) -> float:
-    """Escalate *base* by *inflation_rate* for *year* if *enabled*."""
-    if not enabled:
-        return base
-    return base * (1.0 + inflation_rate) ** year
-
-
-# ---------------------------------------------------------------------------
 # Pay-as-produced
 # ---------------------------------------------------------------------------
 
@@ -178,7 +166,9 @@ def pay_as_produced_price(
     if year > config.duration_years:
         return 0.0
     base = config.pay_as_produced_price_eur_per_kwh or 0.0
-    return _inflate(base, inflation_rate, year, config.inflation_enabled)
+    if config.inflation_enabled:
+        return inflate_value(base, inflation_rate, year)
+    return base
 
 
 def apply_pay_as_produced(
@@ -214,29 +204,33 @@ def apply_pay_as_produced(
 
 
 def baseload_level_kwh(
-    baseload_mw: float | None,
-    annual_production_kwh: float,
+    baseload_mw: float,
 ) -> float:
     """Determine the hourly baseload commitment in kWh.
 
-    If *baseload_mw* is provided, convert to kWh per hour (``MW × 1000``).
-    Otherwise, derive from annual production: ``annual / HOURS_PER_YEAR``.
+    Converts *baseload_mw* to kWh per hour (``MW × 1000``).
 
     Parameters
     ----------
     baseload_mw:
-        Explicit baseload level in MW, or ``None`` for auto-calculation.
-    annual_production_kwh:
-        Total annual production in kWh (used for auto-calculation).
+        Baseload level in MW (required user input).
 
     Returns
     -------
     float
         Hourly baseload commitment in kWh.
+
+    Raises
+    ------
+    ValueError
+        If *baseload_mw* is ``None`` (must be an explicit user input).
     """
-    if baseload_mw is not None:
-        return baseload_mw * 1000.0  # MW → kW = kWh/h
-    return annual_production_kwh / HOURS_PER_YEAR
+    if baseload_mw is None:
+        raise ValueError(
+            "baseload_mw must be specified for baseload PPA. "
+            "Auto-calculation from annual production is not supported."
+        )
+    return baseload_mw * 1000.0  # MW → kW = kWh/h
 
 
 def baseload_revenue(
@@ -294,9 +288,14 @@ def effective_floor_price(
     year: int,
     inflation_rate: float,
 ) -> float:
-    """Return the effective floor price for *year* (€/kWh), including GoO premium.
+    """Return the inflation-adjusted floor price for *year* (€/kWh), WITHOUT GoO.
 
-    After the PPA duration the floor is 0.0 and GoO premium no longer applies.
+    The GoO premium must be added **after** the floor comparison
+    (``max(spot, floor) + goo``), not before.  Callers that need the full
+    effective price array should use :func:`apply_floor_ppa` with the GoO
+    premium, or :func:`effective_ppa_price_for_year`.
+
+    After the PPA duration the floor is 0.0.
 
     Parameters
     ----------
@@ -310,38 +309,51 @@ def effective_floor_price(
     Returns
     -------
     float
-        Floor price + GoO premium in €/kWh, or 0.0 after PPA expiry.
+        Floor price in €/kWh (no GoO), or 0.0 after PPA expiry.
     """
     if year > config.duration_years:
         return 0.0
     base = config.floor_price_eur_per_kwh or 0.0
-    inflated = _inflate(base, inflation_rate, year, config.inflation_enabled)
-    return inflated + config.goo_premium_eur_per_kwh
+    if config.inflation_enabled:
+        return inflate_value(base, inflation_rate, year)
+    return base
 
 
 def apply_floor_ppa(
     spot_prices_eur_per_kwh: np.ndarray,
     floor_price_eur_per_kwh: float,
+    goo_premium_eur_per_kwh: float = 0.0,
 ) -> np.ndarray:
-    """Apply a floor price to an hourly spot-price array.
+    """Apply a floor price and GoO premium to an hourly spot-price array.
 
-    ``effective[t] = max(spot[t], floor)``
+    ``effective[t] = max(spot[t], floor) + goo``
+
+    The GoO premium is added **after** the floor comparison so that the seller
+    always receives at least ``floor + goo`` per kWh, and receives
+    ``spot + goo`` whenever the spot exceeds the floor.
 
     Parameters
     ----------
     spot_prices_eur_per_kwh:
         Hourly spot prices (€/kWh).
     floor_price_eur_per_kwh:
-        Floor price (€/kWh, already includes GoO and inflation).
+        Floor price (€/kWh, inflation-adjusted, WITHOUT GoO).
+    goo_premium_eur_per_kwh:
+        Guarantee-of-Origin premium to add to the effective price (€/kWh).
+        Defaults to 0.0.
 
     Returns
     -------
     np.ndarray
         Effective prices (€/kWh, same shape as input).
     """
-    if floor_price_eur_per_kwh <= 0.0:
-        return spot_prices_eur_per_kwh.copy()
-    return np.maximum(spot_prices_eur_per_kwh, floor_price_eur_per_kwh)
+    if floor_price_eur_per_kwh > 0.0:
+        result = np.maximum(spot_prices_eur_per_kwh, floor_price_eur_per_kwh)
+    else:
+        result = spot_prices_eur_per_kwh.copy()
+    if goo_premium_eur_per_kwh > 0.0:
+        result = result + goo_premium_eur_per_kwh
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -354,9 +366,14 @@ def effective_collar_prices(
     year: int,
     inflation_rate: float,
 ) -> tuple[float, float]:
-    """Return the (floor, cap) prices for *year* (€/kWh), including GoO on floor.
+    """Return the inflation-adjusted (floor, cap) prices for *year*, WITHOUT GoO.
 
-    After the PPA duration both return 0.0 (pure market).
+    The GoO premium must be added **after** the clip operation
+    (``clip(spot, floor, cap) + goo``), not to the floor only.  Callers that
+    need the full effective price array should use :func:`apply_collar_ppa`
+    with the GoO premium, or :func:`effective_ppa_price_for_year`.
+
+    After the PPA duration both values return 0.0 (pure market).
 
     Parameters
     ----------
@@ -370,15 +387,18 @@ def effective_collar_prices(
     Returns
     -------
     tuple[float, float]
-        (floor_eur_per_kwh, cap_eur_per_kwh)
+        ``(floor_eur_per_kwh, cap_eur_per_kwh)`` without GoO premium.
     """
     if year > config.duration_years:
         return 0.0, 0.0
     base_floor = config.floor_price_eur_per_kwh or 0.0
     base_cap = config.cap_price_eur_per_kwh or 0.0
-    floor = _inflate(base_floor, inflation_rate, year, config.inflation_enabled)
-    cap = _inflate(base_cap, inflation_rate, year, config.inflation_enabled)
-    floor += config.goo_premium_eur_per_kwh
+    if config.inflation_enabled:
+        floor = inflate_value(base_floor, inflation_rate, year)
+        cap = inflate_value(base_cap, inflation_rate, year)
+    else:
+        floor = base_floor
+        cap = base_cap
     return floor, cap
 
 
@@ -386,22 +406,30 @@ def apply_collar_ppa(
     spot_prices_eur_per_kwh: np.ndarray,
     floor_price_eur_per_kwh: float,
     cap_price_eur_per_kwh: float,
+    goo_premium_eur_per_kwh: float = 0.0,
 ) -> np.ndarray:
-    """Apply a collar (floor + cap) to an hourly spot-price array.
+    """Apply a collar (floor + cap) and GoO premium to an hourly spot-price array.
 
-    ``effective[t] = clip(spot[t], floor, cap)``
+    ``effective[t] = clip(spot[t], floor, cap) + goo``
 
-    When the collar has expired (both prices 0.0), the spot prices are
-    returned unchanged.
+    The GoO premium is added **after** the clip so that the seller always
+    receives ``goo`` on top of the clipped price, regardless of whether the
+    floor, cap, or spot price applies.
+
+    When the collar has expired (both prices 0.0 and goo 0.0), the spot prices
+    are returned unchanged.
 
     Parameters
     ----------
     spot_prices_eur_per_kwh:
         Hourly spot prices (€/kWh).
     floor_price_eur_per_kwh:
-        Floor price (€/kWh, already includes GoO and inflation).
+        Floor price (€/kWh, inflation-adjusted, WITHOUT GoO).
     cap_price_eur_per_kwh:
-        Cap price (€/kWh, already inflation-adjusted).
+        Cap price (€/kWh, inflation-adjusted, WITHOUT GoO).
+    goo_premium_eur_per_kwh:
+        Guarantee-of-Origin premium to add to the effective price (€/kWh).
+        Defaults to 0.0.
 
     Returns
     -------
@@ -409,12 +437,16 @@ def apply_collar_ppa(
         Effective prices (€/kWh, same shape as input).
     """
     if floor_price_eur_per_kwh <= 0.0 and cap_price_eur_per_kwh <= 0.0:
-        return spot_prices_eur_per_kwh.copy()
-    return np.clip(
-        spot_prices_eur_per_kwh,
-        floor_price_eur_per_kwh,
-        cap_price_eur_per_kwh,
-    )
+        result = spot_prices_eur_per_kwh.copy()
+    else:
+        result = np.clip(
+            spot_prices_eur_per_kwh,
+            floor_price_eur_per_kwh,
+            cap_price_eur_per_kwh,
+        )
+    if goo_premium_eur_per_kwh > 0.0:
+        result = result + goo_premium_eur_per_kwh
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +460,6 @@ def effective_ppa_price_for_year(
     inflation_rate: float,
     spot_prices_eur_per_kwh: np.ndarray,
     grid_export_kwh: np.ndarray | None = None,
-    annual_production_kwh: float | None = None,
 ) -> np.ndarray:
     """Compute the effective hourly price or revenue array for any PPA type.
 
@@ -461,8 +492,6 @@ def effective_ppa_price_for_year(
         Hourly spot prices (€/kWh) for this year.
     grid_export_kwh:
         Hourly grid export (kWh); required for ``ppa_baseload``.
-    annual_production_kwh:
-        Total annual production (kWh); used for auto-deriving baseload level.
 
     Returns
     -------
@@ -483,11 +512,15 @@ def effective_ppa_price_for_year(
 
     if config.ppa_type == PPA_TYPE_FLOOR:
         floor = effective_floor_price(config, year, inflation_rate)
-        return apply_floor_ppa(spot_prices_eur_per_kwh, floor)
+        return apply_floor_ppa(
+            spot_prices_eur_per_kwh, floor, config.goo_premium_eur_per_kwh
+        )
 
     if config.ppa_type == PPA_TYPE_COLLAR:
         floor, cap = effective_collar_prices(config, year, inflation_rate)
-        return apply_collar_ppa(spot_prices_eur_per_kwh, floor, cap)
+        return apply_collar_ppa(
+            spot_prices_eur_per_kwh, floor, cap, config.goo_premium_eur_per_kwh
+        )
 
     if config.ppa_type == PPA_TYPE_BASELOAD:
         if grid_export_kwh is None:
@@ -495,13 +528,11 @@ def effective_ppa_price_for_year(
                 "grid_export_kwh is required for baseload PPA revenue calculation."
             )
         base_price = config.pay_as_produced_price_eur_per_kwh or 0.0
-        inflated_price = _inflate(
-            base_price, inflation_rate, year, config.inflation_enabled
-        )
-        bl = baseload_level_kwh(
-            config.baseload_mw,
-            annual_production_kwh or 0.0,
-        )
+        if config.inflation_enabled:
+            inflated_price = inflate_value(base_price, inflation_rate, year)
+        else:
+            inflated_price = base_price
+        bl = baseload_level_kwh(config.baseload_mw)
         return baseload_revenue(
             grid_export_kwh=grid_export_kwh,
             spot_prices_eur_per_kwh=spot_prices_eur_per_kwh,

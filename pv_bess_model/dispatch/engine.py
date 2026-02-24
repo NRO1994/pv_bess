@@ -349,6 +349,7 @@ def run_simulation(
     spot_prices_yearly: list[np.ndarray],
     fixed_prices_yearly: list[float],
     offline_days_yearly: list[set[int]],
+    goo_prices_yearly: list[float] | None = None,
 ) -> SimulationResult:
     """Execute the full multi-year dispatch simulation.
 
@@ -366,11 +367,17 @@ def run_simulation(
         List of length ``lifetime_years``.  Each element is an 8760-array
         of spot prices in EUR/kWh (already inflation-adjusted if applicable).
     fixed_prices_yearly:
-        List of length ``lifetime_years``.  Each element is the floor/fixed
-        price in EUR/kWh for that year (0.0 when no floor is active).
+        List of length ``lifetime_years``.  Each element is the floor price
+        in EUR/kWh for that year, **WITHOUT GoO premium** (0.0 when no floor
+        is active).
     offline_days_yearly:
         List of length ``lifetime_years``.  Each element is a set of
         0-indexed day indices (0--364) when the BESS is offline.
+    goo_prices_yearly:
+        Optional list of length ``lifetime_years``.  Each element is the
+        Guarantee-of-Origin premium in EUR/kWh for that year (0.0 when no
+        PPA is active or the PPA has no GoO clause).  If ``None``, defaults
+        to all-zeros (no GoO applied).
 
     Returns
     -------
@@ -379,6 +386,13 @@ def run_simulation(
     """
     annual_results: list[AnnualResult] = []
     hourly_sample: HourlySample | None = None
+
+    # Default GoO premiums to zero if not provided
+    goo_per_year: list[float] = (
+        goo_prices_yearly
+        if goo_prices_yearly is not None
+        else [0.0] * config.lifetime_years
+    )
 
     has_bess = config.bess_nameplate_kwh > 0.0
 
@@ -445,6 +459,7 @@ def run_simulation(
         # ---- 5. Year-level price data ----
         spot_prices = spot_prices_yearly[year_idx]
         fixed_price = fixed_prices_yearly[year_idx]
+        goo_price = goo_per_year[year_idx]
         offline_days = offline_days_yearly[year_idx]
 
         # ---- 6. Prepare hourly sample arrays (year 1 only) ----
@@ -492,6 +507,7 @@ def run_simulation(
                     start_soc_kwh=current_soc,
                     start_soc_green_kwh=current_soc_green,
                     start_soc_grey_kwh=current_soc_grey,
+                    goo_premium_eur_per_kwh=goo_price,
                 )
             else:
                 result = optimize_day(
@@ -504,6 +520,7 @@ def run_simulation(
                     start_soc_kwh=current_soc,
                     start_soc_green_kwh=current_soc_green if config.mode == "grey" else None,
                     start_soc_grey_kwh=current_soc_grey if config.mode == "grey" else None,
+                    goo_premium_eur_per_kwh=goo_price,
                 )
 
             # Update SoC carry-over
@@ -511,10 +528,13 @@ def run_simulation(
             current_soc_green = result["end_soc_green"]
             current_soc_grey = result["end_soc_grey"]
 
-            # Revenue breakdown for this day
-            eff_day = (
-                np.maximum(spot_day, fixed_price) if fixed_price > 0.0 else spot_day
-            )
+            # Revenue breakdown for this day (max(spot, floor) + goo)
+            if fixed_price > 0.0:
+                eff_day = np.maximum(spot_day, fixed_price)
+            else:
+                eff_day = spot_day
+            if goo_price > 0.0:
+                eff_day = eff_day + goo_price
 
             day_rev_pv = float(np.sum(result["export_pv"] * eff_day))
             day_rev_green = float(
@@ -581,11 +601,12 @@ def run_simulation(
 
         # ---- 10. Build hourly sample ----
         if is_sample_year:
-            eff_prices_year = (
-                np.maximum(spot_prices, fixed_price)
-                if fixed_price > 0.0
-                else spot_prices.copy()
-            )
+            if fixed_price > 0.0:
+                eff_prices_year = np.maximum(spot_prices, fixed_price)
+            else:
+                eff_prices_year = spot_prices.copy()
+            if goo_price > 0.0:
+                eff_prices_year = eff_prices_year + goo_price
             hourly_sample = HourlySample(
                 pv_production=pv_year.copy(),
                 spot_prices=spot_prices.copy(),

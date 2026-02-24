@@ -332,6 +332,8 @@ _TAX = {
         "afa_years_bess": {"type": "integer", "minimum": 1},
         "gewerbesteuer_hebesatz": {"type": "number", "minimum": 0},
         "gewerbesteuer_messzahl": {"type": "number", "minimum": 0, "maximum": 1},
+        "koerperschaftsteuer_pct": {"type": "number", "minimum": 0, "maximum": 100},
+        "solidaritaetszuschlag_pct": {"type": "number", "minimum": 0, "maximum": 100},
     },
     "additionalProperties": False,
 }
@@ -385,6 +387,7 @@ _PROJECT_SETTINGS = {
     "type": "object",
     "required": [
         "lifetime_years",
+        "commissioning_year",
         "discount_rate",
         "operating_mode",
         "location",
@@ -393,6 +396,7 @@ _PROJECT_SETTINGS = {
     ],
     "properties": {
         "lifetime_years": {"type": "integer", "minimum": 1},
+        "commissioning_year": {"type": "integer", "minimum": 2020},
         "discount_rate": {"type": "number", "minimum": 0},
         "operating_mode": {"type": "string", "enum": ["green", "grey"]},
         "location": _LOCATION,
@@ -468,6 +472,7 @@ def validate_scenario(data: dict) -> None:
     # ------------------------------------------------------------------
     _validate_mc_weights(data)
     _validate_soc_limits(data)
+    _validate_baseload_ppa(data)
 
 
 def _validate_mc_weights(data: dict) -> None:
@@ -504,6 +509,42 @@ def _validate_soc_limits(data: dict) -> None:
             f"BESS min_soc_pct ({min_soc}) must be strictly less than "
             f"max_soc_pct ({max_soc}). "
             f"Check project_settings.technology.bess.performance."
+        )
+
+
+def _validate_baseload_ppa(data: dict) -> None:
+    """Check that baseload_mw is set when PPA type is ppa_baseload.
+
+    Also validates that the baseload level does not exceed PV peak power.
+    """
+    ppa = (
+        data.get("project_settings", {})
+        .get("finance", {})
+        .get("revenue_streams", {})
+        .get("ppa", {})
+    )
+    if ppa.get("type") != "ppa_baseload":
+        return
+
+    baseload_mw = ppa.get("baseload_mw")
+    if baseload_mw is None:
+        raise ValueError(
+            "baseload_mw is required when PPA type is 'ppa_baseload'. "
+            "The baseload level must be an explicit user input."
+        )
+
+    pv_peak_kwp = (
+        data.get("project_settings", {})
+        .get("technology", {})
+        .get("pv", {})
+        .get("design", {})
+        .get("peak_power_kwp")
+    )
+    if pv_peak_kwp is not None and baseload_mw * 1000 > pv_peak_kwp:
+        raise ValueError(
+            f"baseload_mw ({baseload_mw} MW = {baseload_mw * 1000} kW) "
+            f"exceeds PV peak power ({pv_peak_kwp} kWp). "
+            f"The baseload level must not exceed the PV nominal capacity."
         )
 
 

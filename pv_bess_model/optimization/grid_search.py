@@ -199,6 +199,11 @@ class GridSearchConfig:
     afa_years_bess: int
     gewerbesteuer_messzahl: float
     gewerbesteuer_hebesatz: float
+    koerperschaftsteuer_pct: float
+    solidaritaetszuschlag_pct: float
+
+    # GoO premiums per year (optional – 0.0 for years without active PPA GoO clause)
+    goo_prices_yearly: list[float] = field(default_factory=list)
 
     # P90 for conservative debt analysis (optional)
     debt_uses_p90: bool = False
@@ -325,6 +330,7 @@ class _GridPointArgs:
     # Prices per year
     spot_prices_yearly: list  # list[np.ndarray]
     fixed_prices_yearly: list  # list[float]
+    goo_prices_yearly: list  # list[float]
     offline_days_yearly: list  # list[set[int]]
 
     # Pre-computed costs
@@ -346,6 +352,8 @@ class _GridPointArgs:
     afa_years_bess: int
     gewerbesteuer_messzahl: float
     gewerbesteuer_hebesatz: float
+    koerperschaftsteuer_pct: float
+    solidaritaetszuschlag_pct: float
 
     # P90 (optional)
     pv_base_timeseries_p90: np.ndarray | None = None
@@ -399,6 +407,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         spot_prices_yearly=args.spot_prices_yearly,
         fixed_prices_yearly=args.fixed_prices_yearly,
         offline_days_yearly=args.offline_days_yearly,
+        goo_prices_yearly=args.goo_prices_yearly,
     )
 
     annual_revenues_p50 = [r.total_revenue for r in sim_p50.annual_results]
@@ -414,6 +423,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
             spot_prices_yearly=p90_prices,
             fixed_prices_yearly=args.fixed_prices_yearly,
             offline_days_yearly=args.offline_days_yearly,
+            goo_prices_yearly=args.goo_prices_yearly,
         )
         annual_revenues_p90 = [r.total_revenue for r in sim_p90.annual_results]
 
@@ -443,6 +453,8 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         afa_years_bess=args.afa_years_bess,
         gewerbesteuer_messzahl=args.gewerbesteuer_messzahl,
         gewerbesteuer_hebesatz=args.gewerbesteuer_hebesatz,
+        koerperschaftsteuer_pct=args.koerperschaftsteuer_pct,
+        solidaritaetszuschlag_pct=args.solidaritaetszuschlag_pct,
         replacement_cost=replacement_cost,
         replacement_year=replacement_year_cf,
     )
@@ -453,7 +465,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         for y in range(1, args.lifetime_years + 1)
     ]
     annual_debt_service = [
-        cf.years[y].debt_service for y in range(1, args.lifetime_years + 1)
+        cf.years[y - 1].debt_service for y in range(1, args.lifetime_years + 1)
     ]
     total_opex_lifetime = sum(annual_opex)
 
@@ -599,6 +611,7 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     pv_base_timeseries=config.pv_base_timeseries_p50,
                     spot_prices_yearly=config.spot_prices_yearly,
                     fixed_prices_yearly=config.fixed_prices_yearly,
+                    goo_prices_yearly=config.goo_prices_yearly if config.goo_prices_yearly else [0.0] * config.lifetime_years,
                     offline_days_yearly=offline_days_yearly,
                     capex_pv=costs.capex_pv,
                     capex_bess=costs.capex_bess,
@@ -616,6 +629,8 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     afa_years_bess=config.afa_years_bess,
                     gewerbesteuer_messzahl=config.gewerbesteuer_messzahl,
                     gewerbesteuer_hebesatz=config.gewerbesteuer_hebesatz,
+                    koerperschaftsteuer_pct=config.koerperschaftsteuer_pct,
+                    solidaritaetszuschlag_pct=config.solidaritaetszuschlag_pct,
                     pv_base_timeseries_p90=(
                         config.pv_base_timeseries_p90
                         if config.debt_uses_p90
@@ -641,7 +656,17 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
     results: list[GridPointResult] = []
     if config.max_workers == 1:
         # Single-process execution (simpler for debugging / unit tests)
-        results = [_evaluate_grid_point(a) for a in worker_args]
+        for idx, a in enumerate(worker_args, start=1):
+            result = _evaluate_grid_point(a)
+            results.append(result)
+            logger.debug(
+                "Grid search [%d/%d]: scale=%.0f %%, E/P=%.1f h, Equity IRR=%s.",
+                idx,
+                n_combinations,
+                a.scale_pct,
+                a.e_to_p_ratio,
+                f"{(result.equity_irr or 0.0) * 100:.2f} %%" if result.equity_irr is not None else "N/A",
+            )
     else:
         with concurrent.futures.ProcessPoolExecutor(
             max_workers=config.max_workers
@@ -649,8 +674,18 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
             futures = {
                 executor.submit(_evaluate_grid_point, a): a for a in worker_args
             }
+            completed = 0
             for future in concurrent.futures.as_completed(futures):
-                results.append(future.result())
+                result = future.result()
+                results.append(result)
+                completed += 1
+                logger.debug(
+                    "Grid search [%d/%d] done: scale=%.0f %%, E/P=%.1f h.",
+                    completed,
+                    n_combinations,
+                    result.scale_pct,
+                    result.e_to_p_ratio,
+                )
 
     # Sort results by (scale_pct, e_to_p_ratio) for deterministic output order
     results.sort(key=lambda r: (r.scale_pct, r.e_to_p_ratio))

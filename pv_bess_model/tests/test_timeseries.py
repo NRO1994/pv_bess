@@ -9,7 +9,6 @@ Covers:
 - compute_p50_p90: negative values are clipped to 0
 - compute_p50_p90: empty input raises ValueError
 - compute_p50_p90: wrong-length array raises ValueError with year name
-- percentile_timeseries: arbitrary percentile, out-of-range raises
 
 Degradation tests live in test_degradation.py (mirrors pv/degradation.py).
 """
@@ -20,7 +19,7 @@ import numpy as np
 import pytest
 
 from pv_bess_model.config.defaults import HOURS_PER_YEAR
-from pv_bess_model.pv.timeseries import compute_p50_p90, percentile_timeseries
+from pv_bess_model.pv.timeseries import compute_p50_p90
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -222,46 +221,3 @@ class TestComputeP50P90Errors:
         assert "2006" in msg
 
 
-# ---------------------------------------------------------------------------
-# percentile_timeseries
-# ---------------------------------------------------------------------------
-
-
-class TestPercentileTimeseries:
-    def test_p50_matches_compute_p50_p90(self):
-        data = _make_yearly_rng(n_years=6)
-        p50_direct, _ = compute_p50_p90(data)
-        p50_generic = percentile_timeseries(data, 50.0)
-        np.testing.assert_allclose(p50_direct, p50_generic)
-
-    def test_p90_matches_compute_p50_p90(self):
-        data = _make_yearly_rng(n_years=6)
-        _, p90_direct = compute_p50_p90(data)
-        p90_generic = percentile_timeseries(data, 10.0)
-        np.testing.assert_allclose(p90_direct, p90_generic)
-
-    def test_p100_is_max(self):
-        data = _make_yearly({2005: 100.0, 2006: 200.0, 2007: 300.0})
-        p100 = percentile_timeseries(data, 100.0)
-        assert np.all(p100 == pytest.approx(300.0))
-
-    def test_p0_is_min(self):
-        data = _make_yearly({2005: 10.0, 2006: 50.0, 2007: 90.0})
-        p0 = percentile_timeseries(data, 0.0)
-        assert np.all(p0 == pytest.approx(10.0))
-
-    def test_out_of_range_percentile_raises(self):
-        data = _make_yearly({2010: 100.0})
-        with pytest.raises(ValueError, match="percentile"):
-            percentile_timeseries(data, -1.0)
-        with pytest.raises(ValueError, match="percentile"):
-            percentile_timeseries(data, 101.0)
-
-    def test_empty_raises(self):
-        with pytest.raises(ValueError, match="empty"):
-            percentile_timeseries({}, 50.0)
-
-    def test_result_non_negative(self):
-        data = _make_yearly({2005: -200.0, 2006: -100.0})
-        out = percentile_timeseries(data, 50.0)
-        assert np.all(out >= 0.0)

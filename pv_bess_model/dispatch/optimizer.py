@@ -193,15 +193,23 @@ class DailyDispatchResult(TypedDict):
 def _effective_green_price(
     spot_prices_eur_per_kwh: np.ndarray,
     price_fixed_eur_per_kwh: float,
+    goo_premium_eur_per_kwh: float = 0.0,
 ) -> np.ndarray:
     """Pre-compute the effective green price per hour (€/kWh).
 
-    ``effective[t] = max(spot[t], fixed)`` when a floor is active,
-    otherwise just ``spot[t]``.
+    ``effective[t] = max(spot[t], fixed) + goo`` when a floor is active,
+    otherwise ``spot[t] + goo`` (or just ``spot[t]`` when goo = 0).
+
+    The GoO premium is added **after** the floor comparison so that the
+    seller always receives ``goo`` on top of the effective price.
     """
     if price_fixed_eur_per_kwh > 0.0:
-        return np.maximum(spot_prices_eur_per_kwh, price_fixed_eur_per_kwh)
-    return spot_prices_eur_per_kwh.copy()
+        eff = np.maximum(spot_prices_eur_per_kwh, price_fixed_eur_per_kwh)
+    else:
+        eff = spot_prices_eur_per_kwh.copy()
+    if goo_premium_eur_per_kwh > 0.0:
+        eff = eff + goo_premium_eur_per_kwh
+    return eff
 
 
 # ---------------------------------------------------------------------------
@@ -528,6 +536,7 @@ def optimize_day(
     start_soc_kwh: float,
     start_soc_green_kwh: float | None = None,
     start_soc_grey_kwh: float | None = None,
+    goo_premium_eur_per_kwh: float = 0.0,
 ) -> DailyDispatchResult:
     """Solve the daily dispatch LP for one day.
 
@@ -538,7 +547,7 @@ def optimize_day(
     spot_prices_eur_per_kwh : np.ndarray, shape (T,)
         Day-ahead spot prices per hour in **€/kWh**.
     price_fixed_eur_per_kwh : float
-        Fixed floor price in **€/kWh** for EEG/PPA.
+        Fixed floor price in **€/kWh** for EEG/PPA (WITHOUT GoO premium).
         Set to **0.0** when no floor is active.
     bess : BessParams
         Physical BESS parameters (power limits, RTE, SoC bounds).
@@ -554,6 +563,9 @@ def optimize_day(
     start_soc_grey_kwh : float | None
         Grey-chamber SoC at start in **kWh** (Grey Mode only).
         Defaults to 0.0.
+    goo_premium_eur_per_kwh : float
+        Guarantee-of-Origin premium in **€/kWh**, added to the effective
+        green price after the floor comparison.  Defaults to 0.0.
 
     Returns
     -------
@@ -568,8 +580,10 @@ def optimize_day(
     T = len(pv_production_kwh)
     rte = bess.round_trip_efficiency
 
-    # Pre-compute effective green price: max(spot, fixed) — €/kWh
-    eff = _effective_green_price(spot_prices_eur_per_kwh, price_fixed_eur_per_kwh)
+    # Pre-compute effective green price: max(spot, fixed) + goo — €/kWh
+    eff = _effective_green_price(
+        spot_prices_eur_per_kwh, price_fixed_eur_per_kwh, goo_premium_eur_per_kwh
+    )
 
     if mode == "green":
         c, A_ub, b_ub, A_eq, b_eq = _build_green_lp(
@@ -637,6 +651,7 @@ def optimize_day(
             start_soc_kwh=start_soc_kwh,
             start_soc_green_kwh=soc_green_start,
             start_soc_grey_kwh=soc_grey_start,
+            goo_premium_eur_per_kwh=goo_premium_eur_per_kwh,
         )
 
     x = result.x
@@ -663,6 +678,7 @@ def dispatch_offline_day(
     start_soc_kwh: float,
     start_soc_green_kwh: float | None = None,
     start_soc_grey_kwh: float | None = None,
+    goo_premium_eur_per_kwh: float = 0.0,
 ) -> DailyDispatchResult:
     """Produce dispatch results for a BESS-offline day.
 
@@ -677,7 +693,7 @@ def dispatch_offline_day(
     spot_prices_eur_per_kwh : np.ndarray, shape (T,)
         Spot prices per hour in **€/kWh**.
     price_fixed_eur_per_kwh : float
-        Fixed floor price in **€/kWh**.  0.0 when no floor.
+        Fixed floor price in **€/kWh** (WITHOUT GoO).  0.0 when no floor.
     grid_max_kw : float
         Maximum grid export power in **kW**.
     start_soc_kwh : float
@@ -686,6 +702,9 @@ def dispatch_offline_day(
         Green SoC carried over in **kWh**.  Defaults to *start_soc_kwh*.
     start_soc_grey_kwh : float | None
         Grey SoC carried over in **kWh**.  Defaults to 0.0.
+    goo_premium_eur_per_kwh : float
+        Guarantee-of-Origin premium in **€/kWh**, added after the floor
+        comparison.  Defaults to 0.0.
 
     Returns
     -------
@@ -703,8 +722,10 @@ def dispatch_offline_day(
     export_pv = np.minimum(pv_production_kwh, grid_max_kw)
     curtail = pv_production_kwh - export_pv
 
-    # Effective price per kWh: max(spot, fixed) if fixed > 0
-    eff = _effective_green_price(spot_prices_eur_per_kwh, price_fixed_eur_per_kwh)
+    # Effective price per kWh: max(spot, fixed) + goo
+    eff = _effective_green_price(
+        spot_prices_eur_per_kwh, price_fixed_eur_per_kwh, goo_premium_eur_per_kwh
+    )
     revenue = export_pv * eff
 
     return DailyDispatchResult(

@@ -165,7 +165,7 @@ class TestPayAsProduced:
 
     def test_price_with_inflation(self, pap_config_inflation: PpaConfig) -> None:
         price = pay_as_produced_price(pap_config_inflation, year=5, inflation_rate=0.02)
-        expected = 0.065 * (1.02 ** 5)
+        expected = 0.065 * (1.02 ** 4)
         assert math.isclose(price, expected, rel_tol=1e-9)
 
     def test_apply_revenue(self) -> None:
@@ -192,13 +192,23 @@ class TestBaseloadPPA:
 
     def test_baseload_from_mw(self) -> None:
         """2.5 MW → 2500 kWh/h."""
-        bl = baseload_level_kwh(baseload_mw=2.5, annual_production_kwh=0.0)
+        bl = baseload_level_kwh(baseload_mw=2.5)
         assert math.isclose(bl, 2500.0)
 
-    def test_baseload_auto_from_production(self) -> None:
-        """Auto-derive: 8760000 kWh / 8760 h = 1000 kWh/h."""
-        bl = baseload_level_kwh(baseload_mw=None, annual_production_kwh=8_760_000.0)
-        assert math.isclose(bl, 1000.0)
+    def test_baseload_none_raises_value_error(self) -> None:
+        """baseload_mw=None must raise ValueError (no auto-calculation)."""
+        with pytest.raises(ValueError, match="baseload_mw must be specified"):
+            baseload_level_kwh(baseload_mw=None)
+
+    def test_baseload_zero_mw(self) -> None:
+        """0 MW → 0 kWh/h."""
+        bl = baseload_level_kwh(baseload_mw=0.0)
+        assert bl == 0.0
+
+    def test_baseload_small_value(self) -> None:
+        """0.5 MW → 500 kWh/h."""
+        bl = baseload_level_kwh(baseload_mw=0.5)
+        assert math.isclose(bl, 500.0)
 
     def test_revenue_export_exceeds_baseload(self) -> None:
         """When export > baseload → excess sold at spot, ppa revenue on baseload."""
@@ -285,31 +295,35 @@ class TestFloorPPA:
             goo_premium_eur_per_kwh=0.005,
         )
 
-    def test_floor_price_within_period(self, floor_config: PpaConfig) -> None:
-        """Floor + GoO = 0.055 + 0.005 = 0.060."""
+    def test_floor_price_within_period_no_goo(self, floor_config: PpaConfig) -> None:
+        """effective_floor_price returns floor WITHOUT GoO (0.055, not 0.060)."""
         price = effective_floor_price(floor_config, year=5, inflation_rate=0.02)
-        assert math.isclose(price, 0.060)
+        assert math.isclose(price, 0.055)
 
     def test_floor_price_after_period(self, floor_config: PpaConfig) -> None:
         price = effective_floor_price(floor_config, year=16, inflation_rate=0.02)
         assert price == 0.0
 
-    def test_floor_price_with_inflation(self, floor_config_inflation: PpaConfig) -> None:
+    def test_floor_price_with_inflation_no_goo(self, floor_config_inflation: PpaConfig) -> None:
+        """Inflation applied to floor only; GoO not included."""
         price = effective_floor_price(floor_config_inflation, year=5, inflation_rate=0.02)
-        expected = 0.055 * (1.02 ** 5) + 0.005
+        expected = 0.055 * (1.02 ** 4)  # GoO NOT included
         assert math.isclose(price, expected, rel_tol=1e-9)
 
-    def test_apply_floor_spot_above(self) -> None:
+    def test_apply_floor_spot_above_no_goo(self) -> None:
+        """No GoO: spot above floor → spot returned."""
         spot = np.array([0.08, 0.10])
         result = apply_floor_ppa(spot, 0.06)
         np.testing.assert_array_almost_equal(result, spot)
 
-    def test_apply_floor_spot_below(self) -> None:
+    def test_apply_floor_spot_below_no_goo(self) -> None:
+        """No GoO: spot below floor → floor returned."""
         spot = np.array([0.02, 0.04])
         result = apply_floor_ppa(spot, 0.06)
         np.testing.assert_array_almost_equal(result, np.array([0.06, 0.06]))
 
-    def test_apply_floor_mixed(self) -> None:
+    def test_apply_floor_mixed_no_goo(self) -> None:
+        """No GoO: mixed spot prices clipped to floor."""
         spot = np.array([0.02, 0.08, 0.06, 0.10])
         expected = np.array([0.06, 0.08, 0.06, 0.10])
         result = apply_floor_ppa(spot, 0.06)
@@ -327,6 +341,38 @@ class TestFloorPPA:
         result = apply_floor_ppa(spot, 0.0)
         np.testing.assert_array_almost_equal(result, spot)
         assert result is not spot
+
+    # --- GoO correctness tests ---
+
+    def test_apply_floor_goo_added_when_spot_above_floor(self) -> None:
+        """When spot > floor, GoO is still added: effective = spot + goo."""
+        spot = np.array([0.08, 0.10])
+        result = apply_floor_ppa(spot, 0.055, goo_premium_eur_per_kwh=0.005)
+        expected = spot + 0.005  # GoO always on top
+        np.testing.assert_array_almost_equal(result, expected)
+
+    def test_apply_floor_goo_added_when_spot_below_floor(self) -> None:
+        """When spot < floor, effective = floor + goo (not max(spot, floor+goo))."""
+        spot = np.array([0.02, 0.04])
+        result = apply_floor_ppa(spot, 0.055, goo_premium_eur_per_kwh=0.005)
+        expected = np.array([0.060, 0.060])  # floor + goo
+        np.testing.assert_array_almost_equal(result, expected)
+
+    def test_apply_floor_goo_spot_between_floor_and_floor_plus_goo(self) -> None:
+        """Key case: spot=0.057 is above floor(0.055) but below floor+goo(0.060).
+        Wrong old behaviour: max(0.057, 0.060) = 0.060.
+        Correct new behaviour: max(0.057, 0.055) + 0.005 = 0.062."""
+        spot = np.array([0.057])
+        result = apply_floor_ppa(spot, 0.055, goo_premium_eur_per_kwh=0.005)
+        expected = np.array([0.062])  # spot + goo (not floor + goo)
+        np.testing.assert_array_almost_equal(result, expected)
+
+    def test_apply_floor_goo_zero_unchanged(self) -> None:
+        """With goo=0, behaviour is identical to the no-GoO case."""
+        spot = np.array([0.02, 0.08])
+        result_no_goo = apply_floor_ppa(spot, 0.06)
+        result_goo_zero = apply_floor_ppa(spot, 0.06, goo_premium_eur_per_kwh=0.0)
+        np.testing.assert_array_almost_equal(result_no_goo, result_goo_zero)
 
 
 # ---------------------------------------------------------------------------
@@ -363,9 +409,10 @@ class TestCollarPPA:
             goo_premium_eur_per_kwh=0.003,
         )
 
-    def test_collar_prices_within_period(self, collar_config: PpaConfig) -> None:
+    def test_collar_prices_within_period_no_goo(self, collar_config: PpaConfig) -> None:
+        """effective_collar_prices returns (floor, cap) WITHOUT GoO."""
         floor, cap = effective_collar_prices(collar_config, year=5, inflation_rate=0.02)
-        assert math.isclose(floor, 0.04 + 0.003)  # floor + GoO
+        assert math.isclose(floor, 0.04)   # GoO NOT included
         assert math.isclose(cap, 0.10)
 
     def test_collar_prices_after_period(self, collar_config: PpaConfig) -> None:
@@ -373,32 +420,33 @@ class TestCollarPPA:
         assert floor == 0.0
         assert cap == 0.0
 
-    def test_collar_prices_with_inflation(self, collar_config_inflation: PpaConfig) -> None:
+    def test_collar_prices_with_inflation_no_goo(self, collar_config_inflation: PpaConfig) -> None:
+        """Inflation applied to both floor and cap; GoO NOT included."""
         floor, cap = effective_collar_prices(collar_config_inflation, year=5, inflation_rate=0.02)
-        expected_floor = 0.04 * (1.02 ** 5) + 0.003
-        expected_cap = 0.10 * (1.02 ** 5)
+        expected_floor = 0.04 * (1.02 ** 4)  # GoO NOT included
+        expected_cap = 0.10 * (1.02 ** 4)
         assert math.isclose(floor, expected_floor, rel_tol=1e-9)
         assert math.isclose(cap, expected_cap, rel_tol=1e-9)
 
-    def test_apply_collar_within_bounds(self) -> None:
+    def test_apply_collar_within_bounds_no_goo(self) -> None:
         """Spot between floor and cap → unchanged."""
         spot = np.array([0.05, 0.06, 0.08])
         result = apply_collar_ppa(spot, 0.04, 0.10)
         np.testing.assert_array_almost_equal(result, spot)
 
-    def test_apply_collar_below_floor(self) -> None:
+    def test_apply_collar_below_floor_no_goo(self) -> None:
         """Spot below floor → lifted to floor."""
         spot = np.array([0.01, 0.02, 0.03])
         result = apply_collar_ppa(spot, 0.04, 0.10)
         np.testing.assert_array_almost_equal(result, np.full(3, 0.04))
 
-    def test_apply_collar_above_cap(self) -> None:
+    def test_apply_collar_above_cap_no_goo(self) -> None:
         """Spot above cap → capped."""
         spot = np.array([0.12, 0.15, 0.20])
         result = apply_collar_ppa(spot, 0.04, 0.10)
         np.testing.assert_array_almost_equal(result, np.full(3, 0.10))
 
-    def test_apply_collar_mixed(self) -> None:
+    def test_apply_collar_mixed_no_goo(self) -> None:
         """Mixed: below floor, within, and above cap."""
         spot = np.array([0.01, 0.06, 0.15])
         expected = np.array([0.04, 0.06, 0.10])
@@ -423,6 +471,44 @@ class TestCollarPPA:
         spot = np.array([0.01, 0.05, 0.10])
         result = apply_collar_ppa(spot, 0.05, 0.05)
         np.testing.assert_array_almost_equal(result, np.full(3, 0.05))
+
+    # --- GoO correctness tests ---
+
+    def test_apply_collar_goo_added_when_spot_within_bounds(self) -> None:
+        """When spot is between floor and cap, GoO is added: effective = spot + goo."""
+        spot = np.array([0.06])
+        result = apply_collar_ppa(spot, 0.04, 0.10, goo_premium_eur_per_kwh=0.003)
+        expected = np.array([0.063])  # spot + goo
+        np.testing.assert_array_almost_equal(result, expected)
+
+    def test_apply_collar_goo_added_when_spot_below_floor(self) -> None:
+        """When spot < floor, effective = floor + goo."""
+        spot = np.array([0.01])
+        result = apply_collar_ppa(spot, 0.04, 0.10, goo_premium_eur_per_kwh=0.003)
+        expected = np.array([0.043])  # floor + goo
+        np.testing.assert_array_almost_equal(result, expected)
+
+    def test_apply_collar_goo_added_when_spot_above_cap(self) -> None:
+        """When spot > cap, effective = cap + goo (not just cap)."""
+        spot = np.array([0.15])
+        result = apply_collar_ppa(spot, 0.04, 0.10, goo_premium_eur_per_kwh=0.003)
+        expected = np.array([0.103])  # cap + goo (old bug returned 0.103 only on floor)
+        np.testing.assert_array_almost_equal(result, expected)
+
+    def test_apply_collar_goo_mixed_three_regions(self) -> None:
+        """GoO added uniformly: below floor, within band, above cap."""
+        spot = np.array([0.01, 0.06, 0.15])
+        result = apply_collar_ppa(spot, 0.04, 0.10, goo_premium_eur_per_kwh=0.003)
+        # clip(spot, 0.04, 0.10) = [0.04, 0.06, 0.10], then + 0.003
+        expected = np.array([0.043, 0.063, 0.103])
+        np.testing.assert_array_almost_equal(result, expected)
+
+    def test_apply_collar_goo_zero_unchanged(self) -> None:
+        """With goo=0, behaviour is identical to the no-GoO case."""
+        spot = np.array([0.01, 0.06, 0.15])
+        result_no_goo = apply_collar_ppa(spot, 0.04, 0.10)
+        result_goo_zero = apply_collar_ppa(spot, 0.04, 0.10, goo_premium_eur_per_kwh=0.0)
+        np.testing.assert_array_almost_equal(result_no_goo, result_goo_zero)
 
 
 # ---------------------------------------------------------------------------
@@ -482,7 +568,8 @@ class TestEffectivePpaPriceForYear:
                                                spot_prices_eur_per_kwh=spot)
         np.testing.assert_array_almost_equal(result, np.full(4, 0.065))
 
-    def test_floor_applies_max(self, spot: np.ndarray) -> None:
+    def test_floor_applies_max_then_adds_goo(self, spot: np.ndarray) -> None:
+        """Dispatcher: effective = max(spot, floor) + goo (not max(spot, floor+goo))."""
         cfg = PpaConfig(
             ppa_type=PPA_TYPE_FLOOR,
             pay_as_produced_price_eur_per_kwh=None,
@@ -495,11 +582,14 @@ class TestEffectivePpaPriceForYear:
         )
         result = effective_ppa_price_for_year(cfg, year=5, inflation_rate=0.02,
                                                spot_prices_eur_per_kwh=spot)
-        floor = 0.055 + 0.005  # = 0.06
-        expected = np.maximum(spot, floor)
+        # spot = [0.02, 0.06, 0.08, 0.12]
+        # max(spot, 0.055) = [0.055, 0.06, 0.08, 0.12]
+        # + 0.005 = [0.060, 0.065, 0.085, 0.125]
+        expected = np.maximum(spot, 0.055) + 0.005
         np.testing.assert_array_almost_equal(result, expected)
 
-    def test_collar_applies_clip(self, spot: np.ndarray) -> None:
+    def test_collar_applies_clip_then_adds_goo(self, spot: np.ndarray) -> None:
+        """Dispatcher: effective = clip(spot, floor, cap) + goo."""
         cfg = PpaConfig(
             ppa_type=PPA_TYPE_COLLAR,
             pay_as_produced_price_eur_per_kwh=None,
@@ -512,9 +602,10 @@ class TestEffectivePpaPriceForYear:
         )
         result = effective_ppa_price_for_year(cfg, year=5, inflation_rate=0.02,
                                                spot_prices_eur_per_kwh=spot)
-        floor = 0.04 + 0.003  # = 0.043
-        cap = 0.10
-        expected = np.clip(spot, floor, cap)
+        # spot = [0.02, 0.06, 0.08, 0.12]
+        # clip(spot, 0.04, 0.10) = [0.04, 0.06, 0.08, 0.10]
+        # + 0.003 = [0.043, 0.063, 0.083, 0.103]
+        expected = np.clip(spot, 0.04, 0.10) + 0.003
         np.testing.assert_array_almost_equal(result, expected)
 
     def test_baseload_requires_export(self, spot: np.ndarray) -> None:
@@ -576,21 +667,26 @@ class TestPpaExpiryMidProject:
             goo_premium_eur_per_kwh=0.005,
         )
 
-    def test_year_10_floor_active(self, floor_config_10y: PpaConfig) -> None:
+    def test_year_10_floor_active_no_goo(self, floor_config_10y: PpaConfig) -> None:
+        """effective_floor_price returns floor WITHOUT GoO."""
         price = effective_floor_price(floor_config_10y, year=10, inflation_rate=0.0)
-        assert math.isclose(price, 0.065)  # 0.06 + 0.005
+        assert math.isclose(price, 0.06)  # floor only, no GoO
 
     def test_year_11_floor_zero(self, floor_config_10y: PpaConfig) -> None:
         price = effective_floor_price(floor_config_10y, year=11, inflation_rate=0.0)
         assert price == 0.0
 
-    def test_dispatcher_year_10_has_floor(self, floor_config_10y: PpaConfig) -> None:
+    def test_dispatcher_year_10_has_floor_with_goo(self, floor_config_10y: PpaConfig) -> None:
+        """Dispatcher: max(spot, floor) + goo.
+        floor=0.06, goo=0.005.
+        spot[0]=0.02 < floor → 0.06 + 0.005 = 0.065.
+        spot[1]=0.08 > floor → 0.08 + 0.005 = 0.085."""
         spot = np.array([0.02, 0.08])
         result = effective_ppa_price_for_year(
             floor_config_10y, year=10, inflation_rate=0.0,
             spot_prices_eur_per_kwh=spot,
         )
-        expected = np.array([0.065, 0.08])
+        expected = np.array([0.065, 0.085])
         np.testing.assert_array_almost_equal(result, expected)
 
     def test_dispatcher_year_11_pure_spot(self, floor_config_10y: PpaConfig) -> None:
@@ -622,10 +718,11 @@ class TestPpaInflation:
             goo_premium_eur_per_kwh=0.005,
         )
         price = pay_as_produced_price(cfg, year=5, inflation_rate=0.03)
-        expected = 0.065 * (1.03 ** 5)
+        expected = 0.065 * (1.03 ** 4)
         assert math.isclose(price, expected, rel_tol=1e-9)
 
-    def test_collar_inflation_floor_and_cap(self) -> None:
+    def test_collar_inflation_floor_and_cap_no_goo(self) -> None:
+        """Inflation on floor and cap; GoO is NOT included in returned values."""
         cfg = PpaConfig(
             ppa_type=PPA_TYPE_COLLAR,
             pay_as_produced_price_eur_per_kwh=None,
@@ -637,8 +734,8 @@ class TestPpaInflation:
             goo_premium_eur_per_kwh=0.003,
         )
         floor, cap = effective_collar_prices(cfg, year=3, inflation_rate=0.02)
-        expected_floor = 0.04 * (1.02 ** 3) + 0.003
-        expected_cap = 0.10 * (1.02 ** 3)
+        expected_floor = 0.04 * (1.02 ** 2)  # GoO NOT included
+        expected_cap = 0.10 * (1.02 ** 2)
         assert math.isclose(floor, expected_floor, rel_tol=1e-9)
         assert math.isclose(cap, expected_cap, rel_tol=1e-9)
 

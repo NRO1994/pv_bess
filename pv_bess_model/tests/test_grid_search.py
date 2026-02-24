@@ -50,9 +50,9 @@ def _make_config(
 ) -> GridSearchConfig:
     """Build a minimal GridSearchConfig for testing.
 
-    Uses artificially low CAPEX (€1/kW PV, €1/kW + €1/kWh BESS) and zero
-    leverage so that all combinations yield positive equity cashflows over
-    the short 3-year lifetime, making IRR computable.
+    CAPEX is set so that Year 1 CF is negative (investment year) while
+    subsequent years are positive, giving a valid IRR sign change.
+    Zero leverage keeps things simple.
     """
     if scales is None:
         scales = SCALES
@@ -66,15 +66,15 @@ def _make_config(
         pv_peak_kwp=PV_PEAK_KWP,
         pv_base_timeseries_p50=pv,
         pv_degradation_rate=0.004,
-        # Very low CAPEX so the project is profitable over 3 years
-        pv_costs_capex={"eur_per_kw": 1.0},
+        # CAPEX large enough that Year 1 CF is negative (CAPEX > Year 1 revenue)
+        pv_costs_capex={"eur_per_kw": 50.0},
         pv_costs_opex={"pct_of_capex": 0.01},
         bess_rte=0.90,
         bess_min_soc_pct=10.0,
         bess_max_soc_pct=90.0,
         bess_degradation_rate=0.02,
         bess_availability_pct=100.0,
-        bess_costs_capex={"eur_per_kw": 1.0, "eur_per_kwh": 1.0},
+        bess_costs_capex={"eur_per_kw": 10.0, "eur_per_kwh": 10.0},
         bess_costs_opex={"pct_of_capex": 0.02},
         replacement_enabled=False,
         replacement_year=0,
@@ -98,6 +98,8 @@ def _make_config(
         afa_years_bess=5,
         gewerbesteuer_messzahl=0.035,
         gewerbesteuer_hebesatz=400,
+        koerperschaftsteuer_pct=15.0,
+        solidaritaetszuschlag_pct=5.5,
         debt_uses_p90=False,
         max_workers=1,
     )

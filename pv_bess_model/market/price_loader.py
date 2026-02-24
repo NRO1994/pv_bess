@@ -112,6 +112,7 @@ def load_market_prices(
     required_columns: list[str],
     price_unit: str,
     lifetime_years: int,
+    commissioning_year: int | None = None,
 ) -> MarketPrices:
     """Load a price CSV file and extend all columns to the full project lifetime.
 
@@ -130,6 +131,8 @@ def load_market_prices(
         Unit of the price values in the CSV (``"eur_per_mwh"`` or ``"eur_per_kwh"``).
     lifetime_years:
         Number of project years to cover.
+    commissioning_year:
+        If provided, rows before January 1st of this year are discarded.
 
     Returns
     -------
@@ -140,6 +143,7 @@ def load_market_prices(
         path=csv_path,
         required_columns=required_columns,
         price_unit=price_unit,
+        commissioning_year=commissioning_year,
     )
 
     extended: dict[str, np.ndarray] = {}

@@ -318,6 +318,7 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         spot_prices_yearly=spot_prices_yearly,
         fixed_prices_yearly=base.fixed_prices_yearly,
         offline_days_yearly=offline_days_yearly,
+        goo_prices_yearly=base.goo_prices_yearly if base.goo_prices_yearly else None,
     )
 
     annual_revenues = [r.total_revenue for r in sim.annual_results]
@@ -346,6 +347,8 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         afa_years_bess=base.afa_years_bess,
         gewerbesteuer_messzahl=base.gewerbesteuer_messzahl,
         gewerbesteuer_hebesatz=base.gewerbesteuer_hebesatz,
+        koerperschaftsteuer_pct=base.koerperschaftsteuer_pct,
+        solidaritaetszuschlag_pct=base.solidaritaetszuschlag_pct,
         replacement_cost=replacement_cost,
         replacement_year=replacement_year_cf,
     )
@@ -355,7 +358,7 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         for y in range(1, base.lifetime_years + 1)
     ]
     annual_debt_service = [
-        cf.years[y].debt_service for y in range(1, base.lifetime_years + 1)
+        cf.years[y - 1].debt_service for y in range(1, base.lifetime_years + 1)
     ]
     total_opex_lifetime = sum(annual_opex)
 
@@ -534,10 +537,17 @@ def run_monte_carlo(
     iteration_indices = list(range(1, mc_params.iterations + 1))
     results: list[MCIterationResult] = []
 
+    n_iterations = mc_params.iterations
+    log_interval = max(1, n_iterations // 10)
+
     if mc_params.max_workers == 1:
         # Single-process path: easier to debug and use in unit tests
         _mc_worker_init(shared_state)
-        results = [_run_mc_iteration(i) for i in iteration_indices]
+        for i in iteration_indices:
+            result = _run_mc_iteration(i)
+            results.append(result)
+            if i % log_interval == 0 or i == n_iterations:
+                logger.debug("Monte Carlo: %d/%d iterations complete.", i, n_iterations)
     else:
         with concurrent.futures.ProcessPoolExecutor(
             max_workers=mc_params.max_workers,
@@ -548,8 +558,14 @@ def run_monte_carlo(
                 executor.submit(_run_mc_iteration, i): i
                 for i in iteration_indices
             }
+            completed = 0
             for future in concurrent.futures.as_completed(futures):
                 results.append(future.result())
+                completed += 1
+                if completed % log_interval == 0 or completed == n_iterations:
+                    logger.debug(
+                        "Monte Carlo: %d/%d iterations complete.", completed, n_iterations
+                    )
 
     results.sort(key=lambda r: r.iteration)
 

@@ -519,3 +519,113 @@ class TestMultiYearDegradation:
         cap_y2 = result.annual_results[1].bess_capacity_kwh
         cap_y3 = result.annual_results[2].bess_capacity_kwh
         assert cap_y1 > cap_y2 > cap_y3
+
+
+# ---------------------------------------------------------------------------
+# Mid-life BESS replacement
+# ---------------------------------------------------------------------------
+
+
+class TestBessReplacement:
+    """Verify mid-life BESS replacement logic in the engine."""
+
+    def _base_inputs(self) -> tuple[np.ndarray, np.ndarray]:
+        """Return a simple PV timeseries and spot price array."""
+        daily_pv = np.zeros(HOURS_PER_DAY)
+        daily_pv[10:14] = 100.0
+        pv_year = _make_yearly_pv(daily_pv)
+        spot_year = _make_yearly_prices(np.full(HOURS_PER_DAY, 0.05))
+        return pv_year, spot_year
+
+    def test_capacity_resets_in_replacement_year(self) -> None:
+        """BESS capacity should reset to nameplate in the replacement year."""
+        pv_year, spot_year = self._base_inputs()
+        nameplate = 200.0
+        deg_rate = 0.10  # 10 % per year – large enough to be clearly visible
+
+        config = _make_config(
+            bess_nameplate_kwh=nameplate,
+            bess_power_kw=100.0,
+            bess_degradation_rate=deg_rate,
+            lifetime_years=3,
+            replacement=ReplacementConfig(enabled=True, year=2, fixed_eur=50_000.0),
+        )
+        result = run_simulation(
+            config=config,
+            pv_base_timeseries=pv_year,
+            spot_prices_yearly=[spot_year] * 3,
+            fixed_prices_yearly=[0.0] * 3,
+            offline_days_yearly=[set()] * 3,
+        )
+
+        cap_y1 = result.annual_results[0].bess_capacity_kwh
+        cap_y2 = result.annual_results[1].bess_capacity_kwh  # replacement year
+        cap_y3 = result.annual_results[2].bess_capacity_kwh
+
+        # Year 1: one year of degradation
+        assert abs(cap_y1 - nameplate * (1.0 - deg_rate) ** 1) < ATOL
+        # Year 2 (replacement): capacity back to nameplate
+        assert abs(cap_y2 - nameplate) < ATOL
+        # Year 3: degradation restarts from nameplate (age = 1 after reset)
+        assert abs(cap_y3 - nameplate * (1.0 - deg_rate) ** 1) < ATOL
+
+    def test_replacement_cost_reported_in_replacement_year_only(self) -> None:
+        """Replacement cost appears in AnnualResult.replacement_cost only in the replacement year."""
+        pv_year, spot_year = self._base_inputs()
+        nameplate = 200.0
+        bess_power = 100.0
+        fixed_eur = 50_000.0
+        eur_per_kw = 120.0
+        eur_per_kwh = 141.0
+
+        config = _make_config(
+            bess_nameplate_kwh=nameplate,
+            bess_power_kw=bess_power,
+            bess_degradation_rate=0.05,
+            lifetime_years=3,
+            replacement=ReplacementConfig(
+                enabled=True,
+                year=2,
+                fixed_eur=fixed_eur,
+                eur_per_kw=eur_per_kw,
+                eur_per_kwh=eur_per_kwh,
+            ),
+        )
+        result = run_simulation(
+            config=config,
+            pv_base_timeseries=pv_year,
+            spot_prices_yearly=[spot_year] * 3,
+            fixed_prices_yearly=[0.0] * 3,
+            offline_days_yearly=[set()] * 3,
+        )
+
+        expected_cost = fixed_eur + eur_per_kw * bess_power + eur_per_kwh * nameplate
+        assert abs(result.annual_results[0].replacement_cost - 0.0) < ATOL
+        assert abs(result.annual_results[1].replacement_cost - expected_cost) < ATOL
+        assert abs(result.annual_results[2].replacement_cost - 0.0) < ATOL
+
+    def test_disabled_replacement_capacity_monotonically_decreases(self) -> None:
+        """Disabled replacement leaves capacity monotonically decreasing and adds no cost."""
+        pv_year, spot_year = self._base_inputs()
+        nameplate = 200.0
+
+        config = _make_config(
+            bess_nameplate_kwh=nameplate,
+            bess_power_kw=100.0,
+            bess_degradation_rate=0.05,
+            lifetime_years=3,
+            replacement=ReplacementConfig(enabled=False, year=2, fixed_eur=50_000.0),
+        )
+        result = run_simulation(
+            config=config,
+            pv_base_timeseries=pv_year,
+            spot_prices_yearly=[spot_year] * 3,
+            fixed_prices_yearly=[0.0] * 3,
+            offline_days_yearly=[set()] * 3,
+        )
+
+        for ar in result.annual_results:
+            assert ar.replacement_cost == 0.0
+
+        caps = [ar.bess_capacity_kwh for ar in result.annual_results]
+        assert caps[0] > caps[1] > caps[2]

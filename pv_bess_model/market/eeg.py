@@ -20,6 +20,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from pv_bess_model.finance.inflation import inflate_value as _inflate_value
+
 logger = logging.getLogger(__name__)
 
 
@@ -91,7 +93,7 @@ def effective_eeg_price(
 
     base = config.floor_price_eur_per_kwh
     if config.inflation_enabled:
-        return base * (1.0 + inflation_rate) ** year
+        return _inflate_value(base, inflation_rate, year)
     return base
 
 

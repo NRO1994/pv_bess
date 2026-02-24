@@ -29,9 +29,37 @@ from pathlib import Path
 import numpy as np
 
 from pv_bess_model.config.defaults import (
+    DEFAULT_AFA_YEARS_BESS,
+    DEFAULT_AFA_YEARS_PV,
+    DEFAULT_BESS_AVAILABILITY_PCT,
+    DEFAULT_BESS_DEGRADATION_RATE_PCT,
+    DEFAULT_BESS_MAX_SOC_PCT,
+    DEFAULT_BESS_MIN_SOC_PCT,
+    DEFAULT_BESS_RTE_PCT,
+    DEFAULT_DISCOUNT_RATE,
+    DEFAULT_GEWERBESTEUER_HEBESATZ,
+    DEFAULT_GEWERBESTEUER_MESSZAHL,
+    DEFAULT_KOERPERSCHAFTSTEUER_PCT,
+    DEFAULT_INFLATION_RATE,
+    DEFAULT_INTEREST_RATE_PCT,
+    DEFAULT_LEVERAGE_PCT,
     DEFAULT_LIFETIME_YEARS,
+    DEFAULT_LOAN_TENOR_YEARS,
+    DEFAULT_MC_ITERATIONS,
+    DEFAULT_MC_SIGMA_BESS_AVAILABILITY_PCT,
+    DEFAULT_MC_SIGMA_CAPEX_PCT,
+    DEFAULT_MC_SIGMA_OPEX_PCT,
+    DEFAULT_MC_SIGMA_PV_YIELD_PCT,
     DEFAULT_OUTPUT_DIR,
+    DEFAULT_PV_DEGRADATION_RATE_PCT,
+    DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
+    DEFAULT_SYSTEM_LOSS_PCT,
     HOURS_PER_YEAR,
+    MARKETING_TYPE_EEG,
+    PPA_TYPE_COLLAR,
+    PPA_TYPE_FLOOR,
+    PPA_TYPE_NONE,
+    PPA_TYPE_PAY_AS_PRODUCED,
 )
 from pv_bess_model.config.loader import (
     PriceData,
@@ -48,9 +76,6 @@ from pv_bess_model.finance.inflation import inflate_value
 from pv_bess_model.finance.metrics import compute_all_metrics
 from pv_bess_model.market.eeg import EegConfig, eeg_config_from_dict, effective_eeg_price
 from pv_bess_model.market.ppa import (
-    PPA_TYPE_FLOOR,
-    PPA_TYPE_NONE,
-    PPA_TYPE_PAY_AS_PRODUCED,
     PpaConfig,
     pay_as_produced_price,
     ppa_config_from_dict,
@@ -175,8 +200,12 @@ def _build_fixed_prices_yearly(
             ppa_cfg = ppa_config_from_dict(ppa_dict)
             if year <= ppa_cfg.duration_years:
                 base = ppa_cfg.floor_price_eur_per_kwh or 0.0
-                price = base * ((1.0 + inflation_rate) ** year if ppa_cfg.inflation_enabled else 1.0)
-                price += ppa_cfg.goo_premium_eur_per_kwh
+                if ppa_cfg.inflation_enabled:
+                    price = inflate_value(base, inflation_rate, year)
+                else:
+                    price = base
+                # GoO premium is NOT added here; it is passed separately via
+                # _build_goo_prices_yearly() and added after the floor comparison.
 
         elif ppa_type == PPA_TYPE_PAY_AS_PRODUCED:
             ppa_cfg = ppa_config_from_dict(ppa_dict)
@@ -187,6 +216,40 @@ def _build_fixed_prices_yearly(
         fixed_prices.append(price)
 
     return fixed_prices
+
+
+def _build_goo_prices_yearly(
+    scenario: ScenarioConfig,
+) -> list[float]:
+    """Build the per-year GoO premium list for the dispatch engine.
+
+    Returns the Guarantee-of-Origin (GoO) premium in €/kWh for each project
+    year.  The premium is non-zero only during the active PPA period for floor
+    and collar PPA types.  Pay-as-produced GoO is already baked into the
+    ``fixed_prices_yearly`` value and should not be doubled here.
+
+    Parameters
+    ----------
+    scenario:
+        Validated scenario configuration.
+
+    Returns
+    -------
+    list[float]
+        GoO premium in €/kWh for each project year (length = lifetime_years).
+        Index 0 = year 1.  0.0 for years outside the PPA period.
+    """
+    lifetime = scenario.lifetime_years
+    ppa_dict = scenario.finance.get("revenue_streams", {}).get("ppa", {})
+    ppa_type = ppa_dict.get("type", PPA_TYPE_NONE)
+
+    if ppa_type in (PPA_TYPE_FLOOR, PPA_TYPE_COLLAR):
+        ppa_cfg = ppa_config_from_dict(ppa_dict)
+        goo = ppa_cfg.goo_premium_eur_per_kwh
+        duration = ppa_cfg.duration_years
+        return [goo if year <= duration else 0.0 for year in range(1, lifetime + 1)]
+
+    return [0.0] * lifetime
 
 
 def _build_spot_prices_yearly(
@@ -223,6 +286,46 @@ def _build_spot_prices_yearly(
             year_prices = year_prices * factor
         yearly.append(year_prices)
     return yearly
+
+
+# ---------------------------------------------------------------------------
+# Price extension helper
+# ---------------------------------------------------------------------------
+
+
+def _extend_all_price_columns(
+    price_data: PriceData,
+    required_columns: list[str],
+    target_years: int,
+) -> dict[str, np.ndarray]:
+    """Extend all required price columns to cover the full project lifetime.
+
+    Each column in *required_columns* is extended using the repeat-last-year
+    logic from :func:`extend_price_timeseries`.
+
+    Parameters
+    ----------
+    price_data:
+        Loaded price data with column arrays.
+    required_columns:
+        List of column names to extend.
+    target_years:
+        Project lifetime in years.
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        Mapping of column name → extended price array (length =
+        ``target_years × HOURS_PER_YEAR``).
+    """
+    extended: dict[str, np.ndarray] = {}
+    for col in required_columns:
+        extended[col] = extend_price_timeseries(
+            price_data.get_column(col),
+            target_years=target_years,
+            hours_per_year=HOURS_PER_YEAR,
+        )
+    return extended
 
 
 # ---------------------------------------------------------------------------
@@ -293,11 +396,11 @@ def run(args: argparse.Namespace) -> int:
 
     # Finance parameters
     finance = scenario.finance
-    inflation_rate = float(finance.get("inflation_rate", 0.02))
+    inflation_rate = float(finance.get("inflation_rate", DEFAULT_INFLATION_RATE))
     leverage_pct = float(finance.get("leverage_pct", 0.0))
-    interest_rate_pct = float(finance.get("interest_rate_pct", 4.5))
-    loan_tenor_years = int(finance.get("loan_tenor_years", 18))
-    discount_rate = float(scenario.project_settings.get("discount_rate", 0.06))
+    interest_rate_pct = float(finance.get("interest_rate_pct", DEFAULT_INTEREST_RATE_PCT))
+    loan_tenor_years = int(finance.get("loan_tenor_years", DEFAULT_LOAN_TENOR_YEARS))
+    discount_rate = float(scenario.project_settings.get("discount_rate", DEFAULT_DISCOUNT_RATE))
     debt_uses_p90 = bool(finance.get("debt_uses_p90", False))
 
     tax = finance.get("tax", {})
@@ -305,23 +408,25 @@ def run(args: argparse.Namespace) -> int:
     afa_years_bess = int(tax.get("afa_years_bess", 10))
     gewerbesteuer_hebesatz = int(tax.get("gewerbesteuer_hebesatz", 400))
     gewerbesteuer_messzahl = float(tax.get("gewerbesteuer_messzahl", 0.035))
+    koerperschaftsteuer_pct = float(tax.get("koerperschaftsteuer_pct", DEFAULT_KOERPERSCHAFTSTEUER_PCT))
+    solidaritaetszuschlag_pct = float(tax.get("solidaritaetszuschlag_pct", DEFAULT_SOLIDARITAETSZUSCHLAG_PCT))
 
     # PV parameters
     pv = scenario.pv
     pv_design = pv["design"]
     pv_perf = pv.get("performance", {})
     pv_peak_kwp = float(pv_design["peak_power_kwp"])
-    pv_degradation_rate = float(pv_perf.get("degradation_rate_pct_per_year", 0.4)) / 100.0
-    system_loss_pct = float(pv_perf.get("system_loss_pct", 14.0))
+    pv_degradation_rate = float(pv_perf.get("degradation_rate_pct_per_year", DEFAULT_PV_DEGRADATION_RATE_PCT)) / 100.0
+    system_loss_pct = float(pv_perf.get("system_loss_pct", DEFAULT_SYSTEM_LOSS_PCT))
 
     # BESS parameters
     bess = scenario.bess
     bess_perf = bess.get("performance", {})
-    bess_rte = float(bess_perf.get("round_trip_efficiency_pct", 88.0)) / 100.0
-    bess_min_soc_pct = float(bess_perf.get("min_soc_pct", 10.0))
-    bess_max_soc_pct = float(bess_perf.get("max_soc_pct", 90.0))
-    bess_degradation_rate = float(bess_perf.get("degradation_rate_pct_per_year", 2.0)) / 100.0
-    bess_availability_pct = float(bess_perf.get("bess_availability_pct", 100.0))
+    bess_rte = float(bess_perf.get("round_trip_efficiency_pct", DEFAULT_BESS_RTE_PCT)) / 100.0
+    bess_min_soc_pct = float(bess_perf.get("min_soc_pct", DEFAULT_BESS_MIN_SOC_PCT))
+    bess_max_soc_pct = float(bess_perf.get("max_soc_pct", DEFAULT_BESS_MAX_SOC_PCT))
+    bess_degradation_rate = float(bess_perf.get("degradation_rate_pct_per_year", DEFAULT_BESS_DEGRADATION_RATE_PCT)) / 100.0
+    bess_availability_pct = float(bess_perf.get("bess_availability_pct", DEFAULT_BESS_AVAILABILITY_PCT))
 
     bess_costs = bess.get("costs", {})
     replacement_cfg = bess_costs.get("replacement", {})
@@ -429,6 +534,7 @@ def run(args: argparse.Namespace) -> int:
             path=csv_path,
             required_columns=required_columns,
             price_unit=price_unit,
+            commissioning_year=scenario.commissioning_year,
         )
     except Exception as exc:
         logger.error("Price CSV load failed: %s", exc)
@@ -436,22 +542,21 @@ def run(args: argparse.Namespace) -> int:
 
     lifetime = scenario.lifetime_years
 
-    # Extend the "mid" price column to full project lifetime
+    # Extend ALL required price columns to full project lifetime
     mid_column = required_columns[0]
-    mid_prices_extended = extend_price_timeseries(
-        price_data.get_column(mid_column),
-        target_years=lifetime,
-        hours_per_year=HOURS_PER_YEAR,
-    )
+    extended_prices = _extend_all_price_columns(price_data, required_columns, lifetime)
+
     spot_prices_yearly = _build_spot_prices_yearly(
-        mid_prices_extended, lifetime, inflation_rate, inflation_on_prices
+        extended_prices[mid_column], lifetime, inflation_rate, inflation_on_prices
     )
 
     # P90 prices (same column unless specifically configured)
     spot_prices_yearly_p90 = spot_prices_yearly  # conservative: same as P50
 
-    # Fixed prices per year (EEG / PPA floor)
+    # Fixed prices per year (EEG / PPA floor, WITHOUT GoO)
     fixed_prices_yearly = _build_fixed_prices_yearly(scenario, inflation_rate)
+    # GoO premium per year (for floor and collar PPA types)
+    goo_prices_yearly = _build_goo_prices_yearly(scenario)
 
     # ------------------------------------------------------------------
     # Step 5: Grid Search
@@ -486,6 +591,7 @@ def run(args: argparse.Namespace) -> int:
         operating_mode=scenario.operating_mode,
         spot_prices_yearly=spot_prices_yearly,
         fixed_prices_yearly=fixed_prices_yearly,
+        goo_prices_yearly=goo_prices_yearly,
         lifetime_years=lifetime,
         leverage_pct=leverage_pct,
         interest_rate_pct=interest_rate_pct,
@@ -496,6 +602,8 @@ def run(args: argparse.Namespace) -> int:
         afa_years_bess=afa_years_bess,
         gewerbesteuer_messzahl=gewerbesteuer_messzahl,
         gewerbesteuer_hebesatz=gewerbesteuer_hebesatz,
+        koerperschaftsteuer_pct=koerperschaftsteuer_pct,
+        solidaritaetszuschlag_pct=solidaritaetszuschlag_pct,
         debt_uses_p90=debt_uses_p90,
         pv_base_timeseries_p90=p90_timeseries if debt_uses_p90 else None,
         spot_prices_yearly_p90=spot_prices_yearly_p90 if debt_uses_p90 else None,
@@ -559,6 +667,7 @@ def run(args: argparse.Namespace) -> int:
         spot_prices_yearly=spot_prices_yearly,
         fixed_prices_yearly=fixed_prices_yearly,
         offline_days_yearly=offline_days_yearly,
+        goo_prices_yearly=goo_prices_yearly,
     )
 
     annual_revenues = [r.total_revenue for r in sim.annual_results]
@@ -592,12 +701,14 @@ def run(args: argparse.Namespace) -> int:
         afa_years_bess=afa_years_bess,
         gewerbesteuer_messzahl=gewerbesteuer_messzahl,
         gewerbesteuer_hebesatz=gewerbesteuer_hebesatz,
+        koerperschaftsteuer_pct=koerperschaftsteuer_pct,
+        solidaritaetszuschlag_pct=solidaritaetszuschlag_pct,
         replacement_cost=replacement_cost if replacement_enabled else 0.0,
         replacement_year=replacement_year if replacement_enabled else None,
     )
 
     annual_opex = [inflate_value(opt.opex_base, inflation_rate, y) for y in range(1, lifetime + 1)]
-    annual_debt_service = [cashflow.years[y].debt_service for y in range(1, lifetime + 1)]
+    annual_debt_service = [cashflow.years[y - 1].debt_service for y in range(1, lifetime + 1)]
     annual_dscr: list[float | None] = []
     for y in range(lifetime):
         ds = annual_debt_service[y]
@@ -631,18 +742,13 @@ def run(args: argparse.Namespace) -> int:
         sigma_opex = float(mc_cfg.get("sigma_opex_pct", 5.0)) / 100.0
         sigma_avail = float(mc_cfg.get("sigma_bess_availability_pct", 2.0)) / 100.0
 
-        # Build scenario price mapping
+        # Build scenario price mapping (using already-extended prices)
         scenario_prices: dict[str, list[np.ndarray]] = {}
         if price_scenarios_cfg:
             for name, cfg in price_scenarios_cfg.items():
                 col = cfg["csv_column"]
-                extended = extend_price_timeseries(
-                    price_data.get_column(col),
-                    target_years=lifetime,
-                    hours_per_year=HOURS_PER_YEAR,
-                )
                 scenario_prices[name] = _build_spot_prices_yearly(
-                    extended, lifetime, inflation_rate, inflation_on_prices
+                    extended_prices[col], lifetime, inflation_rate, inflation_on_prices
                 )
             mc_price_scenarios = {
                 k: {"csv_column": v["csv_column"], "weight": float(v["weight"])}
@@ -705,6 +811,7 @@ def run(args: argparse.Namespace) -> int:
         annual_pv_production_kwh=annual_pv_kwh,
         annual_bess_throughput_kwh=annual_bess_throughput,
         annual_dscr=annual_dscr,
+        commissioning_year=scenario.commissioning_year,
     )
 
     write_grid_search_csv(
@@ -726,6 +833,7 @@ def run(args: argparse.Namespace) -> int:
         write_dispatch_sample_csv(
             path=output_dir / f"{scenario.name}_dispatch_sample.csv",
             hourly_sample=sim.hourly_sample,
+            start_year=scenario.commissioning_year,
         )
 
     # ------------------------------------------------------------------
