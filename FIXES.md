@@ -275,7 +275,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 ---
 
 ### FIX-22: Cashflow-CSV Year-Index basierend auf Inbetriebnahmejahr
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `output/csv_writer.py`
 
 **Problem:** Die `year`-Spalte im Cashflow-CSV beginnt bei 0 statt beim Inbetriebnahmejahr. Abhängig von FIX-08.
@@ -324,7 +324,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 | FIX-19 | CLAUDE.md aktualisieren | OFFEN | Mittel |
 | FIX-20 | CSV_DELIMITER in Tests | OFFEN | Niedrig |
 | FIX-21 | PV-Cache in .data/ | OFFEN | Niedrig |
-| FIX-22 | Cashflow Year-Index | OFFEN | Mittel |
+| FIX-22 | Cashflow Year-Index | ERLEDIGT | Mittel |
 | FIX-23 | Fortschrittslogging | OFFEN | Niedrig |
 
 **Empfohlene Reihenfolge der Bearbeitung:**

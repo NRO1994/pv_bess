@@ -779,6 +779,7 @@ def run(args: argparse.Namespace) -> int:
         annual_pv_production_kwh=annual_pv_kwh,
         annual_bess_throughput_kwh=annual_bess_throughput,
         annual_dscr=annual_dscr,
+        commissioning_year=scenario.commissioning_year,
     )
 
     write_grid_search_csv(

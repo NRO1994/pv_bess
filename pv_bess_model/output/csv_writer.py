@@ -146,6 +146,7 @@ def write_cashflows_csv(
     annual_pv_production_kwh: list[float],
     annual_bess_throughput_kwh: list[float],
     annual_dscr: list[float | None],
+    commissioning_year: int | None = None,
 ) -> None:
     """Write the per-year cashflow table.
 
@@ -161,6 +162,10 @@ def write_cashflows_csv(
         BESS total throughput per year in kWh (same indexing).
     annual_dscr:
         Per-year DSCR values (same indexing, None outside loan tenor).
+    commissioning_year:
+        If provided, the ``year`` column shows calendar years
+        (commissioning_year, commissioning_year+1, …) instead of project
+        year indices (1, 2, …).
     """
     rows = []
     cumulative = 0.0
@@ -179,8 +184,13 @@ def write_cashflows_csv(
         )
         dscr_val = annual_dscr[i] if i < len(annual_dscr) else None
 
+        if commissioning_year is not None:
+            year_label = str(commissioning_year + y.year - 1)
+        else:
+            year_label = str(y.year)
+
         rows.append({
-            "year": str(y.year),
+            "year": year_label,
             "capex_eur": fmt_currency(y.capex),
             "pv_production_mwh": fmt_float(pv_mwh),
             "bess_throughput_mwh": fmt_float(bess_mwh),
