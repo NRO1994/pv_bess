@@ -43,7 +43,7 @@ Im Cashflow soll die Replacement-Kosten als Investitionsauszahlung behandelt wer
 ```
 
 Die Finanzierung des Replacements muss geklärt werden:
-- **Annahme:** 100% Eigenkapital-finanziert (kein zusätzliches Fremdkapital)
+- 100% Eigenkapital-finanziert (kein zusätzliches Fremdkapital)
 - Die Replacement-Kosten werden direkt vom Equity-Cashflow abgezogen
 
 ### 2. Neue Abschreibung ab Replacement-Jahr

@@ -75,10 +75,9 @@ opex_base = optimal.opex_base * opex_factor
 }
 ```
 
-**Abwärtskompatibilität:** Die alten Felder (`sigma_capex_pct`, `sigma_opex_pct`,
-`sigma_pv_yield_pct`) sollen weiterhin akzeptiert werden. Wenn die alten Felder gesetzt
-sind, werden sie auf PV und BESS gleich angewendet. Die neuen, spezifischen Felder
-haben Vorrang.
+**Abwärtskompatibilität:** 
+Keine berücksichtigung der abwärtskompatibilität. Die Änderungen können ohne Rücksichtnahme auf bestehende Inputdateien 
+getätigt werden - es gibt keine.
 
 #### MCParams-Erweiterung
 ```python
@@ -106,7 +105,7 @@ opex_factor_bess = rng.normal(1.0, mc.sigma_opex_bess)
 ```python
 capex_pv = optimal.capex_pv * capex_factor_pv
 capex_bess = optimal.capex_bess * capex_factor_bess
-capex_grid = optimal.capex_grid  # Grid-CAPEX wird nicht variiert (oder eigenes Sigma)
+capex_grid = optimal.capex_grid  # Grid-CAPEX wird nicht variiert
 capex_total = capex_pv + capex_bess + capex_grid + optimal.capex_other
 
 # OPEX getrennt skalieren (braucht Zugriff auf Einzel-OPEX)

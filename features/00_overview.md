@@ -43,13 +43,13 @@ auf früheren aufbauen.
 ## Abhängigkeitsgraph
 
 ```
-01 (Collar Fix) ──────────────────────┐
-02 (Systemverluste) ──┐               │
-03 (BESS Opt. OPEX)   │               │
-04 (BESS Repl. CAPEX) │               │
+01 (Collar Fix)  ──────────────────────┐
+02 (Systemverluste)  ──┐               │
+03 (BESS Opt. OPEX)    │               │
+04 (BESS Repl. CAPEX)  │               │
 05 (MC Erweiterungen) ─┤               │
                        ▼               │
-              06 (Preis-Wetter-       │
+              06 (Preis-Wetter-        │
                   Mapping)             │
                        │               │
                        ▼               ▼
