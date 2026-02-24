@@ -36,10 +36,32 @@ Reference LP optimiser (4 h, Green Mode):
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import numpy as np
 import numpy_financial as npf
 import pytest
+
+# ---------------------------------------------------------------------------
+# Reference data directory
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def data_dir() -> Path:
+    """Absolute path to the project-level ``.data/`` reference data directory.
+
+    Contains static reference files (e.g. ``reference_prices.csv``) that are
+    shared across integration tests. Unit tests should use ``tmp_path`` for
+    ephemeral synthetic data instead.
+
+    Returns
+    -------
+    pathlib.Path
+        Path to ``<project_root>/.data/``.
+    """
+    return Path(__file__).parents[2] / ".data"
+
 
 # ---------------------------------------------------------------------------
 # PV timeseries fixtures

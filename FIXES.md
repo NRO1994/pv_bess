@@ -190,7 +190,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 ---
 
 ### FIX-16: Integrationstest für PVGIS-Fetch
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** Neuer Test `tests/test_pvgis_integration.py`
 
 **Problem:** Es gibt keinen Integrationstest, der einen echten PVGIS-API-Aufruf testet.
@@ -204,7 +204,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 ---
 
 ### FIX-17: Pytest-Konfiguration für Integrationstests
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `pyproject.toml`
 
 **Problem:** Es gibt keine Pytest-Marker-Konfiguration. Integrationstests sollen standardmäßig übersprungen und nur separat ausgeführt werden.
@@ -220,7 +220,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 ---
 
 ### FIX-18: Testdaten im `.data`-Verzeichnis
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** Diverse Testdateien, Verzeichnisstruktur
 
 **Problem:** Es gibt kein `.data`-Verzeichnis. Test-CSV-Dateien werden in Tests via `tmp_path` erstellt, was korrekt ist. Aber gemeinsame Testdaten (z.B. Referenz-CSVs) sollten in `.data/` liegen.
@@ -318,9 +318,9 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 | FIX-13 | percentile_timeseries entfernen | ERLEDIGT | - |
 | FIX-14 | Enums zentral | ERLEDIGT | - |
 | FIX-15 | Magic Numbers in main.py | ERLEDIGT | - |
-| FIX-16 | PVGIS Integrationstest | OFFEN | Niedrig |
-| FIX-17 | Pytest Marker für Integration | OFFEN | Niedrig |
-| FIX-18 | Testdaten in .data/ | OFFEN | Niedrig |
+| FIX-16 | PVGIS Integrationstest | ERLEDIGT | - |
+| FIX-17 | Pytest Marker für Integration | ERLEDIGT | - |
+| FIX-18 | Testdaten in .data/ | ERLEDIGT | - |
 | FIX-19 | CLAUDE.md aktualisieren | OFFEN | Mittel |
 | FIX-20 | CSV_DELIMITER in Tests | ERLEDIGT | - |
 | FIX-21 | PV-Cache in .data/ | ERLEDIGT | - |

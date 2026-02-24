@@ -40,3 +40,7 @@ testpaths = ["pv_bess_model/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "integration: Integrationstests mit echten Netzwerkzugriffen (separat ausführen mit -m integration)",
+]
+addopts = "-m 'not integration'"
