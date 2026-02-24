@@ -39,7 +39,7 @@ pv_bess_model/
 │   ├── cashflow.py             # Annual cashflow projection (revenue, OPEX, debt, equity)
 │   ├── costs.py                # Unified CAPEX/OPEX calculation from scenario JSON
 │   ├── debt.py                 # Annuity loan model
-│   ├── tax.py                  # Simplified tax treatment (AfA, GewSt)
+│   ├── tax.py                  # Tax treatment (AfA, GewSt, KSt, Soli)
 │   ├── metrics.py              # IRR, NPV, DSCR calculation
 │   └── inflation.py            # Inflation escalation logic
 ├── optimization/
@@ -88,7 +88,7 @@ pv_bess_model/
 - Parameters from scenario JSON: latitude, longitude, PV peak power (kWp), system loss (%), mounting type, azimuth, tilt
 - Fetch **all available historical years** (typically 2005–2020 depending on database)
 - Handle API rate limits gracefully (retry with backoff)
-- Cache downloaded data locally to avoid redundant API calls (cache in `~/.pv_bess_cache/`)
+- Cache downloaded data locally to avoid redundant API calls (cache in `.data/pvgis_cache/` relative to project root)
 
 #### Timeseries Processing (`timeseries.py`)
 - Input: Dictionary of {year: hourly_production_array} from PVGIS
@@ -153,8 +153,6 @@ The optimizer solves a linear program for each day (24 hourly timesteps) to dete
 - `discharge_green[t]` – kWh discharged from BESS (green energy)
 - `export_pv[t]` – kWh PV directly exported to grid
 - `curtail[t]` – kWh PV curtailed
-- `revenue_export_pv[t]` – revenue helper variable for EEG floor linearization
-- `revenue_discharge_green[t]` – revenue helper variable for EEG floor linearization
 
 **Grey Mode (additional variables):**
 - `charge_grid[t]` – kWh charged from grid into BESS (at spot price)
@@ -162,34 +160,31 @@ The optimizer solves a linear program for each day (24 hourly timesteps) to dete
 - `soc_green[t]` – SoC tracking for green kWh in BESS
 - `soc_grey[t]` – SoC tracking for grey kWh in BESS
 
+##### Effective Price Pre-Computation
+
+During the fixed-price period (EEG or PPA), the effective price per kWh is `max(price_spot[t], price_fixed) + goo_premium`. Since both spot prices and the floor price are known constants at solve time, the effective price is **pre-computed** before the LP is built:
+
+```
+effective_green_price[t] = max(price_spot[t], price_fixed) + goo_premium
+```
+
+After the fixed-price period expires, `price_fixed` is set to 0, and the effective price equals `price_spot[t] + goo_premium`. This avoids the need for revenue helper variables and their associated linearization constraints.
+
 ##### Objective Function
 
 **Green Mode – maximize daily revenue:**
 ```
-max Σ_t [ revenue_export_pv[t] + revenue_discharge_green[t] ]
+max Σ_t [ export_pv[t] × effective_green_price[t]
+        + discharge_green[t] × RTE × effective_green_price[t] ]
 ```
 
 **Grey Mode – maximize daily net revenue:**
 ```
-max Σ_t [ revenue_export_pv[t]
-        + revenue_discharge_green[t]
+max Σ_t [ export_pv[t] × effective_green_price[t]
+        + discharge_green[t] × RTE × effective_green_price[t]
         + discharge_grey[t] × RTE × price_spot[t]
         - charge_grid[t] × price_spot[t] ]
 ```
-
-##### EEG/PPA Floor Price Linearization
-
-During the fixed-price period (EEG or PPA), the effective price per kWh is `max(price_spot[t], price_fixed)`. This is linearized via revenue helper variables:
-
-```
-revenue_export_pv[t] ≥ export_pv[t] × price_spot[t]
-revenue_export_pv[t] ≥ export_pv[t] × price_fixed
-
-revenue_discharge_green[t] ≥ discharge_green[t] × RTE × price_spot[t]
-revenue_discharge_green[t] ≥ discharge_green[t] × RTE × price_fixed
-```
-
-Since the objective maximizes revenue, the solver will automatically select the higher value. After the fixed-price period expires, `price_fixed` is set to 0 (or removed), and revenue equals spot price.
 
 ##### Constraints
 
@@ -242,8 +237,8 @@ All decision variables ≥ 0
 
 - Solver: `scipy.optimize.linprog` with HiGHS backend
 - Problem size per day:
-  - Green Mode: ~72 variables (24h × 3 decision + revenue helpers), ~170 constraints
-  - Grey Mode: ~168 variables (24h × 7 decision + revenue helpers), ~340 constraints
+  - Green Mode: ~96 variables (24h × 4 decision), ~120 constraints
+  - Grey Mode: ~192 variables (24h × 8 decision), ~240 constraints
 - Expected solve time: <1ms per day with HiGHS
 - Total per year: 365 solves × <1ms = <0.4s per year
 - The optimizer returns per-hour dispatch decisions: `charge_pv[t]`, `charge_grid[t]`, `discharge_green[t]`, `discharge_grey[t]`, `export_pv[t]`, `curtail[t]`
@@ -279,7 +274,7 @@ BESS availability is modelled as whole-day outages (maintenance, faults). This a
 
 #### EEG Module (`eeg.py`)
 - EEG tariff acts as a **floor price (Mindestpreis)**, not a fixed price
-- Effective price per kWh: `max(price_spot[t], price_eeg)`
+- Effective price per kWh: `max(price_spot[t], price_eeg) + goo_premium`
 - The floor applies for the first X years (both tariff level and duration from user input)
 - After X years: pure market price (floor drops away)
 - Inflation adjustment: optional, controlled by user flag (`eeg_inflation: true/false`)
@@ -294,26 +289,26 @@ Implement four PPA structures, selectable per scenario:
 
 2. **Baseload PPA** (`ppa_baseload`)
    - Seller commits to deliver a flat power profile (baseload MW)
-   - Baseload level: user input or calculated as annual production / 8760
+   - Baseload level: explicit user input (`baseload_mw` required, no auto-calculation)
    - Profile cost: When PV < baseload → seller buys shortfall at market price. When PV > baseload → seller sells excess at market price
    - Net revenue = baseload_volume × ppa_price + excess_revenue - shortfall_cost
    - BESS can help shape the profile (reduce shortfall, shift excess)
 
 3. **Floor PPA** (`ppa_floor`)
    - Minimum price guaranteed (floor), seller keeps upside above floor
-   - Same logic as EEG: `revenue_per_kwh = max(price_spot[t], ppa_price)`
+   - Same logic as EEG: `revenue_per_kwh = max(price_spot[t], ppa_price) + goo_premium`
    - Floor price from user input
 
 4. **Collar PPA** (`ppa_collar`)
    - Floor price and cap price as boundaries
-   - Revenue per kWh = clip(market_price, floor_price, cap_price)
+   - Revenue per kWh = `clip(market_price, floor_price, cap_price) + goo_premium`
    - Both prices from user input
 
 All PPA models:
 - Duration (years) from user input
 - After PPA expires: switch to pure market price
 - Inflation escalation: optional per user flag, effective on all price related data points (floor, cap, ppa_price)
-- Guarantee of origin premium added to effective price for all PPA structures (user-defined €/kWh)
+- Guarantee of origin (GoO) premium added **after** the floor/clip operation for all PPA structures (user-defined €/kWh)
 
 ### 5. Finance Module (`finance/`)
 
@@ -367,8 +362,8 @@ BESS replacement cost follows the same three-component schema (`fixed_eur`, `eur
   - BESS discharge revenue grey (market price, Grey Mode only)
   - Minus: grid import costs (Grey Mode only)
 - Both grid search and Monte Carlo run full multi-year dispatch with degradation and price changes
-- CAPEX: Year 0
-- OPEX: Annual, inflated per year
+- CAPEX: Year 1 (commissioning year, same year as first revenue and OPEX)
+- OPEX: Annual, inflated per year (inflation starts in year 2)
 - Cashflow per year: Revenue - OPEX - Debt Service - Tax = Equity Cashflow
 
 #### Debt Module (`debt.py`)
@@ -381,10 +376,13 @@ BESS replacement cost follows the same three-component schema (`fixed_eur`, `eur
 - DSCR per year = (Revenue - OPEX) / Debt Service
 
 #### Tax Module (`tax.py`)
-- Simplified German tax treatment with two components:
+- German tax treatment with four components:
   - **Linear depreciation (AfA)**: Separate depreciation periods for PV and BESS (user-defined, e.g., 20 years for PV, 10 years for BESS). Depreciation base = CAPEX of respective asset.
   - **Gewerbesteuer (GewSt)**: `GewSt = max(0, taxable_income) × Messzahl × Hebesatz / 100` where `taxable_income = Revenue - OPEX - AfA + Verlustvortrag_adjustment`
-- **Verlustvortrag (loss carry-forward)**: If taxable income is negative in a year, the loss is carried forward indefinitely. Carried-forward losses offset future positive taxable income before GewSt is calculated.
+  - **Körperschaftsteuer (KSt)**: `KSt = max(0, taxable_income) × koerperschaftsteuer_pct / 100` (default: 15%)
+  - **Solidaritätszuschlag (Soli)**: `Soli = KSt × solidaritaetszuschlag_pct / 100` (default: 5.5%)
+- **Total tax per year**: `GewSt + KSt + Soli`
+- **Verlustvortrag (loss carry-forward)**: If taxable income is negative in a year, the loss is carried forward indefinitely. Carried-forward losses offset future positive taxable income before tax is calculated.
 - Tax reduces equity cashflow
 
 #### Metrics (`metrics.py`)
@@ -490,8 +488,8 @@ Produce the following CSV files per scenario run:
      - Total production (MWh lifetime), total revenue, total CAPEX, total OPEX
 
 2. **`{scenario_name}_cashflows.csv`**
-   - One row per project year
-   - Columns: Year, PV Production (MWh), BESS Throughput (MWh), Revenue PV (€), Revenue BESS Green (€), Revenue BESS Grey (€), Grid Import Cost (€), Total Revenue (€), CAPEX (€), OPEX (€), Debt Service (€), Gewerbesteuer (€), Decepriation (€), Equity CF (€), Cumulative Equity CF (€), DSCR
+   - One row per project year (Year column shows calendar year starting from commissioning_year)
+   - Columns: Year, PV Production (MWh), BESS Throughput (MWh), Revenue PV (€), Revenue BESS Green (€), Revenue BESS Grey (€), Grid Import Cost (€), Total Revenue (€), CAPEX (€), OPEX (€), Debt Service (€), Gewerbesteuer (€), Körperschaftsteuer (€), Solidaritätszuschlag (€), Depreciation (€), Equity CF (€), Cumulative Equity CF (€), DSCR
 
 3. **`{scenario_name}_grid_search.csv`**
    - One row per (scale, E/P ratio) combination
@@ -535,6 +533,7 @@ All output files go to a user-specified output directory (default: `./output/{sc
   },
   "project_settings": {
     "lifetime_years": 25,
+    "commissioning_year": 2027,
     "discount_rate": 0.06,
     "operating_mode": "green",
     "location": {
@@ -645,7 +644,9 @@ All output files go to a user-specified output directory (default: `./output/{sc
         "afa_years_pv": 20,
         "afa_years_bess": 10,
         "gewerbesteuer_hebesatz": 400,
-        "gewerbesteuer_messzahl": 0.035
+        "gewerbesteuer_messzahl": 0.035,
+        "koerperschaftsteuer_pct": 15.0,
+        "solidaritaetszuschlag_pct": 5.5
       }
     }
   }
@@ -727,7 +728,7 @@ python -m pv_bess_model.main --scenario scenarios/my_scenario.json --dry-run
   DAYS_PER_YEAR: int = 365
   HOURS_PER_DAY: int = 24
   PVGIS_API_BASE_URL: str = "https://re.jrc.ec.europa.eu/api/v5_3/"
-  PVGIS_CACHE_DIR: str = "~/.pv_bess_cache"
+  PVGIS_CACHE_DIR: str = ".data/pvgis_cache"
   DEFAULT_MC_ITERATIONS: int = 1000
   DEFAULT_START_SOC_FRACTION: float = 50.0  # Start at 50% bess capacity
   # ... etc.
@@ -839,17 +840,17 @@ ruff>=0.1
 The price CSV files must follow this format:
 
 ```csv
-timestamp,low,mid,high
-2023-01-01T00:00:00,45.23,9.12,10.12
-2023-01-01T01:00:00,44.89,-12.23,100.9
-2023-01-01T02:00:00,44.56,88.12,91.23
-2023-01-01T03:00:00,45.01,72.12,1.01
+timestamp;low;mid;high
+2023-01-01T00:00:00;45.23;9.12;10.12
+2023-01-01T01:00:00;44.89;-12.23;100.9
+2023-01-01T02:00:00;44.56;88.12;91.23
+2023-01-01T03:00:00;45.01;72.12;1.01
 ...
 ```
 
 - **timestamp**: ISO 8601 format, hourly resolution
 - **low/mid/high**: Electricity price in the unit specified by `price_unit` in scenario JSON
-- Delimiter: comma
+- Delimiter: semicolon (`;`), configured via `CSV_DELIMITER` in `config/defaults.py`
 - Header row required
 - No missing values allowed
 - Minimum: one full year (8,760 rows)
