@@ -52,8 +52,9 @@ def _make_pv_array(peak_kwh: float = 25.0) -> np.ndarray:
 def base_config() -> GridSearchConfig:
     """Minimal GridSearchConfig shared by all MC tests (module scope for speed).
 
-    Uses artificially low CAPEX (€1/kW) and zero leverage so every combination
-    yields positive equity cashflows over 2 years, keeping IRR always computable.
+    CAPEX is set so that Year 1 CF is negative (investment year) while
+    subsequent years are positive, giving a valid IRR sign change.
+    Zero leverage keeps things simple.
     """
     spot = _make_price_array(0.06)
     pv = _make_pv_array(25.0)
@@ -63,14 +64,15 @@ def base_config() -> GridSearchConfig:
         pv_peak_kwp=PV_PEAK_KWP,
         pv_base_timeseries_p50=pv,
         pv_degradation_rate=0.004,
-        pv_costs_capex={"eur_per_kw": 1.0},
+        # CAPEX large enough that Year 1 CF is negative (CAPEX > Year 1 revenue)
+        pv_costs_capex={"eur_per_kw": 50.0},
         pv_costs_opex={"pct_of_capex": 0.01},
         bess_rte=0.90,
         bess_min_soc_pct=10.0,
         bess_max_soc_pct=90.0,
         bess_degradation_rate=0.02,
         bess_availability_pct=100.0,
-        bess_costs_capex={"eur_per_kw": 1.0, "eur_per_kwh": 1.0},
+        bess_costs_capex={"eur_per_kw": 10.0, "eur_per_kwh": 10.0},
         bess_costs_opex={"pct_of_capex": 0.02},
         replacement_enabled=False,
         replacement_year=0,

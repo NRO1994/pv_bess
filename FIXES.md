@@ -90,8 +90,8 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 ---
 
 ### FIX-08: CAPEX/OPEX im ersten Jahr + Inbetriebnahmejahr als User-Input
-**Status:** OFFEN
-**Dateien:** `finance/cashflow.py`, `config/schema.py`, `config/loader.py`, `main.py`, `output/csv_writer.py`
+**Status:** ERLEDIGT
+**Dateien:** `finance/cashflow.py`, `config/schema.py`, `config/loader.py`, `config/defaults.py`, `main.py`, `output/csv_writer.py`, `optimization/grid_search.py`, `optimization/monte_carlo.py`
 
 **Problem:** Aktuell wird CAPEX in "Jahr 0" und OPEX ab "Jahr 1" gebucht. Laut FIXES.md sollen **beide im ersten Jahr** (dem Inbetriebnahmejahr) anfallen. Zusätzlich soll das Inbetriebnahmejahr (z.B. 2027) als User-Input im Szenario-JSON aufgenommen werden.
 
@@ -269,7 +269,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 
 **Empfohlene Änderung:**
 1. In `config/defaults.py`: `PVGIS_CACHE_DIR = ".data/pvgis_cache"` (relativ zum Projektroot).
-2. `.data/pvgis_cache/` in `.gitignore` aufnehmen.
+2. `.data/` in `.gitignore` aufnehmen.
 3. `pvgis_client.py` anpassen: Pfad relativ zum Arbeitsverzeichnis auflösen.
 
 ---
@@ -310,7 +310,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 | FIX-05 | Baseload Überschuss zum Spot | ERLEDIGT | - |
 | FIX-06 | GoO auf finalen Preis | ERLEDIGT | - |
 | FIX-07 | Inflation ab Jahr 2 | ERLEDIGT | - |
-| FIX-08 | CAPEX/OPEX in Jahr 1 + Inbetriebnahmejahr | OFFEN | **Hoch** |
+| FIX-08 | CAPEX/OPEX in Jahr 1 + Inbetriebnahmejahr | ERLEDIGT | - |
 | FIX-09 | Preis-CSV ab Inbetriebnahmejahr filtern | OFFEN | Mittel |
 | FIX-10 | Alle Preisszenarien verlängern | OFFEN | Mittel |
 | FIX-11 | Körperschaftsteuer | ERLEDIGT | - |

@@ -284,6 +284,7 @@ def sample_scenario_config_green() -> dict:
         },
         "project_settings": {
             "lifetime_years": 25,
+            "commissioning_year": 2027,
             "discount_rate": 0.06,
             "operating_mode": "green",
             "location": {
@@ -431,6 +432,7 @@ def sample_scenario_config_grey() -> dict:
         },
         "project_settings": {
             "lifetime_years": 25,
+            "commissioning_year": 2027,
             "discount_rate": 0.06,
             "operating_mode": "grey",
             "location": {

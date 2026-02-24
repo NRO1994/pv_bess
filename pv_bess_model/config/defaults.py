@@ -113,6 +113,9 @@ DEFAULT_LOAN_TENOR_YEARS: int = 18
 DEFAULT_LIFETIME_YEARS: int = 25
 """Default project lifetime in years."""
 
+DEFAULT_COMMISSIONING_YEAR: int = 2027
+"""Default commissioning (Inbetriebnahme) calendar year."""
+
 IRR_MAX_ITERATIONS: int = 1000
 """Maximum iterations for IRR Newton-Raphson convergence (numpy_financial internal)."""
 

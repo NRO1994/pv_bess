@@ -387,6 +387,7 @@ _PROJECT_SETTINGS = {
     "type": "object",
     "required": [
         "lifetime_years",
+        "commissioning_year",
         "discount_rate",
         "operating_mode",
         "location",
@@ -395,6 +396,7 @@ _PROJECT_SETTINGS = {
     ],
     "properties": {
         "lifetime_years": {"type": "integer", "minimum": 1},
+        "commissioning_year": {"type": "integer", "minimum": 2020},
         "discount_rate": {"type": "number", "minimum": 0},
         "operating_mode": {"type": "string", "enum": ["green", "grey"]},
         "location": _LOCATION,

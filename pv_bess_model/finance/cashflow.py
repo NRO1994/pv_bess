@@ -1,8 +1,11 @@
 """Annual cashflow projection: revenue, OPEX, debt service, tax, equity CF.
 
 Builds a year-by-year cashflow table for the full project lifetime.
-Year 0 carries the equity portion of CAPEX (negative). Years 1..N carry
-operating cashflows: Revenue - OPEX - Debt Service - Tax = Equity CF.
+CAPEX and first-year OPEX both fall in Year 1 (the commissioning year).
+There is no separate Year 0.
+
+Equity CF Year 1 = Revenue - OPEX - Equity Investment - Debt Service - Tax.
+Equity CF Year 2+ = Revenue - OPEX - Debt Service - Tax.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ class AnnualCashflow:
     year: int
     revenue: float
     opex: float
+    capex: float
     debt_service: float
     depreciation: float
     gewerbesteuer: float
@@ -42,9 +46,12 @@ class CashflowProjection:
     """Complete multi-year cashflow projection.
 
     Attributes:
-        years: List of :class:`AnnualCashflow` (year 0 through lifetime).
+        years: List of :class:`AnnualCashflow` for years 1 through lifetime.
+            Index 0 = Year 1 (commissioning year).
         equity_cashflows: Array of equity CFs for IRR/NPV calculation.
+            Length = lifetime_years. Index 0 = Year 1.
         project_cashflows: Array of project CFs (pre-leverage) for Project IRR.
+            Length = lifetime_years. Index 0 = Year 1.
     """
 
     years: list[AnnualCashflow]
@@ -72,8 +79,11 @@ def build_cashflow_projection(
 ) -> CashflowProjection:
     """Build the complete annual cashflow projection.
 
+    CAPEX is booked in Year 1 (the commissioning year) together with the
+    first year of operations. There is no separate Year 0.
+
     Args:
-        lifetime_years: Project lifetime (number of operating years, 1-indexed).
+        lifetime_years: Project lifetime (number of operating years).
         annual_revenues: Revenue per operating year (list of length ``lifetime_years``).
             Index 0 = year 1, index 1 = year 2, etc.
         base_opex: Base-year annual OPEX (before inflation).
@@ -94,37 +104,19 @@ def build_cashflow_projection(
     Returns:
         :class:`CashflowProjection` with per-year detail and summary arrays.
     """
-    equity_cf_array = np.zeros(lifetime_years + 1)
-    project_cf_array = np.zeros(lifetime_years + 1)
+    equity_cf_array = np.zeros(lifetime_years)
+    project_cf_array = np.zeros(lifetime_years)
     yearly_results: list[AnnualCashflow] = []
 
-    # Year 0: CAPEX outflow (equity portion)
     equity_investment = capex_total - debt_schedule.loan_amount
-    equity_cf_array[0] = -equity_investment
-    project_cf_array[0] = -capex_total
-
-    yearly_results.append(
-        AnnualCashflow(
-            year=0,
-            revenue=0.0,
-            opex=0.0,
-            debt_service=0.0,
-            depreciation=0.0,
-            gewerbesteuer=0.0,
-            koerperschaftsteuer=0.0,
-            solidaritaetszuschlag=0.0,
-            total_tax=0.0,
-            project_cf=-capex_total,
-            equity_cf=-equity_investment,
-        )
-    )
 
     loss_carryforward = 0.0
 
     for y in range(1, lifetime_years + 1):
-        revenue = annual_revenues[y - 1]
+        idx = y - 1
+        revenue = annual_revenues[idx]
 
-        # OPEX with inflation (year index for inflation = y, since year 0 = base)
+        # OPEX with inflation
         opex = inflate_value(base_opex, inflation_rate, y)
 
         # Add BESS replacement cost in the replacement year
@@ -150,20 +142,25 @@ def build_cashflow_projection(
         )
         loss_carryforward = tax_result.loss_carryforward_remaining
 
-        # Project CF (pre-leverage): Revenue - OPEX - Tax
-        proj_cf = revenue - opex - tax_result.total_tax
+        # CAPEX is booked in Year 1 only
+        capex_this_year = capex_total if y == 1 else 0.0
+        equity_capex_this_year = equity_investment if y == 1 else 0.0
 
-        # Equity CF (post-leverage): Revenue - OPEX - Debt Service - Tax
-        eq_cf = revenue - opex - debt_svc - tax_result.total_tax
+        # Project CF (pre-leverage): Revenue - OPEX - Tax - CAPEX
+        proj_cf = revenue - opex - tax_result.total_tax - capex_this_year
 
-        equity_cf_array[y] = eq_cf
-        project_cf_array[y] = proj_cf
+        # Equity CF (post-leverage): Revenue - OPEX - Debt Service - Tax - Equity CAPEX
+        eq_cf = revenue - opex - debt_svc - tax_result.total_tax - equity_capex_this_year
+
+        equity_cf_array[idx] = eq_cf
+        project_cf_array[idx] = proj_cf
 
         yearly_results.append(
             AnnualCashflow(
                 year=y,
                 revenue=revenue,
                 opex=opex,
+                capex=capex_this_year,
                 debt_service=debt_svc,
                 depreciation=tax_result.depreciation_total,
                 gewerbesteuer=tax_result.gewerbesteuer,

@@ -465,7 +465,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         for y in range(1, args.lifetime_years + 1)
     ]
     annual_debt_service = [
-        cf.years[y].debt_service for y in range(1, args.lifetime_years + 1)
+        cf.years[y - 1].debt_service for y in range(1, args.lifetime_years + 1)
     ]
     total_opex_lifetime = sum(annual_opex)
 

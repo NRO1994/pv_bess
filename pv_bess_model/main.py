@@ -670,7 +670,7 @@ def run(args: argparse.Namespace) -> int:
     )
 
     annual_opex = [inflate_value(opt.opex_base, inflation_rate, y) for y in range(1, lifetime + 1)]
-    annual_debt_service = [cashflow.years[y].debt_service for y in range(1, lifetime + 1)]
+    annual_debt_service = [cashflow.years[y - 1].debt_service for y in range(1, lifetime + 1)]
     annual_dscr: list[float | None] = []
     for y in range(lifetime):
         ds = annual_debt_service[y]
@@ -799,6 +799,7 @@ def run(args: argparse.Namespace) -> int:
         write_dispatch_sample_csv(
             path=output_dir / f"{scenario.name}_dispatch_sample.csv",
             hourly_sample=sim.hourly_sample,
+            start_year=scenario.commissioning_year,
         )
 
     # ------------------------------------------------------------------

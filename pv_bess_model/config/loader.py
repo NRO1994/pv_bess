@@ -61,6 +61,7 @@ class ScenarioConfig:
     name: str
     operating_mode: str
     lifetime_years: int
+    commissioning_year: int
     path: Path | None = field(default=None, repr=False)
 
     # ------------------------------------------------------------------
@@ -225,14 +226,16 @@ def load_scenario(path: str | Path) -> ScenarioConfig:
         name=data["scenario"]["name"],
         operating_mode=ps["operating_mode"],
         lifetime_years=int(ps["lifetime_years"]),
+        commissioning_year=int(ps["commissioning_year"]),
         path=path.resolve(),
     )
 
     logger.info(
-        "Loaded scenario '%s' (mode=%s, lifetime=%d years) from '%s'",
+        "Loaded scenario '%s' (mode=%s, lifetime=%d years, commissioning=%d) from '%s'",
         config.name,
         config.operating_mode,
         config.lifetime_years,
+        config.commissioning_year,
         path,
     )
     return config
@@ -267,6 +270,7 @@ def load_scenario_dict(data: dict) -> ScenarioConfig:
         name=data["scenario"]["name"],
         operating_mode=ps["operating_mode"],
         lifetime_years=int(ps["lifetime_years"]),
+        commissioning_year=int(ps["commissioning_year"]),
         path=None,
     )
 

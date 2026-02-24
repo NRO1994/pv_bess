@@ -105,8 +105,8 @@ def write_summary_csv(
     """
     opt = grid_result.optimal
     total_capex = opt.capex_total if opt else 0.0
-    total_revenue = sum(y.revenue for y in cashflow.years if y.year > 0)
-    total_opex = sum(y.opex for y in cashflow.years if y.year > 0)
+    total_revenue = sum(y.revenue for y in cashflow.years)
+    total_opex = sum(y.opex for y in cashflow.years)
 
     row = {
         "scenario_name": scenario_name,
@@ -154,7 +154,7 @@ def write_cashflows_csv(
     path:
         Destination file path.
     cashflow:
-        Complete cashflow projection (includes year 0 CAPEX row).
+        Complete cashflow projection (Year 1 through lifetime, no Year 0).
     annual_pv_production_kwh:
         PV production per year in kWh (length = lifetime_years, index 0 = year 1).
     annual_bess_throughput_kwh:
@@ -163,32 +163,9 @@ def write_cashflows_csv(
         Per-year DSCR values (same indexing, None outside loan tenor).
     """
     rows = []
+    cumulative = 0.0
 
-    # Year 0 – CAPEX row
-    y0 = cashflow.years[0]
-    rows.append({
-        "year": "0",
-        "pv_production_mwh": "",
-        "bess_throughput_mwh": "",
-        "revenue_eur": fmt_currency(y0.revenue),
-        "opex_eur": fmt_currency(y0.opex),
-        "debt_service_eur": fmt_currency(y0.debt_service),
-        "depreciation_eur": fmt_currency(y0.depreciation),
-        "gewerbesteuer_eur": fmt_currency(y0.gewerbesteuer),
-        "koerperschaftsteuer_eur": fmt_currency(y0.koerperschaftsteuer),
-        "solidaritaetszuschlag_eur": fmt_currency(y0.solidaritaetszuschlag),
-        "total_tax_eur": fmt_currency(y0.total_tax),
-        "project_cf_eur": fmt_currency(y0.project_cf),
-        "equity_cf_eur": fmt_currency(y0.equity_cf),
-        "cumulative_equity_cf_eur": fmt_currency(y0.equity_cf),
-        "dscr": "",
-    })
-
-    cumulative = float(y0.equity_cf)
-    n_operating = len(cashflow.years) - 1  # years 1..N
-
-    for i in range(n_operating):
-        y = cashflow.years[i + 1]
+    for i, y in enumerate(cashflow.years):
         cumulative += y.equity_cf
         pv_mwh = (
             annual_pv_production_kwh[i] * KWH_TO_MWH
@@ -204,6 +181,7 @@ def write_cashflows_csv(
 
         rows.append({
             "year": str(y.year),
+            "capex_eur": fmt_currency(y.capex),
             "pv_production_mwh": fmt_float(pv_mwh),
             "bess_throughput_mwh": fmt_float(bess_mwh),
             "revenue_eur": fmt_currency(y.revenue),
