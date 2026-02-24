@@ -149,7 +149,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 ## Kosmetik
 
 ### FIX-13: `timeseries.percentile_timeseries` entfernen
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `pv/timeseries.py`
 
 **Problem:** Die Funktion `percentile_timeseries()` (Zeile 108-145) ist eine Verallgemeinerung von `compute_p50_p90()`. Sie wird nirgends im Produktionscode aufgerufen (nur P50/P90 werden benötigt).
@@ -169,7 +169,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 ---
 
 ### FIX-15: Magic Numbers in `main.py`
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `main.py`
 
 **Problem:** Mehrere Fallback-Werte in `main.py` sind als Literale statt als Referenzen auf `config/defaults.py` codiert:
@@ -250,7 +250,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 ---
 
 ### FIX-20: CSV_DELIMITER in allen Unit Tests verwenden
-**Status:** TEILWEISE ERLEDIGT
+**Status:** ERLEDIGT
 **Dateien:** `tests/test_loader.py`, `tests/test_price_loader.py`
 
 **Analyse:** `CSV_DELIMITER` ist auf `";"` gesetzt (in `config/defaults.py`). Die Testdateien `test_loader.py` und `test_price_loader.py` verwenden bereits Semikolon als Delimiter (hardcodiert als `";"` bzw. `sep=";"`). Allerdings verwenden sie nicht die Konstante `CSV_DELIMITER` selbst.
@@ -262,7 +262,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 ---
 
 ### FIX-21: PV-Cache im `.data`-Verzeichnis
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `config/defaults.py`, `pv/pvgis_client.py`
 
 **Problem:** `PVGIS_CACHE_DIR` zeigt auf `~/.pv_bess_cache` (Home-Verzeichnis). Soll stattdessen im Projekt unter `.data/pvgis_cache/` liegen.
@@ -287,7 +287,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 ---
 
 ### FIX-23: Fortschrittslogging für Grid Search und MC (Debug-Mode)
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `optimization/grid_search.py`, `optimization/monte_carlo.py`
 
 **Problem:** Es gibt kein Fortschritts-Logging über die Iterationen der Grid Search und MC. Der Logger meldet nur Start und Ende.
@@ -315,17 +315,17 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 | FIX-10 | Alle Preisszenarien verlängern | ERLEDIGT | - |
 | FIX-11 | Körperschaftsteuer | ERLEDIGT | - |
 | FIX-12 | Solidaritätszuschlag | ERLEDIGT | - |
-| FIX-13 | percentile_timeseries entfernen | OFFEN | Niedrig |
+| FIX-13 | percentile_timeseries entfernen | ERLEDIGT | - |
 | FIX-14 | Enums zentral | ERLEDIGT | - |
-| FIX-15 | Magic Numbers in main.py | OFFEN | Mittel |
+| FIX-15 | Magic Numbers in main.py | ERLEDIGT | - |
 | FIX-16 | PVGIS Integrationstest | OFFEN | Niedrig |
 | FIX-17 | Pytest Marker für Integration | OFFEN | Niedrig |
 | FIX-18 | Testdaten in .data/ | OFFEN | Niedrig |
 | FIX-19 | CLAUDE.md aktualisieren | OFFEN | Mittel |
-| FIX-20 | CSV_DELIMITER in Tests | OFFEN | Niedrig |
-| FIX-21 | PV-Cache in .data/ | OFFEN | Niedrig |
+| FIX-20 | CSV_DELIMITER in Tests | ERLEDIGT | - |
+| FIX-21 | PV-Cache in .data/ | ERLEDIGT | - |
 | FIX-22 | Cashflow Year-Index | ERLEDIGT | Mittel |
-| FIX-23 | Fortschrittslogging | OFFEN | Niedrig |
+| FIX-23 | Fortschrittslogging | ERLEDIGT | - |
 
 **Empfohlene Reihenfolge der Bearbeitung:**
 1. FIX-06 (GoO-Logik – beeinflusst Optimierungsergebnisse)

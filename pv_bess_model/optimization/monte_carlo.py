@@ -537,10 +537,17 @@ def run_monte_carlo(
     iteration_indices = list(range(1, mc_params.iterations + 1))
     results: list[MCIterationResult] = []
 
+    n_iterations = mc_params.iterations
+    log_interval = max(1, n_iterations // 10)
+
     if mc_params.max_workers == 1:
         # Single-process path: easier to debug and use in unit tests
         _mc_worker_init(shared_state)
-        results = [_run_mc_iteration(i) for i in iteration_indices]
+        for i in iteration_indices:
+            result = _run_mc_iteration(i)
+            results.append(result)
+            if i % log_interval == 0 or i == n_iterations:
+                logger.debug("Monte Carlo: %d/%d iterations complete.", i, n_iterations)
     else:
         with concurrent.futures.ProcessPoolExecutor(
             max_workers=mc_params.max_workers,
@@ -551,8 +558,14 @@ def run_monte_carlo(
                 executor.submit(_run_mc_iteration, i): i
                 for i in iteration_indices
             }
+            completed = 0
             for future in concurrent.futures.as_completed(futures):
                 results.append(future.result())
+                completed += 1
+                if completed % log_interval == 0 or completed == n_iterations:
+                    logger.debug(
+                        "Monte Carlo: %d/%d iterations complete.", completed, n_iterations
+                    )
 
     results.sort(key=lambda r: r.iteration)
 

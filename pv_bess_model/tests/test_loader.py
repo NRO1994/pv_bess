@@ -17,7 +17,7 @@ import math
 import numpy as np
 import pytest
 
-from pv_bess_model.config.defaults import HOURS_PER_YEAR, MIN_PRICE_TIMESERIES_HOURS
+from pv_bess_model.config.defaults import CSV_DELIMITER, HOURS_PER_YEAR, MIN_PRICE_TIMESERIES_HOURS
 from pv_bess_model.config.loader import (
     PriceData,
     ScenarioConfig,
@@ -48,7 +48,7 @@ def _make_price_csv(
     if columns is None:
         columns = ["MID"]
     rng = np.random.default_rng(0)
-    lines = ["timestamp;" + ";".join(columns)]
+    lines = ["timestamp" + CSV_DELIMITER + CSV_DELIMITER.join(columns)]
     for i in range(n_rows):
         ts = f"2023-01-01T{i:05d}"  # dummy timestamp, not parsed
         values = []
@@ -57,7 +57,7 @@ def _make_price_csv(
                 values.append("")
             else:
                 values.append(f"{rng.uniform(10, 90):.4f}")
-        lines.append(ts + ";" + ";".join(values))
+        lines.append(ts + CSV_DELIMITER + CSV_DELIMITER.join(values))
     p = tmp_path / filename
     p.write_text("\n".join(lines), encoding="utf-8")
     return p
@@ -481,7 +481,7 @@ def _make_price_csv_with_timestamps(
     for col in columns:
         data[col] = [value] * n_rows
     p = tmp_path / filename
-    pd.DataFrame(data).to_csv(p, index=False, sep=";")
+    pd.DataFrame(data).to_csv(p, index=False, sep=CSV_DELIMITER)
     return p
 
 
@@ -557,7 +557,7 @@ class TestLoadPriceCSVCommissioningYearFilter:
             vals.extend([val] * HOURS_PER_YEAR)
         p = tmp_path / "prices.csv"
         pd.DataFrame({"timestamp": timestamps, "MID": vals}).to_csv(
-            p, index=False, sep=";"
+            p, index=False, sep=CSV_DELIMITER
         )
 
         data = load_price_csv(

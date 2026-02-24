@@ -191,6 +191,9 @@ cython_debug/
 # Ruff stuff:
 .ruff_cache/
 
+# PVGIS cache (local data, not version-controlled)
+.data/
+
 # PyPI configuration file
 .pypirc
 

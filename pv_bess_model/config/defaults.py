@@ -25,7 +25,7 @@ HOURS_PER_DAY: int = 24
 PVGIS_API_BASE_URL: str = "https://re.jrc.ec.europa.eu/api/v5_3/"
 """Base URL for the EU PVGIS REST API (version 5.3)."""
 
-PVGIS_CACHE_DIR: str = "~/.pv_bess_cache"
+PVGIS_CACHE_DIR: str = ".data/pvgis_cache"
 """Local directory for caching raw PVGIS JSON responses."""
 
 PVGIS_SERIESCALC_ENDPOINT: str = "seriescalc"

@@ -656,7 +656,17 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
     results: list[GridPointResult] = []
     if config.max_workers == 1:
         # Single-process execution (simpler for debugging / unit tests)
-        results = [_evaluate_grid_point(a) for a in worker_args]
+        for idx, a in enumerate(worker_args, start=1):
+            result = _evaluate_grid_point(a)
+            results.append(result)
+            logger.debug(
+                "Grid search [%d/%d]: scale=%.0f %%, E/P=%.1f h, Equity IRR=%s.",
+                idx,
+                n_combinations,
+                a.scale_pct,
+                a.e_to_p_ratio,
+                f"{(result.equity_irr or 0.0) * 100:.2f} %%" if result.equity_irr is not None else "N/A",
+            )
     else:
         with concurrent.futures.ProcessPoolExecutor(
             max_workers=config.max_workers
@@ -664,8 +674,18 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
             futures = {
                 executor.submit(_evaluate_grid_point, a): a for a in worker_args
             }
+            completed = 0
             for future in concurrent.futures.as_completed(futures):
-                results.append(future.result())
+                result = future.result()
+                results.append(result)
+                completed += 1
+                logger.debug(
+                    "Grid search [%d/%d] done: scale=%.0f %%, E/P=%.1f h.",
+                    completed,
+                    n_combinations,
+                    result.scale_pct,
+                    result.e_to_p_ratio,
+                )
 
     # Sort results by (scale_pct, e_to_p_ratio) for deterministic output order
     results.sort(key=lambda r: (r.scale_pct, r.e_to_p_ratio))

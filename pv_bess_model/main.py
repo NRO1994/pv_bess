@@ -396,11 +396,11 @@ def run(args: argparse.Namespace) -> int:
 
     # Finance parameters
     finance = scenario.finance
-    inflation_rate = float(finance.get("inflation_rate", 0.02))
+    inflation_rate = float(finance.get("inflation_rate", DEFAULT_INFLATION_RATE))
     leverage_pct = float(finance.get("leverage_pct", 0.0))
-    interest_rate_pct = float(finance.get("interest_rate_pct", 4.5))
-    loan_tenor_years = int(finance.get("loan_tenor_years", 18))
-    discount_rate = float(scenario.project_settings.get("discount_rate", 0.06))
+    interest_rate_pct = float(finance.get("interest_rate_pct", DEFAULT_INTEREST_RATE_PCT))
+    loan_tenor_years = int(finance.get("loan_tenor_years", DEFAULT_LOAN_TENOR_YEARS))
+    discount_rate = float(scenario.project_settings.get("discount_rate", DEFAULT_DISCOUNT_RATE))
     debt_uses_p90 = bool(finance.get("debt_uses_p90", False))
 
     tax = finance.get("tax", {})
@@ -416,17 +416,17 @@ def run(args: argparse.Namespace) -> int:
     pv_design = pv["design"]
     pv_perf = pv.get("performance", {})
     pv_peak_kwp = float(pv_design["peak_power_kwp"])
-    pv_degradation_rate = float(pv_perf.get("degradation_rate_pct_per_year", 0.4)) / 100.0
-    system_loss_pct = float(pv_perf.get("system_loss_pct", 14.0))
+    pv_degradation_rate = float(pv_perf.get("degradation_rate_pct_per_year", DEFAULT_PV_DEGRADATION_RATE_PCT)) / 100.0
+    system_loss_pct = float(pv_perf.get("system_loss_pct", DEFAULT_SYSTEM_LOSS_PCT))
 
     # BESS parameters
     bess = scenario.bess
     bess_perf = bess.get("performance", {})
-    bess_rte = float(bess_perf.get("round_trip_efficiency_pct", 88.0)) / 100.0
-    bess_min_soc_pct = float(bess_perf.get("min_soc_pct", 10.0))
-    bess_max_soc_pct = float(bess_perf.get("max_soc_pct", 90.0))
-    bess_degradation_rate = float(bess_perf.get("degradation_rate_pct_per_year", 2.0)) / 100.0
-    bess_availability_pct = float(bess_perf.get("bess_availability_pct", 100.0))
+    bess_rte = float(bess_perf.get("round_trip_efficiency_pct", DEFAULT_BESS_RTE_PCT)) / 100.0
+    bess_min_soc_pct = float(bess_perf.get("min_soc_pct", DEFAULT_BESS_MIN_SOC_PCT))
+    bess_max_soc_pct = float(bess_perf.get("max_soc_pct", DEFAULT_BESS_MAX_SOC_PCT))
+    bess_degradation_rate = float(bess_perf.get("degradation_rate_pct_per_year", DEFAULT_BESS_DEGRADATION_RATE_PCT)) / 100.0
+    bess_availability_pct = float(bess_perf.get("bess_availability_pct", DEFAULT_BESS_AVAILABILITY_PCT))
 
     bess_costs = bess.get("costs", {})
     replacement_cfg = bess_costs.get("replacement", {})
