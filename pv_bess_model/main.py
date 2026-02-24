@@ -494,6 +494,7 @@ def run(args: argparse.Namespace) -> int:
             path=csv_path,
             required_columns=required_columns,
             price_unit=price_unit,
+            commissioning_year=scenario.commissioning_year,
         )
     except Exception as exc:
         logger.error("Price CSV load failed: %s", exc)

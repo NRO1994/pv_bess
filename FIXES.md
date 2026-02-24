@@ -105,7 +105,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 ---
 
 ### FIX-09: Preiszeitreihe ab Inbetriebnahmejahr filtern
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `config/loader.py`, `main.py`
 
 **Problem:** Beginnt die CSV-Preiszeitreihe vor dem Inbetriebnahmejahr, sollen die früheren Jahre ignoriert werden.
@@ -311,7 +311,7 @@ revenue = baseload_kwh * (ppa_price + goo) + (export - baseload) * spot
 | FIX-06 | GoO auf finalen Preis | ERLEDIGT | - |
 | FIX-07 | Inflation ab Jahr 2 | ERLEDIGT | - |
 | FIX-08 | CAPEX/OPEX in Jahr 1 + Inbetriebnahmejahr | ERLEDIGT | - |
-| FIX-09 | Preis-CSV ab Inbetriebnahmejahr filtern | OFFEN | Mittel |
+| FIX-09 | Preis-CSV ab Inbetriebnahmejahr filtern | ERLEDIGT | Mittel |
 | FIX-10 | Alle Preisszenarien verlängern | OFFEN | Mittel |
 | FIX-11 | Körperschaftsteuer | ERLEDIGT | - |
 | FIX-12 | Solidaritätszuschlag | ERLEDIGT | - |

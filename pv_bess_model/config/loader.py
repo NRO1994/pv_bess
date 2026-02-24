@@ -279,6 +279,7 @@ def load_price_csv(
     path: str | Path,
     required_columns: list[str],
     price_unit: str,
+    commissioning_year: int | None = None,
 ) -> PriceData:
     """Load and validate an electricity price CSV file.
 
@@ -296,6 +297,9 @@ def load_price_csv(
     price_unit:
         Unit of the price values in the CSV: ``"eur_per_mwh"`` or
         ``"eur_per_kwh"``.
+    commissioning_year:
+        If provided, rows with timestamps before January 1st of the
+        commissioning year are discarded before validation and conversion.
 
     Returns
     -------
@@ -308,7 +312,8 @@ def load_price_csv(
         When *path* does not exist.
     ValueError
         When the CSV fails any validation check (too few rows, NaN values,
-        missing columns, unknown price unit).
+        missing columns, unknown price unit, or no ``timestamp`` column
+        when *commissioning_year* is set).
     """
     path = Path(path)
     if not path.exists():
@@ -329,6 +334,10 @@ def load_price_csv(
         df = pd.read_csv(path, sep=CSV_DELIMITER)
     except Exception as exc:
         raise ValueError(f"Failed to parse price CSV '{path}': {exc}") from exc
+
+    # --- filter by commissioning year --------------------------------------
+    if commissioning_year is not None:
+        df = _filter_from_commissioning_year(df, path, commissioning_year)
 
     # --- column presence ---------------------------------------------------
     _check_required_columns(df, path, required_columns)
@@ -374,6 +383,54 @@ def load_price_csv(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _filter_from_commissioning_year(
+    df: pd.DataFrame,
+    path: Path,
+    commissioning_year: int,
+) -> pd.DataFrame:
+    """Discard rows with timestamps before January 1st of *commissioning_year*.
+
+    The function parses the ``timestamp`` column, drops all rows whose
+    timestamp falls before the commissioning year, and resets the index.
+
+    Raises
+    ------
+    ValueError
+        If the CSV has no ``timestamp`` column or if none of its timestamps
+        can be parsed.
+    """
+    if "timestamp" not in df.columns:
+        raise ValueError(
+            f"Price CSV '{path}' has no 'timestamp' column, which is "
+            "required when commissioning_year filtering is enabled."
+        )
+
+    try:
+        timestamps = pd.to_datetime(df["timestamp"])
+    except Exception as exc:
+        raise ValueError(
+            f"Failed to parse 'timestamp' column in price CSV '{path}': {exc}"
+        ) from exc
+
+    cutoff = pd.Timestamp(year=commissioning_year, month=1, day=1)
+    mask = timestamps >= cutoff
+    n_before = len(df)
+    df = df.loc[mask].reset_index(drop=True)
+    n_dropped = n_before - len(df)
+
+    if n_dropped > 0:
+        logger.info(
+            "Filtered price CSV '%s': dropped %d rows before %d-01-01 "
+            "(%d rows remaining).",
+            path,
+            n_dropped,
+            commissioning_year,
+            len(df),
+        )
+
+    return df
 
 
 def _check_required_columns(

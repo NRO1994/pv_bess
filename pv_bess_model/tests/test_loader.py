@@ -442,3 +442,153 @@ class TestExtendPriceTimeseries:
         )
         np.testing.assert_array_equal(out[HOURS_PER_YEAR : 2 * HOURS_PER_YEAR], arr)
         np.testing.assert_array_equal(out[2 * HOURS_PER_YEAR :], arr)
+
+
+# ---------------------------------------------------------------------------
+# load_price_csv – commissioning year filtering (FIX-09)
+# ---------------------------------------------------------------------------
+
+
+import pandas as pd
+
+
+def _make_price_csv_with_timestamps(
+    tmp_path,
+    start_year: int,
+    n_years: int,
+    columns: list[str] | None = None,
+    filename: str = "prices.csv",
+    value: float = 50.0,
+) -> object:
+    """Write a price CSV with proper ISO 8601 hourly timestamps.
+
+    Generates *n_years* full years of data starting from Jan 1 of *start_year*.
+    Each year has exactly 8760 rows. Leap year extra hours are trimmed.
+    Each price column is filled with *value* (constant).
+    """
+    if columns is None:
+        columns = ["MID"]
+    timestamps: list[str] = []
+    for y in range(n_years):
+        year = start_year + y
+        # Generate full year of hourly timestamps, trim to 8760
+        ts = pd.date_range(
+            start=f"{year}-01-01", periods=HOURS_PER_YEAR, freq="h"
+        )
+        timestamps.extend(ts.strftime("%Y-%m-%dT%H:%M:%S").tolist())
+    n_rows = len(timestamps)
+    data: dict[str, object] = {"timestamp": timestamps}
+    for col in columns:
+        data[col] = [value] * n_rows
+    p = tmp_path / filename
+    pd.DataFrame(data).to_csv(p, index=False, sep=";")
+    return p
+
+
+class TestLoadPriceCSVCommissioningYearFilter:
+    """Tests for the commissioning_year parameter of load_price_csv (FIX-09)."""
+
+    def test_no_filtering_when_none(self, tmp_path):
+        """commissioning_year=None leaves all rows intact (default behaviour)."""
+        p = _make_price_csv_with_timestamps(tmp_path, start_year=2020, n_years=3)
+        data = load_price_csv(
+            p, required_columns=["MID"], price_unit="eur_per_mwh",
+            commissioning_year=None,
+        )
+        assert data.n_hours == 3 * HOURS_PER_YEAR
+
+    def test_filter_drops_years_before_commissioning(self, tmp_path):
+        """CSV starting in 2020, commissioning 2022 → 2020+2021 dropped."""
+        p = _make_price_csv_with_timestamps(tmp_path, start_year=2020, n_years=4)
+        data = load_price_csv(
+            p, required_columns=["MID"], price_unit="eur_per_mwh",
+            commissioning_year=2022,
+        )
+        # 2022 + 2023 = 2 years remaining
+        assert data.n_hours == 2 * HOURS_PER_YEAR
+
+    def test_filter_no_drop_when_csv_starts_at_commissioning(self, tmp_path):
+        """If CSV starts exactly at commissioning year, nothing is dropped."""
+        p = _make_price_csv_with_timestamps(tmp_path, start_year=2025, n_years=2)
+        data = load_price_csv(
+            p, required_columns=["MID"], price_unit="eur_per_mwh",
+            commissioning_year=2025,
+        )
+        assert data.n_hours == 2 * HOURS_PER_YEAR
+
+    def test_filter_no_drop_when_csv_starts_after_commissioning(self, tmp_path):
+        """If CSV starts after commissioning year, nothing is dropped."""
+        p = _make_price_csv_with_timestamps(tmp_path, start_year=2026, n_years=1)
+        data = load_price_csv(
+            p, required_columns=["MID"], price_unit="eur_per_mwh",
+            commissioning_year=2025,
+        )
+        assert data.n_hours == HOURS_PER_YEAR
+
+    def test_filter_drops_exactly_one_year(self, tmp_path):
+        """CSV 2024–2026, commissioning 2025 → only 2024 dropped."""
+        p = _make_price_csv_with_timestamps(tmp_path, start_year=2024, n_years=3)
+        data = load_price_csv(
+            p, required_columns=["MID"], price_unit="eur_per_mwh",
+            commissioning_year=2025,
+        )
+        assert data.n_hours == 2 * HOURS_PER_YEAR
+
+    def test_filter_too_few_rows_after_filtering_raises(self, tmp_path):
+        """If filtering leaves fewer than 8760 rows, ValueError is raised."""
+        # CSV has 1 year (2020), commissioning 2021 → 0 rows remain
+        p = _make_price_csv_with_timestamps(tmp_path, start_year=2020, n_years=1)
+        with pytest.raises(ValueError, match=str(MIN_PRICE_TIMESERIES_HOURS)):
+            load_price_csv(
+                p, required_columns=["MID"], price_unit="eur_per_mwh",
+                commissioning_year=2021,
+            )
+
+    def test_filter_preserves_values(self, tmp_path):
+        """Values in the remaining rows are preserved after filtering."""
+        # Year 2024: value 30 €/MWh, Year 2025: value 60 €/MWh
+        timestamps: list[str] = []
+        vals: list[float] = []
+        for year, val in [(2024, 30.0), (2025, 60.0)]:
+            ts = pd.date_range(
+                start=f"{year}-01-01", periods=HOURS_PER_YEAR, freq="h"
+            )
+            timestamps.extend(ts.strftime("%Y-%m-%dT%H:%M:%S").tolist())
+            vals.extend([val] * HOURS_PER_YEAR)
+        p = tmp_path / "prices.csv"
+        pd.DataFrame({"timestamp": timestamps, "MID": vals}).to_csv(
+            p, index=False, sep=";"
+        )
+
+        data = load_price_csv(
+            p, required_columns=["MID"], price_unit="eur_per_mwh",
+            commissioning_year=2025,
+        )
+        # Only 2025 data remains, all values should be 60 €/MWh → 0.06 €/kWh
+        assert data.n_hours == HOURS_PER_YEAR
+        np.testing.assert_allclose(data.columns["MID"], 0.06, rtol=1e-9)
+
+    def test_filter_multiple_columns(self, tmp_path):
+        """Filtering works correctly with multiple price columns."""
+        p = _make_price_csv_with_timestamps(
+            tmp_path, start_year=2020, n_years=3,
+            columns=["LOW", "MID", "HIGH"],
+        )
+        data = load_price_csv(
+            p, required_columns=["LOW", "MID", "HIGH"], price_unit="eur_per_mwh",
+            commissioning_year=2022,
+        )
+        assert data.n_hours == HOURS_PER_YEAR
+        for col in ["LOW", "MID", "HIGH"]:
+            assert len(data.columns[col]) == HOURS_PER_YEAR
+
+    def test_filter_missing_timestamp_column_raises(self, tmp_path):
+        """If CSV has no timestamp column, filtering raises ValueError."""
+        p = tmp_path / "no_ts.csv"
+        rows = ["MID"] + ["50.0"] * HOURS_PER_YEAR
+        p.write_text("\n".join(rows), encoding="utf-8")
+        with pytest.raises(ValueError, match="timestamp"):
+            load_price_csv(
+                p, required_columns=["MID"], price_unit="eur_per_mwh",
+                commissioning_year=2025,
+            )
