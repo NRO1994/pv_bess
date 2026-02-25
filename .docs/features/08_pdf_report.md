@@ -209,7 +209,7 @@ def build_report(
 ```json
 "scenario": {
     "output": {
-        "directory": "output/",
+        "directory": ".data/output/",
         "export_dispatch_sample": true,
         "report": {
             "enabled": true,

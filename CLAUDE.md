@@ -527,7 +527,7 @@ All output files go to a user-specified output directory (default: `./output/{sc
       }
     },
     "output": {
-      "directory": "output/",
+      "directory": ".data/output/",
       "export_dispatch_sample": true
     }
   },

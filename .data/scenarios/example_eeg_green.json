@@ -1,6 +1,6 @@
 {
   "scenario": {
-    "name": "PPA_Floor_Grey_Example",
+    "name": "EEG_Green_Example",
     "monte_carlo": {
       "enabled": true,
       "iterations": 1000,
@@ -15,14 +15,14 @@
       }
     },
     "output": {
-      "directory": "output/",
+      "directory": ".data/output/",
       "export_dispatch_sample": true
     }
   },
   "project_settings": {
     "lifetime_years": 25,
     "discount_rate": 0.06,
-    "operating_mode": "grey",
+    "operating_mode": "green",
     "location": {
       "latitude": 53.55,
       "longitude": 9.99,
@@ -106,18 +106,18 @@
       "inflation_rate": 0.02,
       "revenue_streams": {
         "marketing": {
-          "type": "ppa",
-          "floor_price_eur_per_kwh": null,
-          "fixed_price_years": null,
+          "type": "eeg",
+          "floor_price_eur_per_kwh": 0.0735,
+          "fixed_price_years": 20,
           "eeg_inflation": false
         },
         "ppa": {
-          "type": "ppa_floor",
+          "type": "none",
           "pay_as_produced_price_eur_per_kwh": null,
           "baseload_mw": null,
-          "floor_price_eur_per_kwh": 0.055,
+          "floor_price_eur_per_kwh": null,
           "cap_price_eur_per_kwh": null,
-          "duration_years": 15,
+          "duration_years": 10,
           "inflation_on_ppa": false,
           "guarantee_of_origin_eur_per_kwh": 0.005
         }

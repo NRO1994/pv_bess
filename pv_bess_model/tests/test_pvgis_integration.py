@@ -13,10 +13,10 @@ Requirements
 Test location
 -------------
 Hamburg, Germany (53.55 °N, 9.99 °E) – a well-known reference site covered
-by the PVGIS-SARAH2 database.  Using a small 1 kWp system minimises response
+by the PVGIS-SARAH3 database.  Using a small 1 kWp system minimises response
 payload while still producing meaningful production values.
 
-Expected PVGIS-SARAH2 coverage: 2005 – 2020 (16 years, ≥ 10 required).
+Expected PVGIS-SARAH3 coverage: 2005 – 2020 (16 years, ≥ 10 required).
 Expected annual yield: 700 – 1 200 kWh for 1 kWp in Hamburg.
 """
 
@@ -41,9 +41,9 @@ _SYSTEM_LOSS_PCT: float = 14.0
 _MOUNTING_TYPE: str = "free"
 _AZIMUTH_DEG: float = 0.0
 _TILT_DEG: float = 30.0
-_DATABASE: str = "PVGIS-SARAH2"
+_DATABASE: str = "PVGIS-SARAH3"
 
-# PVGIS-SARAH2 currently covers 2005–2020 → at least 10 years expected
+# PVGIS-SARAH3 currently covers 2005–2020 → at least 10 years expected
 _MIN_YEARS: int = 10
 
 # Plausible annual yield range for 1 kWp in Hamburg (kWh)
@@ -79,7 +79,7 @@ def pvgis_yearly_data() -> dict[int, np.ndarray]:
 
 @pytest.mark.integration
 class TestPVGISClientIntegration:
-    """Real PVGIS API calls with known coordinates (Hamburg, PVGIS-SARAH2)."""
+    """Real PVGIS API calls with known coordinates (Hamburg, PVGIS-SARAH3)."""
 
     def test_returns_at_least_min_years(
         self, pvgis_yearly_data: dict[int, np.ndarray]
