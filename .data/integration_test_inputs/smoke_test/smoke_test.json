@@ -15,7 +15,7 @@
       }
     },
     "output": {
-      "directory": "output/",
+      "directory": ".data/output/",
       "export_dispatch_sample": true
     }
   },

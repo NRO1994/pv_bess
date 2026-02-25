@@ -192,7 +192,10 @@ cython_debug/
 .ruff_cache/
 
 # PVGIS cache (local data, not version-controlled)
-.data
+.data/pvgis_cache
+.data/test
+.data/scenarios
+.data/output
 
 # PyPI configuration file
 .pypirc

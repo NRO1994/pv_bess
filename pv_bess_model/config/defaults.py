@@ -164,7 +164,7 @@ MIN_PRICE_TIMESERIES_HOURS: int = 8760
 # Output defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_OUTPUT_DIR: str = "output"
+DEFAULT_OUTPUT_DIR: str = ".data/output"
 """Default root directory for scenario result files."""
 
 DISPATCH_SAMPLE_YEAR: int = 1
