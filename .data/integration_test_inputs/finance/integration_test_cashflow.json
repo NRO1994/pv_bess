@@ -124,7 +124,7 @@
         }
       },
       "price_inputs": {
-        "day_ahead_csv": "C:/Users/roescni/Codebase/Prometheus/0_data/01_bronze/eeg_fixed_54_20y_merchant_tail.csv",
+        "day_ahead_csv": ".data/integration_test_inputs/finance/eeg_fixed_54_20y_22_5y.csv",
         "price_unit": "eur_per_mwh",
         "inflation_on_input_data": false
       },
