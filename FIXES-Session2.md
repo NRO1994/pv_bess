@@ -39,3 +39,5 @@
   Excel geöffnet ist. Implementiere für diesen Fehler ein catch, der dann dem Dateinamen einen Index hinzufügt
 - [ ] die Spalte des "debt_service" soll in "debt_interest_rate" und "debt_repayment" aufgeteilt werden, und dann die
   entsprechenden Werte aus dem Finanzmodell beinhalten.
+- [ ] ermögliche die GRid-Search zu überspringen, und zwar wenn für die "scale_pct_of_pv" und "e_to_p_ratio_hours" nur
+  ein Wert im Array enthalten ist
