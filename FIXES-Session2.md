@@ -18,6 +18,10 @@
 - [ ] Es gibt bereits Daten für einen smoke test (.data/integration_tests_inputs/smoke_test). Erstelle einen Integration
   test, der auf die neusten Änderungen angepasst ist, und eine valide Aussage über den End-to-End Prozess machen kann.
   Dieser Test soll ebenfalls mit dem "tag integration" versehen sein, also nur nach spezifischer Aufforderung laufen
+- [ ] ermögliche "BESS-only" cases. Dafür muss die Eingabelogik angepasst werden, sodass auch eine separate
+  Leistung/Kapazität angegeben werden kann. Zudem muss es möglich sein das "pv" Attribut komplett wegzulassen, bzw. die
+  Leistung auf 0 zu setzen. Entwickle hierfür ebenfalls ein integration test, der auf
+  .data/integration_test_inputs/bess_only Dateien beruht
 
 ## Logik
 

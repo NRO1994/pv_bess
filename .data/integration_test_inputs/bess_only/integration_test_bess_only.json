@@ -1,6 +1,6 @@
 {
   "scenario": {
-    "name": "Angelehnt an: Freifläche A20",
+    "name": "BESS only Testcase",
     "monte_carlo": {
       "enabled": true,
       "iterations": 1000,
@@ -32,22 +32,22 @@
     "technology": {
       "pv": {
         "design": {
-          "peak_power_kwp": 10722,
+          "peak_power_kwp": 1,
           "mounting_type": "free",
           "azimuth_deg": 0,
           "tilt_deg": 18
         },
         "performance": {
-          "system_loss_pct": 12.4,
-          "degradation_rate_pct_per_year": 0.3
+          "system_loss_pct": 0,
+          "degradation_rate_pct_per_year": 0
         },
         "costs": {
           "capex": {
-            "fixed_eur": 5307000,
+            "fixed_eur": 0,
             "eur_per_kw": 0
           },
           "opex": {
-            "fixed_eur": 132721,
+            "fixed_eur": 0,
             "eur_per_kw": 0,
             "pct_of_capex": 0
           }
@@ -104,11 +104,11 @@
       "loan_tenor_years": 25,
       "equity_irr_target": 0.081,
       "debt_uses_p90": true,
-      "inflation_rate": 0.015,
+      "inflation_rate": 0.02,
       "revenue_streams": {
         "marketing": {
           "type": "eeg",
-          "floor_price_eur_per_kwh": 0.0549,
+          "floor_price_eur_per_kwh": 0,
           "fixed_price_years": 20,
           "eeg_inflation": false
         },
@@ -124,9 +124,9 @@
         }
       },
       "price_inputs": {
-        "day_ahead_csv": "eeg_fixed_54_20y_22_5y.csv",
+        "day_ahead_csv": "prognos_prices_original_2025.csv",
         "price_unit": "eur_per_mwh",
-        "inflation_on_input_data": false
+        "inflation_on_input_data": true
       },
       "tax": {
         "afa_years_pv": 20,
