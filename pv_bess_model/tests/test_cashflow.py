@@ -54,6 +54,8 @@ def _build_simple_projection(
     hebesatz: float = 400.0,
     replacement_cost: float = 0.0,
     replacement_year: int | None = None,
+    optimization_fee_pct: float = 0.0,
+    annual_bess_spot_revenues: list[float] | None = None,
 ):
     """Build a cashflow projection with sensible defaults for testing."""
     if revenues is None:
@@ -74,6 +76,8 @@ def _build_simple_projection(
         gewerbesteuer_hebesatz=hebesatz,
         replacement_cost=replacement_cost,
         replacement_year=replacement_year,
+        optimization_fee_pct=optimization_fee_pct,
+        annual_bess_spot_revenues=annual_bess_spot_revenues,
     )
 
 
@@ -492,3 +496,154 @@ class TestZeroCapex:
                 proj.project_cashflows[i],
                 rel_tol=1e-9,
             )
+
+
+# ---------------------------------------------------------------------------
+# BESS Optimization Fee tests (Feature 03)
+# ---------------------------------------------------------------------------
+
+
+class TestOptimizationFee:
+    """Verify BESS optimization fee as revenue-dependent OPEX."""
+
+    def test_fee_zero_no_effect(self) -> None:
+        """Fee = 0%: OPEX is unchanged regardless of BESS revenue."""
+        base_opex = 50_000.0
+        proj = _build_simple_projection(
+            lifetime=3,
+            base_opex=base_opex,
+            inflation=0.0,
+            capex_pv=0.0,
+            capex_bess=0.0,
+            leverage=0.0,
+            messzahl=0.0,
+            optimization_fee_pct=0.0,
+            annual_bess_spot_revenues=[100_000.0, 100_000.0, 100_000.0],
+        )
+        for y in proj.years:
+            assert math.isclose(y.opex, base_opex)
+
+    def test_fee_5_pct_with_100k_revenue(self) -> None:
+        """Fee = 5%, BESS spot revenue = 100k EUR → optimization OPEX = 5k EUR."""
+        base_opex = 50_000.0
+        fee_pct = 5.0
+        bess_rev = 100_000.0
+        proj = _build_simple_projection(
+            lifetime=3,
+            base_opex=base_opex,
+            inflation=0.0,
+            capex_pv=0.0,
+            capex_bess=0.0,
+            leverage=0.0,
+            messzahl=0.0,
+            optimization_fee_pct=fee_pct,
+            annual_bess_spot_revenues=[bess_rev] * 3,
+        )
+        expected_opex = base_opex + bess_rev * fee_pct / 100.0  # 50k + 5k = 55k
+        for y in proj.years:
+            assert math.isclose(y.opex, expected_opex)
+
+    def test_fee_not_inflated(self) -> None:
+        """The optimization fee is NOT subject to inflation (revenue already current-year).
+
+        Base OPEX is inflated, but the fee portion stays proportional to
+        current-year BESS revenue.
+        """
+        base_opex = 50_000.0
+        fee_pct = 10.0
+        inflation = 0.03
+        bess_rev = 80_000.0  # Same BESS revenue each year (for simplicity)
+
+        proj = _build_simple_projection(
+            lifetime=3,
+            base_opex=base_opex,
+            inflation=inflation,
+            capex_pv=0.0,
+            capex_bess=0.0,
+            leverage=0.0,
+            messzahl=0.0,
+            optimization_fee_pct=fee_pct,
+            annual_bess_spot_revenues=[bess_rev] * 3,
+        )
+
+        fee_amount = bess_rev * fee_pct / 100.0  # 8_000 EUR, same each year
+        for y in proj.years:
+            inflated_base = inflate_value(base_opex, inflation, y.year)
+            expected = inflated_base + fee_amount
+            assert math.isclose(y.opex, expected, rel_tol=1e-9)
+
+    def test_fee_pv_only_no_bess_revenue(self) -> None:
+        """PV-only scenario: BESS spot revenue = 0 → fee adds nothing to OPEX."""
+        base_opex = 50_000.0
+        proj = _build_simple_projection(
+            lifetime=3,
+            base_opex=base_opex,
+            inflation=0.0,
+            capex_pv=0.0,
+            capex_bess=0.0,
+            leverage=0.0,
+            messzahl=0.0,
+            optimization_fee_pct=5.0,
+            annual_bess_spot_revenues=[0.0, 0.0, 0.0],
+        )
+        for y in proj.years:
+            assert math.isclose(y.opex, base_opex)
+
+    def test_fee_none_bess_revenues(self) -> None:
+        """If annual_bess_spot_revenues is None, fee has no effect even with fee_pct > 0."""
+        base_opex = 50_000.0
+        proj = _build_simple_projection(
+            lifetime=3,
+            base_opex=base_opex,
+            inflation=0.0,
+            capex_pv=0.0,
+            capex_bess=0.0,
+            leverage=0.0,
+            messzahl=0.0,
+            optimization_fee_pct=5.0,
+            annual_bess_spot_revenues=None,
+        )
+        for y in proj.years:
+            assert math.isclose(y.opex, base_opex)
+
+    def test_fee_reduces_equity_cf(self) -> None:
+        """Higher optimization fee should reduce equity CF."""
+        common = dict(
+            lifetime=3,
+            revenues=[200_000.0] * 3,
+            base_opex=50_000.0,
+            inflation=0.0,
+            capex_total=0.0,
+            capex_pv=0.0,
+            capex_bess=0.0,
+            leverage=0.0,
+            messzahl=0.0,
+            annual_bess_spot_revenues=[100_000.0] * 3,
+        )
+        proj_no_fee = _build_simple_projection(**common, optimization_fee_pct=0.0)
+        proj_with_fee = _build_simple_projection(**common, optimization_fee_pct=10.0)
+
+        for i in range(3):
+            assert proj_with_fee.equity_cashflows[i] < proj_no_fee.equity_cashflows[i]
+
+    def test_fee_varies_with_yearly_bess_revenue(self) -> None:
+        """Fee adapts to varying BESS revenue per year."""
+        base_opex = 50_000.0
+        fee_pct = 5.0
+        bess_revenues = [100_000.0, 50_000.0, 200_000.0]
+        proj = _build_simple_projection(
+            lifetime=3,
+            base_opex=base_opex,
+            inflation=0.0,
+            capex_pv=0.0,
+            capex_bess=0.0,
+            leverage=0.0,
+            messzahl=0.0,
+            optimization_fee_pct=fee_pct,
+            annual_bess_spot_revenues=bess_revenues,
+        )
+
+        for i, y in enumerate(proj.years):
+            expected_fee = bess_revenues[i] * fee_pct / 100.0
+            expected_opex = base_opex + expected_fee
+            assert math.isclose(y.opex, expected_opex)

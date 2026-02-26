@@ -276,3 +276,46 @@ class TestCapexSanity:
     def test_opex_base_positive(self, grid_result: GridSearchResult) -> None:
         for pt in grid_result.points:
             assert pt.opex_base > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Optimization fee in grid search (Feature 03)
+# ---------------------------------------------------------------------------
+
+
+class TestOptimizationFeeGridSearch:
+    """Verify that optimization_fee_pct affects Equity IRR in the grid search."""
+
+    def test_fee_reduces_equity_irr(self) -> None:
+        """A positive optimization fee should reduce equity IRR vs. fee=0."""
+        config_no_fee = _make_config(scales=[0.0, 50.0], e_to_p=[2.0], lifetime=3)
+        config_no_fee.optimization_fee_pct = 0.0
+        result_no_fee = run_grid_search(config_no_fee)
+
+        config_with_fee = _make_config(scales=[0.0, 50.0], e_to_p=[2.0], lifetime=3)
+        config_with_fee.optimization_fee_pct = 20.0  # Large fee for clear effect
+        result_with_fee = run_grid_search(config_with_fee)
+
+        # Compare the BESS point (scale=50%), not PV-only (scale=0% has no BESS revenue)
+        bess_no_fee = [p for p in result_no_fee.points if p.scale_pct == pytest.approx(50.0)][0]
+        bess_with_fee = [p for p in result_with_fee.points if p.scale_pct == pytest.approx(50.0)][0]
+
+        assert bess_no_fee.equity_irr is not None
+        assert bess_with_fee.equity_irr is not None
+        assert bess_with_fee.equity_irr < bess_no_fee.equity_irr
+
+    def test_fee_zero_no_effect_on_pv_only(self) -> None:
+        """PV-only (scale=0%) should have same IRR regardless of fee setting."""
+        config_no_fee = _make_config(scales=[0.0], e_to_p=[1.0], lifetime=3)
+        config_no_fee.optimization_fee_pct = 0.0
+        result_no_fee = run_grid_search(config_no_fee)
+
+        config_with_fee = _make_config(scales=[0.0], e_to_p=[1.0], lifetime=3)
+        config_with_fee.optimization_fee_pct = 20.0
+        result_with_fee = run_grid_search(config_with_fee)
+
+        irr_no_fee = result_no_fee.points[0].equity_irr
+        irr_with_fee = result_with_fee.points[0].equity_irr
+        assert irr_no_fee is not None
+        assert irr_with_fee is not None
+        assert irr_no_fee == pytest.approx(irr_with_fee, rel=1e-9)

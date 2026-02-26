@@ -205,6 +205,7 @@ _BESS_COSTS = {
     "properties": {
         "capex": _COST_COMPONENT,
         "opex": _COST_COMPONENT,
+        "optimization_fee_pct": {"type": "number", "minimum": 0, "maximum": 100},
         "replacement": _BESS_REPLACEMENT,
     },
     "additionalProperties": False,

@@ -76,6 +76,8 @@ def build_cashflow_projection(
     solidaritaetszuschlag_pct: float = DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
     replacement_cost: float = 0.0,
     replacement_year: int | None = None,
+    optimization_fee_pct: float = 0.0,
+    annual_bess_spot_revenues: list[float] | None = None,
 ) -> CashflowProjection:
     """Build the complete annual cashflow projection.
 
@@ -100,6 +102,10 @@ def build_cashflow_projection(
         solidaritaetszuschlag_pct: Soli rate in percent (default from defaults.py).
         replacement_cost: BESS replacement cost (added as OPEX in replacement year).
         replacement_year: Year of BESS replacement (1-indexed), or None.
+        optimization_fee_pct: BESS optimization service fee as percentage of BESS spot
+            revenue. Not inflation-adjusted (already based on current-year revenue).
+        annual_bess_spot_revenues: BESS spot revenue per year for optimization fee
+            calculation. Length must equal ``lifetime_years``. None if no BESS.
 
     Returns:
         :class:`CashflowProjection` with per-year detail and summary arrays.
@@ -122,6 +128,10 @@ def build_cashflow_projection(
         # Add BESS replacement cost in the replacement year
         if replacement_year is not None and y == replacement_year:
             opex += replacement_cost
+
+        # Optimization fee (not inflated - already based on current-year revenue)
+        if optimization_fee_pct > 0.0 and annual_bess_spot_revenues:
+            opex += annual_bess_spot_revenues[idx] * optimization_fee_pct / 100.0
 
         debt_svc = get_debt_service(debt_schedule, y)
 

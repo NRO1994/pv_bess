@@ -323,6 +323,7 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
     )
 
     annual_revenues = [r.total_revenue for r in sim.annual_results]
+    annual_bess_spot_revenues = [r.bess_spot_revenue for r in sim.annual_results]
     total_production_kwh = sum(r.pv_production for r in sim.annual_results)
 
     # --- Build cashflow projection ---
@@ -352,12 +353,16 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         solidaritaetszuschlag_pct=base.solidaritaetszuschlag_pct,
         replacement_cost=replacement_cost,
         replacement_year=replacement_year_cf,
+        optimization_fee_pct=base.optimization_fee_pct,
+        annual_bess_spot_revenues=annual_bess_spot_revenues,
     )
 
-    annual_opex = [
-        inflate_value(opex_base, base.inflation_rate, y)
-        for y in range(1, base.lifetime_years + 1)
-    ]
+    annual_opex = []
+    for y in range(1, base.lifetime_years + 1):
+        opex_y = inflate_value(opex_base, base.inflation_rate, y)
+        if base.optimization_fee_pct > 0.0:
+            opex_y += annual_bess_spot_revenues[y - 1] * base.optimization_fee_pct / 100.0
+        annual_opex.append(opex_y)
     annual_debt_service = [
         cf.years[y - 1].debt_service for y in range(1, base.lifetime_years + 1)
     ]

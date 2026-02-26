@@ -202,6 +202,9 @@ class GridSearchConfig:
     koerperschaftsteuer_pct: float
     solidaritaetszuschlag_pct: float
 
+    # BESS optimization fee (% of BESS spot revenue)
+    optimization_fee_pct: float = 0.0
+
     # GoO premiums per year (optional – 0.0 for years without active PPA GoO clause)
     goo_prices_yearly: list[float] = field(default_factory=list)
 
@@ -359,6 +362,9 @@ class _GridPointArgs:
     koerperschaftsteuer_pct: float
     solidaritaetszuschlag_pct: float
 
+    # BESS optimization fee
+    optimization_fee_pct: float = 0.0
+
     # P90 (optional)
     pv_base_timeseries_p90: np.ndarray | None = None
     spot_prices_yearly_p90: list | None = None  # list[np.ndarray] | None
@@ -416,6 +422,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
     )
 
     annual_revenues_p50 = [r.total_revenue for r in sim_p50.annual_results]
+    annual_bess_spot_revenues_p50 = [r.bess_spot_revenue for r in sim_p50.annual_results]
     total_production_kwh = sum(r.pv_production for r in sim_p50.annual_results)
 
     # Optional P90 simulation – used for conservative DSCR calculation
@@ -463,13 +470,17 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         solidaritaetszuschlag_pct=args.solidaritaetszuschlag_pct,
         replacement_cost=replacement_cost,
         replacement_year=replacement_year_cf,
+        optimization_fee_pct=args.optimization_fee_pct,
+        annual_bess_spot_revenues=annual_bess_spot_revenues_p50,
     )
 
-    # Per-year OPEX list (inflation-adjusted) for DSCR computation
-    annual_opex = [
-        inflate_value(args.opex_base, args.inflation_rate, y)
-        for y in range(1, args.lifetime_years + 1)
-    ]
+    # Per-year OPEX list (inflation-adjusted + optimization fee) for DSCR computation
+    annual_opex = []
+    for y in range(1, args.lifetime_years + 1):
+        opex_y = inflate_value(args.opex_base, args.inflation_rate, y)
+        if args.optimization_fee_pct > 0.0:
+            opex_y += annual_bess_spot_revenues_p50[y - 1] * args.optimization_fee_pct / 100.0
+        annual_opex.append(opex_y)
     annual_debt_service = [
         cf.years[y - 1].debt_service for y in range(1, args.lifetime_years + 1)
     ]
@@ -638,6 +649,7 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     gewerbesteuer_hebesatz=config.gewerbesteuer_hebesatz,
                     koerperschaftsteuer_pct=config.koerperschaftsteuer_pct,
                     solidaritaetszuschlag_pct=config.solidaritaetszuschlag_pct,
+                    optimization_fee_pct=config.optimization_fee_pct,
                     pv_base_timeseries_p90=(
                         config.pv_base_timeseries_p90
                         if config.debt_uses_p90

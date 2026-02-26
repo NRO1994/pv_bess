@@ -75,6 +75,9 @@ DEFAULT_START_SOC_FRACTION: float = 0.50
 DEFAULT_BESS_AVAILABILITY_PCT: float = 100.0
 """Default BESS availability percentage (100 % = always online)."""
 
+DEFAULT_OPTIMIZATION_FEE_PCT: float = 0.0
+"""Default BESS optimization service fee as percentage of BESS spot revenue."""
+
 BESS_NOISE_CLIP_MIN: float = 0.0
 """Minimum clip value for sampled BESS availability noise factor."""
 

@@ -485,6 +485,7 @@ def run(args: argparse.Namespace) -> int:
     bess_availability_pct = float(bess_perf.get("bess_availability_pct", DEFAULT_BESS_AVAILABILITY_PCT))
 
     bess_costs = bess.get("costs", {})
+    optimization_fee_pct = float(bess_costs.get("optimization_fee_pct", 0.0))
     replacement_cfg = bess_costs.get("replacement", {})
     replacement_enabled = bool(replacement_cfg.get("enabled", False))
     replacement_year = int(replacement_cfg.get("year", 0))
@@ -643,6 +644,7 @@ def run(args: argparse.Namespace) -> int:
         replacement_eur_per_kw=replacement_eur_per_kw,
         replacement_eur_per_kwh=replacement_eur_per_kwh,
         replacement_pct_of_capex=replacement_pct_of_capex,
+        optimization_fee_pct=optimization_fee_pct,
         grid_max_kw=grid_max_kw,
         grid_costs_capex=grid_capex_cfg,
         grid_costs_opex=grid_opex_cfg,
@@ -733,6 +735,7 @@ def run(args: argparse.Namespace) -> int:
     annual_revenues = [r.total_revenue for r in sim.annual_results]
     annual_pv_kwh = [r.pv_production for r in sim.annual_results]
     annual_bess_throughput = [r.bess_throughput for r in sim.annual_results]
+    annual_bess_spot_revenues = [r.bess_spot_revenue for r in sim.annual_results]
     total_production_kwh = sum(annual_pv_kwh)
 
     # Build cashflow
@@ -765,9 +768,16 @@ def run(args: argparse.Namespace) -> int:
         solidaritaetszuschlag_pct=solidaritaetszuschlag_pct,
         replacement_cost=replacement_cost if replacement_enabled else 0.0,
         replacement_year=replacement_year if replacement_enabled else None,
+        optimization_fee_pct=optimization_fee_pct,
+        annual_bess_spot_revenues=annual_bess_spot_revenues,
     )
 
-    annual_opex = [inflate_value(opt.opex_base, inflation_rate, y) for y in range(1, lifetime + 1)]
+    annual_opex = []
+    for y in range(1, lifetime + 1):
+        opex_y = inflate_value(opt.opex_base, inflation_rate, y)
+        if optimization_fee_pct > 0.0:
+            opex_y += annual_bess_spot_revenues[y - 1] * optimization_fee_pct / 100.0
+        annual_opex.append(opex_y)
     annual_debt_service = [cashflow.years[y - 1].debt_service for y in range(1, lifetime + 1)]
     annual_dscr: list[float | None] = []
     for y in range(lifetime):

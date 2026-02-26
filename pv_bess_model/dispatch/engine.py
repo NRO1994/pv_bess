@@ -179,6 +179,9 @@ class AnnualResult:
     replacement_cost: float
     """Replacement cost booked as additional OPEX (EUR).  0.0 if no replacement."""
 
+    bess_spot_revenue: float
+    """BESS grid revenue at spot price (green + grey), for optimization fee calculation."""
+
 
 @dataclass
 class HourlySample:
@@ -500,6 +503,7 @@ def run_simulation(
         year_charge_grid = 0.0
         year_discharge_green = 0.0
         year_discharge_grey = 0.0
+        year_bess_spot_revenue = 0.0
 
         # ---- 8. Day loop (365 days) ----
         for day in range(DAYS_PER_YEAR):
@@ -562,10 +566,16 @@ def run_simulation(
             )
             day_import = float(np.sum(result["charge_grid"] * spot_day))
 
+            day_bess_spot_rev = float(
+                np.sum(result["discharge_green"] * config.bess_rte * spot_day)
+                + np.sum(result["discharge_grey"] * config.bess_rte * spot_day)
+            )
+
             year_revenue_pv += day_rev_pv
             year_revenue_green += day_rev_green
             year_revenue_grey += day_rev_grey
             year_import_cost += day_import
+            year_bess_spot_revenue += day_bess_spot_rev
             year_pv_export += float(np.sum(result["export_pv"]))
             year_pv_curtailed += float(np.sum(result["curtail"]))
             year_charge_pv += float(np.sum(result["charge_pv"]))
@@ -613,6 +623,7 @@ def run_simulation(
                 bess_throughput=bess_throughput,
                 bess_capacity_kwh=bess_cap,
                 replacement_cost=replacement_cost,
+                bess_spot_revenue=year_bess_spot_revenue,
             )
         )
 
