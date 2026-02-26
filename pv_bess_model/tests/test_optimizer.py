@@ -1172,3 +1172,165 @@ class TestEegFloorNoGooInOptimizer:
         rev_with = float(np.sum(result_with_floor["revenue"]))
         rev_without = float(np.sum(result_no_floor["revenue"]))
         assert abs(rev_with - rev_without) < 0.01
+
+
+# ---------------------------------------------------------------------------
+# Grid loss factor tests
+# ---------------------------------------------------------------------------
+
+
+class TestGridLossFactor:
+    """Tests for the grid_loss_factor parameter."""
+
+    def test_grid_loss_factor_one_matches_default(self):
+        """grid_loss_factor=1.0 produces identical results to default (no loss)."""
+        pv = np.array([100.0, 200.0, 50.0, 0.0])
+        spot = np.array([0.05, 0.10, 0.08, 0.06])
+        bess = _make_bess(power_kw=50.0, capacity_kwh=100.0)
+
+        result_default = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=300.0,
+            mode="green",
+            start_soc_kwh=50.0,
+        )
+        result_one = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=300.0,
+            mode="green",
+            start_soc_kwh=50.0,
+            grid_loss_factor=1.0,
+        )
+
+        np.testing.assert_allclose(
+            result_default["revenue"], result_one["revenue"], atol=ATOL,
+        )
+        np.testing.assert_allclose(
+            result_default["export_pv"], result_one["export_pv"], atol=ATOL,
+        )
+
+    def test_grid_loss_factor_reduces_green_revenue(self):
+        """Green revenue (PV export + green BESS discharge) is reduced by glf."""
+        pv = np.array([200.0, 0.0])
+        spot = np.array([0.10, 0.10])
+        bess = _make_bess(power_kw=100.0, capacity_kwh=200.0)
+        grid_max = 300.0
+
+        result_no_loss = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=grid_max,
+            mode="green",
+            start_soc_kwh=100.0,
+            grid_loss_factor=1.0,
+        )
+        glf = 0.86
+        result_with_loss = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=grid_max,
+            mode="green",
+            start_soc_kwh=100.0,
+            grid_loss_factor=glf,
+        )
+
+        rev_no_loss = float(np.sum(result_no_loss["revenue"]))
+        rev_with_loss = float(np.sum(result_with_loss["revenue"]))
+        # Revenue should be approximately reduced by glf
+        assert rev_with_loss < rev_no_loss
+        assert rev_with_loss > 0.0
+
+    def test_grid_loss_factor_no_effect_on_grey_revenue(self):
+        """Grey BESS discharge revenue is NOT affected by grid_loss_factor."""
+        pv = np.array([0.0, 0.0])
+        spot = np.array([0.02, 0.10])
+        bess = _make_bess(power_kw=100.0, capacity_kwh=200.0, rte=1.0)
+
+        # Grey mode: charge from grid at low price, discharge at high price
+        result_no_loss = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=300.0,
+            mode="grey",
+            start_soc_kwh=20.0,
+            start_soc_green_kwh=0.0,
+            start_soc_grey_kwh=20.0,
+            grid_loss_factor=1.0,
+        )
+        result_with_loss = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=300.0,
+            mode="grey",
+            start_soc_kwh=20.0,
+            start_soc_green_kwh=0.0,
+            start_soc_grey_kwh=20.0,
+            grid_loss_factor=0.86,
+        )
+
+        # Grey revenue should be identical (no PV, no green energy)
+        grey_rev_no_loss = float(np.sum(
+            result_no_loss["discharge_grey"] * 1.0 * spot
+            - result_no_loss["charge_grid"] * spot
+        ))
+        grey_rev_with_loss = float(np.sum(
+            result_with_loss["discharge_grey"] * 1.0 * spot
+            - result_with_loss["charge_grid"] * spot
+        ))
+        assert abs(grey_rev_no_loss - grey_rev_with_loss) < ATOL
+
+    def test_grid_loss_factor_in_grid_constraint(self):
+        """Grid constraint: export_pv × glf + discharge × RTE ≤ grid_max."""
+        glf = 0.80
+        rte = 0.90
+        grid_max = 100.0
+        pv = np.array([200.0, 200.0, 200.0, 200.0])
+        spot = np.array([0.10, 0.10, 0.10, 0.10])
+        bess = _make_bess(power_kw=50.0, capacity_kwh=100.0, rte=rte)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=grid_max,
+            mode="green",
+            start_soc_kwh=50.0,
+            grid_loss_factor=glf,
+        )
+
+        # Check grid constraint: export_pv × glf + discharge_green × RTE ≤ grid_max
+        grid_out = result["export_pv"] * glf + result["discharge_green"] * rte
+        assert np.all(grid_out <= grid_max + ATOL)
+
+    def test_offline_day_grid_loss_factor(self):
+        """dispatch_offline_day applies grid_loss_factor to revenue."""
+        pv = np.array([100.0, 200.0])
+        spot = np.array([0.10, 0.10])
+        glf = 0.86
+
+        result = dispatch_offline_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            grid_max_kw=300.0,
+            start_soc_kwh=50.0,
+            grid_loss_factor=glf,
+        )
+
+        expected_revenue = pv * glf * spot
+        np.testing.assert_allclose(result["revenue"], expected_revenue, atol=ATOL)
