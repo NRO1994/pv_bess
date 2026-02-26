@@ -76,8 +76,8 @@ opex_base = optimal.opex_base * opex_factor
 ```
 
 **Abwärtskompatibilität:** 
-Keine berücksichtigung der abwärtskompatibilität. Die Änderungen können ohne Rücksichtnahme auf bestehende Inputdateien 
-getätigt werden - es gibt keine.
+Keine Berücksichtigung der Abwärtskompatibilität. Die Änderungen können ohne Rücksichtnahme auf bestehende Inputdateien 
+getätigt werden - es gibt keine. Lediglich die Integration Testfiles müssen angepasst werden.
 
 #### MCParams-Erweiterung
 ```python

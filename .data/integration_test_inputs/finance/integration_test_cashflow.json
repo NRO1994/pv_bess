@@ -1,12 +1,14 @@
 {
   "scenario": {
-    "name": "Angelehnt an: Freifl\u00e4che A20",
+    "name": "Angelehnt an: Freifläche A20",
     "monte_carlo": {
       "enabled": true,
       "iterations": 1000,
-      "sigma_pv_yield_pct": 3.0,
-      "sigma_capex_pct": 15.0,
-      "sigma_opex_pct": 10.0,
+      "sigma_capex_pv_pct": 5.0,
+      "sigma_capex_bess_pct": 15.0,
+      "sigma_opex_pv_pct": 3.0,
+      "sigma_opex_bess_pct": 10.0,
+      "sigma_pv_availability_pct": 2.0,
       "sigma_bess_availability_pct": 2.0,
       "price_scenarios": {
         "low": {

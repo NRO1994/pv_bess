@@ -50,14 +50,20 @@ PVGIS_REQUEST_TIMEOUT_S: int = 60
 DEFAULT_MC_ITERATIONS: int = 1000
 """Default number of Monte Carlo iterations when not overridden by scenario JSON."""
 
-DEFAULT_MC_SIGMA_PV_YIELD_PCT: float = 5.0
-"""Default standard deviation for PV yield noise factor (% of 1.0)."""
+DEFAULT_MC_SIGMA_CAPEX_PV_PCT: float = 5.0
+"""Default standard deviation for PV CAPEX noise factor (% of 1.0)."""
 
-DEFAULT_MC_SIGMA_CAPEX_PCT: float = 8.0
-"""Default standard deviation for CAPEX noise factor (% of 1.0)."""
+DEFAULT_MC_SIGMA_CAPEX_BESS_PCT: float = 10.0
+"""Default standard deviation for BESS CAPEX noise factor (% of 1.0)."""
 
-DEFAULT_MC_SIGMA_OPEX_PCT: float = 5.0
-"""Default standard deviation for OPEX noise factor (% of 1.0)."""
+DEFAULT_MC_SIGMA_OPEX_PV_PCT: float = 3.0
+"""Default standard deviation for PV OPEX noise factor (% of 1.0)."""
+
+DEFAULT_MC_SIGMA_OPEX_BESS_PCT: float = 8.0
+"""Default standard deviation for BESS OPEX noise factor (% of 1.0)."""
+
+DEFAULT_MC_SIGMA_PV_AVAILABILITY_PCT: float = 2.0
+"""Default standard deviation for PV availability noise factor (% of 1.0)."""
 
 DEFAULT_MC_SIGMA_BESS_AVAILABILITY_PCT: float = 2.0
 """Default standard deviation for BESS availability noise factor (% of 1.0)."""
@@ -77,9 +83,6 @@ DEFAULT_BESS_AVAILABILITY_PCT: float = 100.0
 
 DEFAULT_OPTIMIZATION_FEE_PCT: float = 0.0
 """Default BESS optimization service fee as percentage of BESS spot revenue."""
-
-BESS_NOISE_CLIP_MIN: float = 0.0
-"""Minimum clip value for sampled BESS availability noise factor."""
 
 BESS_NOISE_CLIP_MAX: float = 1.0
 """Maximum clip value for sampled BESS availability noise factor."""

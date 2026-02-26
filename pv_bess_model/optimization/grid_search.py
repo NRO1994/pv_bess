@@ -271,7 +271,13 @@ class GridPointResult:
     capex_total: float
     capex_pv: float
     capex_bess: float
+    capex_grid: float
+    capex_other: float
     opex_base: float
+    opex_pv: float
+    opex_bess: float
+    opex_grid: float
+    opex_other: float
     revenue_year1: float
     equity_irr: float | None
     project_irr: float | None
@@ -349,6 +355,10 @@ class _GridPointArgs:
     capex_other: float
     capex_total: float
     opex_base: float
+    opex_pv: float
+    opex_bess: float
+    opex_grid: float
+    opex_other: float
     replacement_cost: float
 
     # Finance
@@ -523,7 +533,13 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         capex_total=args.capex_total,
         capex_pv=args.capex_pv,
         capex_bess=args.capex_bess,
+        capex_grid=args.capex_grid,
+        capex_other=args.capex_other,
         opex_base=args.opex_base,
+        opex_pv=args.opex_pv,
+        opex_bess=args.opex_bess,
+        opex_grid=args.opex_grid,
+        opex_other=args.opex_other,
         revenue_year1=revenue_year1,
         equity_irr=metrics.equity_irr,
         project_irr=metrics.project_irr,
@@ -641,6 +657,10 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     capex_other=costs.capex_other,
                     capex_total=costs.capex_total,
                     opex_base=costs.opex_total,
+                    opex_pv=costs.opex_pv,
+                    opex_bess=costs.opex_bess,
+                    opex_grid=costs.opex_grid,
+                    opex_other=costs.opex_other,
                     replacement_cost=replacement_cost,
                     leverage_pct=config.leverage_pct,
                     interest_rate_pct=config.interest_rate_pct,

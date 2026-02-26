@@ -47,9 +47,11 @@ from pv_bess_model.config.defaults import (
     DEFAULT_LOAN_TENOR_YEARS,
     DEFAULT_MC_ITERATIONS,
     DEFAULT_MC_SIGMA_BESS_AVAILABILITY_PCT,
-    DEFAULT_MC_SIGMA_CAPEX_PCT,
-    DEFAULT_MC_SIGMA_OPEX_PCT,
-    DEFAULT_MC_SIGMA_PV_YIELD_PCT,
+    DEFAULT_MC_SIGMA_CAPEX_BESS_PCT,
+    DEFAULT_MC_SIGMA_CAPEX_PV_PCT,
+    DEFAULT_MC_SIGMA_OPEX_BESS_PCT,
+    DEFAULT_MC_SIGMA_OPEX_PV_PCT,
+    DEFAULT_MC_SIGMA_PV_AVAILABILITY_PCT,
     DEFAULT_OUTPUT_DIR,
     DEFAULT_PV_DEGRADATION_RATE_PCT,
     DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
@@ -808,10 +810,12 @@ def run(args: argparse.Namespace) -> int:
     mc_result = None
     if mc_enabled:
         mc_iterations = int(mc_cfg.get("iterations", 1000))
-        sigma_pv = float(mc_cfg.get("sigma_pv_yield_pct", 5.0)) / 100.0
-        sigma_capex = float(mc_cfg.get("sigma_capex_pct", 8.0)) / 100.0
-        sigma_opex = float(mc_cfg.get("sigma_opex_pct", 5.0)) / 100.0
-        sigma_avail = float(mc_cfg.get("sigma_bess_availability_pct", 2.0)) / 100.0
+        sigma_capex_pv = float(mc_cfg.get("sigma_capex_pv_pct", DEFAULT_MC_SIGMA_CAPEX_PV_PCT)) / 100.0
+        sigma_capex_bess = float(mc_cfg.get("sigma_capex_bess_pct", DEFAULT_MC_SIGMA_CAPEX_BESS_PCT)) / 100.0
+        sigma_opex_pv = float(mc_cfg.get("sigma_opex_pv_pct", DEFAULT_MC_SIGMA_OPEX_PV_PCT)) / 100.0
+        sigma_opex_bess = float(mc_cfg.get("sigma_opex_bess_pct", DEFAULT_MC_SIGMA_OPEX_BESS_PCT)) / 100.0
+        sigma_pv_avail = float(mc_cfg.get("sigma_pv_availability_pct", DEFAULT_MC_SIGMA_PV_AVAILABILITY_PCT)) / 100.0
+        sigma_bess_avail = float(mc_cfg.get("sigma_bess_availability_pct", DEFAULT_MC_SIGMA_BESS_AVAILABILITY_PCT)) / 100.0
 
         # Build scenario price mapping (using already-extended prices)
         scenario_prices: dict[str, list[np.ndarray]] = {}
@@ -832,11 +836,13 @@ def run(args: argparse.Namespace) -> int:
 
         mc_params = MCParams(
             iterations=mc_iterations,
-            sigma_pv_yield=sigma_pv,
-            sigma_capex=sigma_capex,
-            sigma_opex=sigma_opex,
+            sigma_capex_pv=sigma_capex_pv,
+            sigma_capex_bess=sigma_capex_bess,
+            sigma_opex_pv=sigma_opex_pv,
+            sigma_opex_bess=sigma_opex_bess,
+            sigma_pv_availability=sigma_pv_avail,
             mu_bess_availability=bess_availability_pct / 100.0,
-            sigma_bess_availability=sigma_avail,
+            sigma_bess_availability=sigma_bess_avail,
             price_scenarios=mc_price_scenarios,
         )
 

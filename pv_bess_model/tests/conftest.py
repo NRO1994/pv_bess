@@ -291,9 +291,11 @@ def sample_scenario_config_green() -> dict:
             "monte_carlo": {
                 "enabled": False,
                 "iterations": 100,
-                "sigma_pv_yield_pct": 5.0,
-                "sigma_capex_pct": 8.0,
-                "sigma_opex_pct": 5.0,
+                "sigma_capex_pv_pct": 5.0,
+                "sigma_capex_bess_pct": 10.0,
+                "sigma_opex_pv_pct": 3.0,
+                "sigma_opex_bess_pct": 8.0,
+                "sigma_pv_availability_pct": 2.0,
                 "sigma_bess_availability_pct": 2.0,
                 "price_scenarios": {
                     "mid": {"csv_column": "MID", "weight": 1.0},
@@ -439,9 +441,11 @@ def sample_scenario_config_grey() -> dict:
             "monte_carlo": {
                 "enabled": False,
                 "iterations": 100,
-                "sigma_pv_yield_pct": 5.0,
-                "sigma_capex_pct": 8.0,
-                "sigma_opex_pct": 5.0,
+                "sigma_capex_pv_pct": 5.0,
+                "sigma_capex_bess_pct": 10.0,
+                "sigma_opex_pv_pct": 3.0,
+                "sigma_opex_bess_pct": 8.0,
+                "sigma_pv_availability_pct": 2.0,
                 "sigma_bess_availability_pct": 2.0,
                 "price_scenarios": {
                     "mid": {"csv_column": "MID", "weight": 1.0},

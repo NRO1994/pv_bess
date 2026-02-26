@@ -15,10 +15,10 @@ auf früheren aufbauen.
 
 ### Phase 2: Modell-Refactoring (2-3 Tage)
 
-| # | Feature | Aufwand | Abhängigkeiten | Status |
-|---|---------|---------|----------------|--------|
-| 02 | [Systemverluste am Netzanschluss](02_system_losses_restructuring.md) | Mittel (2-4h) | Keine | Offen |
-| 05 | [MC Framework Erweiterungen](05_mc_framework_enhancements.md) | Mittel (3-4h) | Keine | Offen |
+| # | Feature | Aufwand | Abhängigkeiten | Status   |
+|---|---------|---------|----------------|----------|
+| 02 | [Systemverluste am Netzanschluss](02_system_losses_restructuring.md) | Mittel (2-4h) | Keine | ERLEDIGT |
+| 05 | [MC Framework Erweiterungen](05_mc_framework_enhancements.md) | Mittel (3-4h) | Keine | ERLEDIGT |
 
 ### Phase 3: Großes Datenmodell-Refactoring (3-5 Tage)
 

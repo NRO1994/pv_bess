@@ -25,7 +25,6 @@ import numpy as np
 from pv_bess_model.bess.replacement import ReplacementConfig
 from pv_bess_model.config.defaults import (
     BESS_NOISE_CLIP_MAX,
-    BESS_NOISE_CLIP_MIN,
     DAYS_PER_YEAR,
     DEFAULT_MC_ITERATIONS,
     MC_WEIGHT_TOLERANCE,
@@ -53,13 +52,17 @@ class MCParams:
     ----------
     iterations:
         Number of MC iterations.
-    sigma_pv_yield:
-        Standard deviation for the PV yield noise factor N(1, σ).
-        e.g. 0.05 for 5 %.
-    sigma_capex:
-        Standard deviation for the CAPEX noise factor N(1, σ).
-    sigma_opex:
-        Standard deviation for the OPEX noise factor N(1, σ).
+    sigma_capex_pv:
+        Standard deviation for the PV CAPEX noise factor N(1, σ).
+    sigma_capex_bess:
+        Standard deviation for the BESS CAPEX noise factor N(1, σ).
+    sigma_opex_pv:
+        Standard deviation for the PV OPEX noise factor N(1, σ).
+    sigma_opex_bess:
+        Standard deviation for the BESS OPEX noise factor N(1, σ).
+    sigma_pv_availability:
+        Standard deviation for the PV availability noise factor.
+        PV availability is sampled as N(1.0, σ), clipped to [0, 1].
     mu_bess_availability:
         Mean of the BESS availability noise factor (fraction, 0–1).
         e.g. 0.97 for 97 %.
@@ -68,14 +71,6 @@ class MCParams:
     price_scenarios:
         Mapping from scenario name to ``{"csv_column": str, "weight": float}``.
         Weights must sum to 1.0 (within ``MC_WEIGHT_TOLERANCE``).
-        Example::
-
-            {
-                "low":  {"csv_column": "LOW",  "weight": 0.25},
-                "mid":  {"csv_column": "MID",  "weight": 0.50},
-                "high": {"csv_column": "HIGH", "weight": 0.25},
-            }
-
     seed:
         Base random seed for reproducibility. Each iteration uses
         ``seed + iteration`` as its own seed.
@@ -84,9 +79,11 @@ class MCParams:
     """
 
     iterations: int = DEFAULT_MC_ITERATIONS
-    sigma_pv_yield: float = 0.05
-    sigma_capex: float = 0.08
-    sigma_opex: float = 0.05
+    sigma_capex_pv: float = 0.05
+    sigma_capex_bess: float = 0.10
+    sigma_opex_pv: float = 0.03
+    sigma_opex_bess: float = 0.08
+    sigma_pv_availability: float = 0.02
     mu_bess_availability: float = 0.97
     sigma_bess_availability: float = 0.02
     price_scenarios: dict[str, dict] = field(default_factory=dict)
@@ -119,14 +116,18 @@ class MCIterationResult:
         1-indexed iteration number.
     price_scenario:
         Name of the sampled price scenario (e.g. ``"mid"``).
-    pv_yield_factor:
-        Sampled PV yield noise factor.
-    capex_factor:
-        Sampled CAPEX noise factor.
-    opex_factor:
-        Sampled OPEX noise factor.
+    capex_factor_pv:
+        Sampled PV CAPEX noise factor.
+    capex_factor_bess:
+        Sampled BESS CAPEX noise factor.
+    opex_factor_pv:
+        Sampled PV OPEX noise factor.
+    opex_factor_bess:
+        Sampled BESS OPEX noise factor.
+    pv_availability_factor:
+        Sampled PV availability factor (fraction, clipped to [0, 1]).
     bess_availability_factor:
-        Sampled BESS availability factor (fraction, clipped to [0, 1]).
+        Sampled BESS availability factor (fraction, clipped to [mu, 1]).
     equity_irr:
         Post-leverage, post-tax Equity IRR (or None).
     project_irr:
@@ -139,9 +140,11 @@ class MCIterationResult:
 
     iteration: int
     price_scenario: str
-    pv_yield_factor: float
-    capex_factor: float
-    opex_factor: float
+    capex_factor_pv: float
+    capex_factor_bess: float
+    opex_factor_pv: float
+    opex_factor_bess: float
+    pv_availability_factor: float
     bess_availability_factor: float
     equity_irr: float | None
     project_irr: float | None
@@ -249,35 +252,62 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
     spot_prices_yearly: list[np.ndarray] = scenario_prices[scenario_name]
 
     # --- Sample noise factors ---
-    pv_yield_factor = float(rng.normal(1.0, mc.sigma_pv_yield))
-    capex_factor = float(rng.normal(1.0, mc.sigma_capex))
-    opex_factor = float(rng.normal(1.0, mc.sigma_opex))
-    raw_avail = float(
-        rng.normal(mc.mu_bess_availability, mc.sigma_bess_availability)
-    )
-    bess_availability_factor = float(
-        np.clip(raw_avail, BESS_NOISE_CLIP_MIN, BESS_NOISE_CLIP_MAX)
+    capex_factor_pv = float(rng.normal(1.0, mc.sigma_capex_pv))
+    capex_factor_bess = float(rng.normal(1.0, mc.sigma_capex_bess))
+    opex_factor_pv = float(rng.normal(1.0, mc.sigma_opex_pv))
+    opex_factor_bess = float(rng.normal(1.0, mc.sigma_opex_bess))
+
+    # PV availability: N(1.0, sigma), clipped to [0, 1]
+    pv_availability_factor = float(
+        np.clip(rng.normal(1.0, mc.sigma_pv_availability), 0.0, BESS_NOISE_CLIP_MAX)
     )
 
-    # --- Stochastic offline days: redrawn randomly per year ---
-    n_offline_days = round((1.0 - bess_availability_factor) * DAYS_PER_YEAR)
-    n_offline_days = max(0, min(n_offline_days, DAYS_PER_YEAR))
+    # BESS availability: N(mu_sample, sigma), clipped to [mu_bess, 1.0]
+    mu_sample = (mc.mu_bess_availability + 1.0) / 2.0
+    raw_avail = float(
+        rng.normal(mu_sample, mc.sigma_bess_availability)
+    )
+    bess_availability_factor = float(
+        np.clip(raw_avail, mc.mu_bess_availability, BESS_NOISE_CLIP_MAX)
+    )
+
+    # --- Stochastic BESS offline days: redrawn randomly per year ---
+    n_bess_offline_days = round((1.0 - bess_availability_factor) * DAYS_PER_YEAR)
+    n_bess_offline_days = max(0, min(n_bess_offline_days, DAYS_PER_YEAR))
     offline_days_yearly: list[set[int]] = []
     for _ in range(base.lifetime_years):
-        if n_offline_days > 0:
-            day_indices = rng.choice(DAYS_PER_YEAR, size=n_offline_days, replace=False)
+        if n_bess_offline_days > 0:
+            day_indices = rng.choice(DAYS_PER_YEAR, size=n_bess_offline_days, replace=False)
             offline_days_yearly.append({int(d) for d in day_indices})
         else:
             offline_days_yearly.append(set())
 
-    # --- Apply PV yield factor ---
-    pv_timeseries = base.pv_base_timeseries_p50 * pv_yield_factor
+    # --- Stochastic PV offline days: redrawn randomly per year ---
+    n_pv_offline_days = round((1.0 - pv_availability_factor) * DAYS_PER_YEAR)
+    n_pv_offline_days = max(0, min(n_pv_offline_days, DAYS_PER_YEAR))
+    pv_offline_days_yearly: list[set[int]] = []
+    for _ in range(base.lifetime_years):
+        if n_pv_offline_days > 0:
+            day_indices = rng.choice(DAYS_PER_YEAR, size=n_pv_offline_days, replace=False)
+            pv_offline_days_yearly.append({int(d) for d in day_indices})
+        else:
+            pv_offline_days_yearly.append(set())
 
-    # --- Scale CAPEX / OPEX ---
-    capex_total = optimal.capex_total * capex_factor
-    capex_pv = optimal.capex_pv * capex_factor
-    capex_bess = optimal.capex_bess * capex_factor
-    opex_base = optimal.opex_base * opex_factor
+    # --- PV timeseries (no yield factor, offline days handle availability) ---
+    pv_timeseries = base.pv_base_timeseries_p50
+
+    # --- Scale CAPEX / OPEX per asset ---
+    capex_pv = optimal.capex_pv * capex_factor_pv
+    capex_bess = optimal.capex_bess * capex_factor_bess
+    capex_grid = optimal.capex_grid
+    capex_other = optimal.capex_other
+    capex_total = capex_pv + capex_bess + capex_grid + capex_other
+
+    opex_pv = optimal.opex_pv * opex_factor_pv
+    opex_bess = optimal.opex_bess * opex_factor_bess
+    opex_grid = optimal.opex_grid
+    opex_other = optimal.opex_other
+    opex_base = opex_pv + opex_bess + opex_grid + opex_other
 
     # --- Replacement cost (scales with BESS CAPEX) ---
     replacement_cost = (
@@ -321,6 +351,7 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         offline_days_yearly=offline_days_yearly,
         goo_prices_yearly=base.goo_prices_yearly if base.goo_prices_yearly else None,
         cap_prices_yearly=base.cap_prices_yearly if base.cap_prices_yearly else None,
+        pv_offline_days_yearly=pv_offline_days_yearly if n_pv_offline_days > 0 else None,
     )
 
     annual_revenues = [r.total_revenue for r in sim.annual_results]
@@ -384,9 +415,11 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
     return MCIterationResult(
         iteration=iteration,
         price_scenario=scenario_name,
-        pv_yield_factor=pv_yield_factor,
-        capex_factor=capex_factor,
-        opex_factor=opex_factor,
+        capex_factor_pv=capex_factor_pv,
+        capex_factor_bess=capex_factor_bess,
+        opex_factor_pv=opex_factor_pv,
+        opex_factor_bess=opex_factor_bess,
+        pv_availability_factor=pv_availability_factor,
         bess_availability_factor=bess_availability_factor,
         equity_irr=metrics.equity_irr,
         project_irr=metrics.project_irr,

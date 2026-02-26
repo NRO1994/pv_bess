@@ -55,9 +55,11 @@ _MONTE_CARLO = {
     "properties": {
         "enabled": {"type": "boolean"},
         "iterations": {"type": "integer", "minimum": 1},
-        "sigma_pv_yield_pct": {"type": "number", "minimum": 0},
-        "sigma_capex_pct": {"type": "number", "minimum": 0},
-        "sigma_opex_pct": {"type": "number", "minimum": 0},
+        "sigma_capex_pv_pct": {"type": "number", "minimum": 0},
+        "sigma_capex_bess_pct": {"type": "number", "minimum": 0},
+        "sigma_opex_pv_pct": {"type": "number", "minimum": 0},
+        "sigma_opex_bess_pct": {"type": "number", "minimum": 0},
+        "sigma_pv_availability_pct": {"type": "number", "minimum": 0},
         "sigma_bess_availability_pct": {"type": "number", "minimum": 0},
         "price_scenarios": {
             "type": "object",

@@ -358,6 +358,7 @@ def run_simulation(
     offline_days_yearly: list[set[int]],
     goo_prices_yearly: list[float] | None = None,
     cap_prices_yearly: list[float] | None = None,
+    pv_offline_days_yearly: list[set[int]] | None = None,
 ) -> SimulationResult:
     """Execute the full multi-year dispatch simulation.
 
@@ -390,6 +391,10 @@ def run_simulation(
         Optional list of length ``lifetime_years``.  Each element is the
         cap price in EUR/kWh for that year (PPA Collar only).  0.0 means
         no cap (unbounded upside).  If ``None``, defaults to all-zeros.
+    pv_offline_days_yearly:
+        Optional list of length ``lifetime_years``.  Each element is a set
+        of 0-indexed day indices (0--364) when PV production is zero
+        (maintenance/outage).  If ``None``, PV is always available.
 
     Returns
     -------
@@ -514,8 +519,16 @@ def run_simulation(
             h_start = day * HOURS_PER_DAY
             h_end = h_start + HOURS_PER_DAY
 
-            pv_day = pv_year[h_start:h_end]
+            pv_day = pv_year[h_start:h_end].copy()
             spot_day = spot_prices[h_start:h_end]
+
+            # Zero PV production on PV offline days
+            if (
+                pv_offline_days_yearly is not None
+                and year_idx < len(pv_offline_days_yearly)
+                and day in pv_offline_days_yearly[year_idx]
+            ):
+                pv_day[:] = 0.0
 
             is_offline = (day in offline_days) or (not has_bess)
 
