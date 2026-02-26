@@ -242,6 +242,7 @@ def _build_green_lp(
     max_charge_kw: float,
     max_discharge_kw: float,
     grid_max_kw: float,
+    grid_loss_factor: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Construct the Green-Mode LP matrices.
 
@@ -252,12 +253,12 @@ def _build_green_lp(
     T = len(pv_production_kwh)
     n_vars = 4 * T  # charge_pv, disch_green, export_pv, curtail
 
-    # --- Objective: max Σ(export[t]*eff[t] + disch_green[t]*RTE*eff[t]) ---
+    # --- Objective: max Σ(export[t]*glf*eff[t] + disch_green[t]*RTE*glf*eff[t]) ---
     # linprog minimises → negate
     c = np.zeros(n_vars)
     for t in range(T):
-        c[2 * T + t] = -eff_prices[t]            # export_pv[t]
-        c[T + t] = -(rte * eff_prices[t])         # discharge_green[t] × RTE × eff
+        c[2 * T + t] = -(grid_loss_factor * eff_prices[t])            # export_pv[t] × glf
+        c[T + t] = -(rte * grid_loss_factor * eff_prices[t])          # discharge_green[t] × RTE × glf
 
     # --- Equality constraints ---
     # PV energy balance: export[t] + charge_pv[t] + curtail[t] = pv[t]  ∀t
@@ -303,10 +304,10 @@ def _build_green_lp(
         ub_rhs.append(max_discharge_kw)
 
     for t in range(T):
-        # Grid connection limit: export_pv[t] + discharge_green[t] × RTE ≤ grid_max
+        # Grid connection limit: export_pv[t] × glf + discharge_green[t] × RTE ≤ grid_max
         row = np.zeros(n_vars)
-        row[2 * T + t] = 1.0        # export_pv[t]
-        row[T + t] = rte             # discharge_green[t] × RTE
+        row[2 * T + t] = grid_loss_factor   # export_pv[t] × glf
+        row[T + t] = rte                     # discharge_green[t] × RTE
         ub_rows.append(row)
         ub_rhs.append(grid_max_kw)
 
@@ -333,6 +334,7 @@ def _build_grey_lp(
     max_charge_kw: float,
     max_discharge_kw: float,
     grid_max_kw: float,
+    grid_loss_factor: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Construct the Grey-Mode LP matrices.
 
@@ -346,14 +348,14 @@ def _build_grey_lp(
     n_vars = 6 * T  # charge_pv, disch_green, export_pv, curtail, charge_grid, disch_grey
 
     # --- Objective ---
-    # max Σ[ export[t]*eff[t] + disch_green[t]*RTE*eff[t]
+    # max Σ[ export[t]*glf*eff[t] + disch_green[t]*RTE*glf*eff[t]
     #        + disch_grey[t]*RTE*spot[t] - charge_grid[t]*spot[t] ]
     c = np.zeros(n_vars)
     for t in range(T):
-        c[2 * T + t] = -eff_prices[t]                        # export_pv
-        c[T + t] = -(rte * eff_prices[t])                     # discharge_green
-        c[5 * T + t] = -(rte * spot_prices_eur_per_kwh[t])    # discharge_grey revenue
-        c[4 * T + t] = spot_prices_eur_per_kwh[t]             # charge_grid cost
+        c[2 * T + t] = -(grid_loss_factor * eff_prices[t])                # export_pv × glf
+        c[T + t] = -(rte * grid_loss_factor * eff_prices[t])               # discharge_green × RTE × glf
+        c[5 * T + t] = -(rte * spot_prices_eur_per_kwh[t])                # discharge_grey revenue (no glf)
+        c[4 * T + t] = spot_prices_eur_per_kwh[t]                         # charge_grid cost
 
     # --- Equality constraints ---
     # PV energy balance: export[t] + charge_pv[t] + curtail[t] = pv[t]
@@ -422,9 +424,9 @@ def _build_grey_lp(
         ub_rhs.append(max_discharge_kw)
 
     for t in range(T):
-        # Grid connection: export_pv[t] + (disch_green[t] + disch_grey[t]) × RTE ≤ grid_max
+        # Grid connection: export_pv[t] × glf + (disch_green[t] + disch_grey[t]) × RTE ≤ grid_max
         row = np.zeros(n_vars)
-        row[2 * T + t] = 1.0
+        row[2 * T + t] = grid_loss_factor   # export_pv × glf
         row[T + t] = rte
         row[5 * T + t] = rte
         ub_rows.append(row)
@@ -447,6 +449,7 @@ def _extract_green_result(
     eff_prices: np.ndarray,
     rte: float,
     start_soc_kwh: float,
+    grid_loss_factor: float = 1.0,
 ) -> DailyDispatchResult:
     """Parse the LP solution vector into a :class:`DailyDispatchResult` (Green)."""
     charge_pv = x[0: T]
@@ -461,8 +464,11 @@ def _extract_green_result(
         cumulative += charge_pv[t] - discharge_green[t]
         soc[t] = cumulative
 
-    # Revenue per hour (€)
-    revenue = export_pv * eff_prices + discharge_green * rte * eff_prices
+    # Revenue per hour (€) – green energy reduced by grid_loss_factor
+    revenue = (
+        export_pv * grid_loss_factor * eff_prices
+        + discharge_green * rte * grid_loss_factor * eff_prices
+    )
 
     return DailyDispatchResult(
         charge_pv=charge_pv,
@@ -489,6 +495,7 @@ def _extract_grey_result(
     rte: float,
     start_soc_green_kwh: float,
     start_soc_grey_kwh: float,
+    grid_loss_factor: float = 1.0,
 ) -> DailyDispatchResult:
     """Parse the LP solution vector into a :class:`DailyDispatchResult` (Grey)."""
     charge_pv = x[0: T]
@@ -511,10 +518,10 @@ def _extract_grey_result(
 
     soc = soc_green + soc_grey
 
-    # Revenue (€): green at effective price, grey at spot, minus grid import cost
+    # Revenue (€): green at effective price × glf, grey at spot (no glf), minus grid import
     revenue = (
-        export_pv * eff_prices
-        + discharge_green * rte * eff_prices
+        export_pv * grid_loss_factor * eff_prices
+        + discharge_green * rte * grid_loss_factor * eff_prices
         + discharge_grey * rte * spot_prices_eur_per_kwh
         - charge_grid * spot_prices_eur_per_kwh
     )
@@ -553,6 +560,7 @@ def optimize_day(
     start_soc_grey_kwh: float | None = None,
     goo_premium_eur_per_kwh: float = 0.0,
     price_cap_eur_per_kwh: float = 0.0,
+    grid_loss_factor: float = 1.0,
 ) -> DailyDispatchResult:
     """Solve the daily dispatch LP for one day.
 
@@ -585,6 +593,11 @@ def optimize_day(
     price_cap_eur_per_kwh : float
         Cap price in **€/kWh** for PPA Collar.  Set to **0.0** when no cap
         is active (unbounded upside).  Defaults to 0.0.
+    grid_loss_factor : float
+        Grid loss factor in (0, 1].  Applied to green energy (PV export and
+        green BESS discharge) in the objective function, grid constraint, and
+        revenue calculation.  Grey energy is **not** affected.  Defaults to
+        1.0 (no losses).
 
     Returns
     -------
@@ -616,6 +629,7 @@ def optimize_day(
             max_charge_kw=bess.max_charge_kw,
             max_discharge_kw=bess.max_discharge_kw,
             grid_max_kw=grid_max_kw,
+            grid_loss_factor=grid_loss_factor,
         )
         n_vars = 4 * T
         soc_green_start = start_soc_kwh
@@ -639,6 +653,7 @@ def optimize_day(
             max_charge_kw=bess.max_charge_kw,
             max_discharge_kw=bess.max_discharge_kw,
             grid_max_kw=grid_max_kw,
+            grid_loss_factor=grid_loss_factor,
         )
         n_vars = 6 * T
     else:
@@ -673,16 +688,17 @@ def optimize_day(
             start_soc_grey_kwh=soc_grey_start,
             goo_premium_eur_per_kwh=goo_premium_eur_per_kwh,
             price_cap_eur_per_kwh=price_cap_eur_per_kwh,
+            grid_loss_factor=grid_loss_factor,
         )
 
     x = result.x
 
     if mode == "green":
-        return _extract_green_result(x, T, eff, rte, start_soc_kwh)
+        return _extract_green_result(x, T, eff, rte, start_soc_kwh, grid_loss_factor)
     else:
         return _extract_grey_result(
             x, T, spot_prices_eur_per_kwh, eff, rte,
-            soc_green_start, soc_grey_start,
+            soc_green_start, soc_grey_start, grid_loss_factor,
         )
 
 
@@ -701,6 +717,7 @@ def dispatch_offline_day(
     start_soc_grey_kwh: float | None = None,
     goo_premium_eur_per_kwh: float = 0.0,
     price_cap_eur_per_kwh: float = 0.0,
+    grid_loss_factor: float = 1.0,
 ) -> DailyDispatchResult:
     """Produce dispatch results for a BESS-offline day.
 
@@ -752,7 +769,7 @@ def dispatch_offline_day(
         spot_prices_eur_per_kwh, price_fixed_eur_per_kwh,
         goo_premium_eur_per_kwh, price_cap_eur_per_kwh,
     )
-    revenue = export_pv * eff
+    revenue = export_pv * grid_loss_factor * eff
 
     return DailyDispatchResult(
         charge_pv=np.zeros(T),

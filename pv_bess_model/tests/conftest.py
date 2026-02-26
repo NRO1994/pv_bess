@@ -323,7 +323,6 @@ def sample_scenario_config_green() -> dict:
                         "tilt_deg": 30,
                     },
                     "performance": {
-                        "system_loss_pct": 14.0,
                         "degradation_rate_pct_per_year": 0.4,
                     },
                     "costs": {
@@ -371,6 +370,7 @@ def sample_scenario_config_green() -> dict:
                 },
                 "grid_connection": {
                     "max_export_kw": 4_000.0,
+                    "system_loss_pct": 14.0,
                     "costs": {
                         "capex": {
                             "fixed_eur": 50_000.0,
@@ -471,7 +471,6 @@ def sample_scenario_config_grey() -> dict:
                         "tilt_deg": 30,
                     },
                     "performance": {
-                        "system_loss_pct": 14.0,
                         "degradation_rate_pct_per_year": 0.4,
                     },
                     "costs": {
@@ -519,6 +518,7 @@ def sample_scenario_config_grey() -> dict:
                 },
                 "grid_connection": {
                     "max_export_kw": 4_000.0,
+                    "system_loss_pct": 14.0,
                     "costs": {
                         "capex": {
                             "fixed_eur": 50_000.0,

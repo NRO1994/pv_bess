@@ -9,9 +9,18 @@
       "sigma_opex_pct": 10.0,
       "sigma_bess_availability_pct": 2.0,
       "price_scenarios": {
-        "low":  {"csv_column": "Low",  "weight": 0.33},
-        "mid":  {"csv_column": "Mid",  "weight": 0.34},
-        "high": {"csv_column": "High", "weight": 0.33}
+        "low": {
+          "csv_column": "Low",
+          "weight": 0.33
+        },
+        "mid": {
+          "csv_column": "Mid",
+          "weight": 0.34
+        },
+        "high": {
+          "csv_column": "High",
+          "weight": 0.33
+        }
       }
     },
     "output": {
@@ -38,7 +47,6 @@
           "tilt_deg": 18
         },
         "performance": {
-          "system_loss_pct": 0,
           "degradation_rate_pct_per_year": 0
         },
         "costs": {
@@ -55,8 +63,17 @@
       },
       "bess": {
         "design_space": {
-          "scale_pct_of_pv": [0, 50, 80, 100],
-          "e_to_p_ratio_hours": [1, 2, 4]
+          "scale_pct_of_pv": [
+            0,
+            50,
+            80,
+            100
+          ],
+          "e_to_p_ratio_hours": [
+            1,
+            2,
+            4
+          ]
         },
         "performance": {
           "round_trip_efficiency_pct": 98.5,
@@ -95,7 +112,8 @@
             "fixed_eur": 0,
             "pct_of_capex": 0
           }
-        }
+        },
+        "system_loss_pct": 0
       }
     },
     "finance": {

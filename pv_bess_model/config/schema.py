@@ -107,9 +107,8 @@ _PV_DESIGN = {
 
 _PV_PERFORMANCE = {
     "type": "object",
-    "required": ["system_loss_pct", "degradation_rate_pct_per_year"],
+    "required": ["degradation_rate_pct_per_year"],
     "properties": {
-        "system_loss_pct": {"type": "number", "minimum": 0, "maximum": 100},
         "degradation_rate_pct_per_year": {
             "type": "number",
             "minimum": 0,
@@ -231,6 +230,7 @@ _GRID_CONNECTION = {
     "required": ["max_export_kw", "costs"],
     "properties": {
         "max_export_kw": {"type": "number", "exclusiveMinimum": 0},
+        "system_loss_pct": {"type": "number", "minimum": 0, "maximum": 100},
         "costs": {
             "type": "object",
             "required": ["capex", "opex"],

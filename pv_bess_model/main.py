@@ -53,7 +53,6 @@ from pv_bess_model.config.defaults import (
     DEFAULT_OUTPUT_DIR,
     DEFAULT_PV_DEGRADATION_RATE_PCT,
     DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
-    DEFAULT_SYSTEM_LOSS_PCT,
     HOURS_PER_YEAR,
     MARKETING_TYPE_EEG,
     PPA_TYPE_COLLAR,
@@ -473,7 +472,6 @@ def run(args: argparse.Namespace) -> int:
     pv_perf = pv.get("performance", {})
     pv_peak_kwp = float(pv_design["peak_power_kwp"])
     pv_degradation_rate = float(pv_perf.get("degradation_rate_pct_per_year", DEFAULT_PV_DEGRADATION_RATE_PCT)) / 100.0
-    system_loss_pct = float(pv_perf.get("system_loss_pct", DEFAULT_SYSTEM_LOSS_PCT))
 
     # BESS parameters
     bess = scenario.bess
@@ -497,6 +495,8 @@ def run(args: argparse.Namespace) -> int:
     # Grid connection
     grid_connection = scenario.grid_connection
     grid_max_kw = float(grid_connection.get("max_export_kw", pv_peak_kwp))
+    system_loss_pct = float(grid_connection.get("system_loss_pct", 0.0))
+    grid_loss_factor = 1.0 - system_loss_pct / 100.0
 
     # BESS design space (for grid search)
     bess_design_space = bess.get("design_space", {})
@@ -539,7 +539,7 @@ def run(args: argparse.Namespace) -> int:
             latitude=latitude,
             longitude=longitude,
             peak_power_kwp=pv_peak_kwp,
-            system_loss_pct=system_loss_pct,
+            system_loss_pct=0.0,
             mounting_type=mounting_type,
             azimuth_deg=azimuth_deg,
             tilt_deg=tilt_deg,
@@ -646,6 +646,7 @@ def run(args: argparse.Namespace) -> int:
         replacement_pct_of_capex=replacement_pct_of_capex,
         optimization_fee_pct=optimization_fee_pct,
         grid_max_kw=grid_max_kw,
+        grid_loss_factor=grid_loss_factor,
         grid_costs_capex=grid_capex_cfg,
         grid_costs_opex=grid_opex_cfg,
         operating_mode=scenario.operating_mode,

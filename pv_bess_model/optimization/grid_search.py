@@ -178,6 +178,7 @@ class GridSearchConfig:
 
     # Grid
     grid_max_kw: float
+    grid_loss_factor: float
     grid_costs_capex: dict
     grid_costs_opex: dict
 
@@ -318,6 +319,7 @@ class _GridPointArgs:
     # Engine config
     operating_mode: str
     grid_max_kw: float
+    grid_loss_factor: float
     bess_rte: float
     bess_min_soc_pct: float
     bess_max_soc_pct: float
@@ -408,6 +410,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         replacement=replacement,
         lifetime_years=args.lifetime_years,
         bess_power_kw=args.bess_power_kw,
+        grid_loss_factor=args.grid_loss_factor,
     )
 
     # P50 simulation – used for equity cashflows
@@ -614,6 +617,7 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     bess_capacity_kwh=bess_capacity_kwh,
                     operating_mode=config.operating_mode,
                     grid_max_kw=config.grid_max_kw,
+                    grid_loss_factor=config.grid_loss_factor,
                     bess_rte=config.bess_rte,
                     bess_min_soc_pct=config.bess_min_soc_pct,
                     bess_max_soc_pct=config.bess_max_soc_pct,

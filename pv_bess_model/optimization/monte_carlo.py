@@ -309,6 +309,7 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         replacement=replacement,
         lifetime_years=base.lifetime_years,
         bess_power_kw=optimal.bess_power_kw,
+        grid_loss_factor=base.grid_loss_factor,
     )
 
     # --- Run dispatch simulation ---

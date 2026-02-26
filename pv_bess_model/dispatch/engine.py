@@ -111,6 +111,9 @@ class DispatchEngineConfig:
         Number of project years to simulate.
     bess_power_kw:
         Rated BESS power in kW (used for replacement cost calculation).
+    grid_loss_factor:
+        Grid loss factor in (0, 1].  Applied to green energy at the grid
+        connection point.  Defaults to 1.0 (no losses).
     """
 
     mode: OperatingMode
@@ -126,6 +129,7 @@ class DispatchEngineConfig:
     replacement: ReplacementConfig
     lifetime_years: int
     bess_power_kw: float
+    grid_loss_factor: float = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -526,6 +530,7 @@ def run_simulation(
                     start_soc_grey_kwh=current_soc_grey,
                     goo_premium_eur_per_kwh=goo_price,
                     price_cap_eur_per_kwh=cap_price,
+                    grid_loss_factor=config.grid_loss_factor,
                 )
             else:
                 result = optimize_day(
@@ -540,6 +545,7 @@ def run_simulation(
                     start_soc_grey_kwh=current_soc_grey if config.mode == "grey" else None,
                     goo_premium_eur_per_kwh=goo_price,
                     price_cap_eur_per_kwh=cap_price,
+                    grid_loss_factor=config.grid_loss_factor,
                 )
 
             # Update SoC carry-over
@@ -557,9 +563,10 @@ def run_simulation(
             if goo_price > 0.0:
                 eff_day = eff_day + goo_price
 
-            day_rev_pv = float(np.sum(result["export_pv"] * eff_day))
+            glf = config.grid_loss_factor
+            day_rev_pv = float(np.sum(result["export_pv"] * glf * eff_day))
             day_rev_green = float(
-                np.sum(result["discharge_green"] * config.bess_rte * eff_day)
+                np.sum(result["discharge_green"] * config.bess_rte * glf * eff_day)
             )
             day_rev_grey = float(
                 np.sum(result["discharge_grey"] * config.bess_rte * spot_day)
@@ -567,7 +574,7 @@ def run_simulation(
             day_import = float(np.sum(result["charge_grid"] * spot_day))
 
             day_bess_spot_rev = float(
-                np.sum(result["discharge_green"] * config.bess_rte * spot_day)
+                np.sum(result["discharge_green"] * config.bess_rte * glf * spot_day)
                 + np.sum(result["discharge_grey"] * config.bess_rte * spot_day)
             )
 
