@@ -11,7 +11,7 @@ auf früheren aufbauen.
 |---|---------|---------|----------------|--------|
 | 01 | [PPA Collar Bug Fix](01_ppa_collar_bugfix.md) | Klein (<1h) | Keine | ERLEDIGT |
 | 03 | [BESS Optimierungs-OPEX](03_bess_optimization_opex.md) | Klein-Mittel (2-3h) | Keine | ERLEDIGT |
-| 04 | [BESS Replacement als CAPEX](04_bess_replacement_as_capex.md) | Mittel (3-4h) | Keine | OFFEN |
+| 04 | [BESS Replacement als CAPEX](04_bess_replacement_as_capex.md) | Mittel (3-4h) | Keine | ERLEDIGT |
 
 ### Phase 2: Modell-Refactoring (2-3 Tage)
 

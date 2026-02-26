@@ -100,7 +100,7 @@ def build_cashflow_projection(
         gewerbesteuer_hebesatz: GewSt Hebesatz.
         koerperschaftsteuer_pct: KSt rate in percent (default from defaults.py).
         solidaritaetszuschlag_pct: Soli rate in percent (default from defaults.py).
-        replacement_cost: BESS replacement cost (added as OPEX in replacement year).
+        replacement_cost: BESS replacement cost (CAPEX outflow in replacement year).
         replacement_year: Year of BESS replacement (1-indexed), or None.
         optimization_fee_pct: BESS optimization service fee as percentage of BESS spot
             revenue. Not inflation-adjusted (already based on current-year revenue).
@@ -125,17 +125,18 @@ def build_cashflow_projection(
         # OPEX with inflation
         opex = inflate_value(base_opex, inflation_rate, y)
 
-        # Add BESS replacement cost in the replacement year
-        if replacement_year is not None and y == replacement_year:
-            opex += replacement_cost
-
         # Optimization fee (not inflated - already based on current-year revenue)
         if optimization_fee_pct > 0.0 and annual_bess_spot_revenues:
             opex += annual_bess_spot_revenues[idx] * optimization_fee_pct / 100.0
 
+        # Replacement CAPEX outflow (equity-financed, no additional debt)
+        replacement_capex_this_year = 0.0
+        if replacement_year is not None and y == replacement_year:
+            replacement_capex_this_year = replacement_cost
+
         debt_svc = get_debt_service(debt_schedule, y)
 
-        # Tax calculation with Verlustvortrag
+        # Tax calculation with Verlustvortrag and replacement AfA
         tax_result = calculate_tax_for_year(
             revenue=revenue,
             opex=opex,
@@ -149,12 +150,14 @@ def build_cashflow_projection(
             hebesatz=gewerbesteuer_hebesatz,
             kst_rate_pct=koerperschaftsteuer_pct,
             soli_rate_pct=solidaritaetszuschlag_pct,
+            capex_bess_replacement=replacement_cost if replacement_year else 0.0,
+            replacement_year=replacement_year,
         )
         loss_carryforward = tax_result.loss_carryforward_remaining
 
-        # CAPEX is booked in Year 1 only
-        capex_this_year = capex_total if y == 1 else 0.0
-        equity_capex_this_year = equity_investment if y == 1 else 0.0
+        # CAPEX is booked in Year 1; replacement CAPEX in replacement year
+        capex_this_year = (capex_total if y == 1 else 0.0) + replacement_capex_this_year
+        equity_capex_this_year = (equity_investment if y == 1 else 0.0) + replacement_capex_this_year
 
         # Project CF (pre-leverage): Revenue - OPEX - Tax - CAPEX
         proj_cf = revenue - opex - tax_result.total_tax - capex_this_year
