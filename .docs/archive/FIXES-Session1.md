@@ -1,4 +1,4 @@
-# FIXES.md – Fehlerbehebungen und Anpassungen
+# FIXES-Session1.md – Fehlerbehebungen und Anpassungen
 
 ## Integration
 
