@@ -350,6 +350,7 @@ def run_simulation(
     fixed_prices_yearly: list[float],
     offline_days_yearly: list[set[int]],
     goo_prices_yearly: list[float] | None = None,
+    cap_prices_yearly: list[float] | None = None,
 ) -> SimulationResult:
     """Execute the full multi-year dispatch simulation.
 
@@ -378,6 +379,10 @@ def run_simulation(
         Guarantee-of-Origin premium in EUR/kWh for that year (0.0 when no
         PPA is active or the PPA has no GoO clause).  If ``None``, defaults
         to all-zeros (no GoO applied).
+    cap_prices_yearly:
+        Optional list of length ``lifetime_years``.  Each element is the
+        cap price in EUR/kWh for that year (PPA Collar only).  0.0 means
+        no cap (unbounded upside).  If ``None``, defaults to all-zeros.
 
     Returns
     -------
@@ -391,6 +396,13 @@ def run_simulation(
     goo_per_year: list[float] = (
         goo_prices_yearly
         if goo_prices_yearly is not None
+        else [0.0] * config.lifetime_years
+    )
+
+    # Default cap prices to zero if not provided (0.0 = no cap)
+    cap_per_year: list[float] = (
+        cap_prices_yearly
+        if cap_prices_yearly is not None
         else [0.0] * config.lifetime_years
     )
 
@@ -460,6 +472,7 @@ def run_simulation(
         spot_prices = spot_prices_yearly[year_idx]
         fixed_price = fixed_prices_yearly[year_idx]
         goo_price = goo_per_year[year_idx]
+        cap_price = cap_per_year[year_idx]
         offline_days = offline_days_yearly[year_idx]
 
         # ---- 6. Prepare hourly sample arrays (year 1 only) ----
@@ -508,6 +521,7 @@ def run_simulation(
                     start_soc_green_kwh=current_soc_green,
                     start_soc_grey_kwh=current_soc_grey,
                     goo_premium_eur_per_kwh=goo_price,
+                    price_cap_eur_per_kwh=cap_price,
                 )
             else:
                 result = optimize_day(
@@ -521,6 +535,7 @@ def run_simulation(
                     start_soc_green_kwh=current_soc_green if config.mode == "grey" else None,
                     start_soc_grey_kwh=current_soc_grey if config.mode == "grey" else None,
                     goo_premium_eur_per_kwh=goo_price,
+                    price_cap_eur_per_kwh=cap_price,
                 )
 
             # Update SoC carry-over
@@ -528,11 +543,13 @@ def run_simulation(
             current_soc_green = result["end_soc_green"]
             current_soc_grey = result["end_soc_grey"]
 
-            # Revenue breakdown for this day (max(spot, floor) + goo)
+            # Revenue breakdown for this day (clip(spot, floor, cap) + goo)
             if fixed_price > 0.0:
                 eff_day = np.maximum(spot_day, fixed_price)
             else:
                 eff_day = spot_day
+            if cap_price > 0.0:
+                eff_day = np.minimum(eff_day, cap_price)
             if goo_price > 0.0:
                 eff_day = eff_day + goo_price
 
@@ -605,6 +622,8 @@ def run_simulation(
                 eff_prices_year = np.maximum(spot_prices, fixed_price)
             else:
                 eff_prices_year = spot_prices.copy()
+            if cap_price > 0.0:
+                eff_prices_year = np.minimum(eff_prices_year, cap_price)
             if goo_price > 0.0:
                 eff_prices_year = eff_prices_year + goo_price
             hourly_sample = HourlySample(

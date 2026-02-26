@@ -319,6 +319,7 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         fixed_prices_yearly=base.fixed_prices_yearly,
         offline_days_yearly=offline_days_yearly,
         goo_prices_yearly=base.goo_prices_yearly if base.goo_prices_yearly else None,
+        cap_prices_yearly=base.cap_prices_yearly if base.cap_prices_yearly else None,
     )
 
     annual_revenues = [r.total_revenue for r in sim.annual_results]

@@ -162,10 +162,20 @@ The optimizer solves a linear program for each day (24 hourly timesteps) to dete
 
 ##### Effective Price Pre-Computation
 
-During the fixed-price period (EEG or PPA), the effective price per kWh is `max(price_spot[t], price_fixed) + goo_premium`. Since both spot prices and the floor price are known constants at solve time, the effective price is **pre-computed** before the LP is built:
+During the fixed-price PPA period, the effective price per kWh is `max(price_spot[t], price_fixed) + goo_premium`. Since both spot prices and the floor price are known constants at solve time, the effective price is **pre-computed** before the LP is built.
+
+
+During the fixed-price EEG period, the effective price per kWh is `max(price_spot[t], price_fixed)`. Since both spot prices and the floor price are known constants at solve time, the effective price is **pre-computed** before like in the PPA case, but without the goo_premium.
 
 ```
+PPA case:
+
 effective_green_price[t] = max(price_spot[t], price_fixed) + goo_premium
+
+EEG case:
+
+effective_green_price[t] = max(price_spot[t], price_fixed)
+
 ```
 
 After the fixed-price period expires, `price_fixed` is set to 0, and the effective price equals `price_spot[t] + goo_premium`. This avoids the need for revenue helper variables and their associated linearization constraints.
@@ -274,7 +284,7 @@ BESS availability is modelled as whole-day outages (maintenance, faults). This a
 
 #### EEG Module (`eeg.py`)
 - EEG tariff acts as a **floor price (Mindestpreis)**, not a fixed price
-- Effective price per kWh: `max(price_spot[t], price_eeg) + goo_premium`
+- Effective price per kWh: `max(price_spot[t], price_eeg)`
 - The floor applies for the first X years (both tariff level and duration from user input)
 - After X years: pure market price (floor drops away)
 - Inflation adjustment: optional, controlled by user flag (`eeg_inflation: true/false`)

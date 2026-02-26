@@ -909,3 +909,266 @@ class TestEdgeCaseInvalidMode:
                 mode="invalid",  # type: ignore[arg-type]
                 start_soc_kwh=50.0,
             )
+
+
+# ============================================================================
+# PPA COLLAR (CAP PRICE) TESTS
+# ============================================================================
+
+
+class TestCollarPriceInOptimizer:
+    """Tests for PPA Collar cap price integration in the LP optimizer."""
+
+    def test_collar_spot_below_floor_revenue_at_floor(self) -> None:
+        """When spot < floor < cap, effective = floor + goo."""
+        pv = np.array([100.0, 100.0, 100.0, 100.0])
+        spot = np.array([0.02, 0.02, 0.02, 0.02])
+        floor = 0.05
+        cap = 0.10
+        goo = 0.003
+        bess = _make_bess(power_kw=0.01, capacity_kwh=0.1)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=floor,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="green",
+            start_soc_kwh=0.05,
+            goo_premium_eur_per_kwh=goo,
+            price_cap_eur_per_kwh=cap,
+        )
+
+        # effective = max(0.02, 0.05) = 0.05, cap not binding, + goo = 0.053
+        expected_revenue = float(np.sum(pv)) * (floor + goo)
+        actual_revenue = float(np.sum(result["revenue"]))
+        assert abs(actual_revenue - expected_revenue) < 0.01
+
+    def test_collar_spot_between_floor_and_cap_revenue_at_spot(self) -> None:
+        """When floor < spot < cap, effective = spot + goo."""
+        pv = np.array([100.0, 100.0, 100.0, 100.0])
+        spot = np.array([0.07, 0.07, 0.07, 0.07])
+        floor = 0.05
+        cap = 0.10
+        goo = 0.003
+        bess = _make_bess(power_kw=0.01, capacity_kwh=0.1)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=floor,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="green",
+            start_soc_kwh=0.05,
+            goo_premium_eur_per_kwh=goo,
+            price_cap_eur_per_kwh=cap,
+        )
+
+        # effective = max(0.07, 0.05) = 0.07, min(0.07, 0.10) = 0.07, + goo = 0.073
+        expected_revenue = float(np.sum(pv)) * (0.07 + goo)
+        actual_revenue = float(np.sum(result["revenue"]))
+        assert abs(actual_revenue - expected_revenue) < 0.01
+
+    def test_collar_spot_above_cap_revenue_at_cap(self) -> None:
+        """When spot > cap > floor, effective = cap + goo (capped)."""
+        pv = np.array([100.0, 100.0, 100.0, 100.0])
+        spot = np.array([0.15, 0.15, 0.15, 0.15])
+        floor = 0.05
+        cap = 0.10
+        goo = 0.003
+        bess = _make_bess(power_kw=0.01, capacity_kwh=0.1)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=floor,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="green",
+            start_soc_kwh=0.05,
+            goo_premium_eur_per_kwh=goo,
+            price_cap_eur_per_kwh=cap,
+        )
+
+        # effective = max(0.15, 0.05) = 0.15, min(0.15, 0.10) = 0.10, + goo = 0.103
+        expected_revenue = float(np.sum(pv)) * (cap + goo)
+        actual_revenue = float(np.sum(result["revenue"]))
+        assert abs(actual_revenue - expected_revenue) < 0.01
+
+    def test_collar_mixed_prices_three_regions(self) -> None:
+        """Mixed spot prices spanning all three regions (below floor, within, above cap)."""
+        pv = np.array([100.0, 100.0, 100.0])
+        spot = np.array([0.02, 0.07, 0.15])
+        floor = 0.05
+        cap = 0.10
+        goo = 0.003
+        bess = _make_bess(power_kw=0.01, capacity_kwh=0.1)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=floor,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="green",
+            start_soc_kwh=0.05,
+            goo_premium_eur_per_kwh=goo,
+            price_cap_eur_per_kwh=cap,
+        )
+
+        # clip(spot, 0.05, 0.10) = [0.05, 0.07, 0.10], + goo = [0.053, 0.073, 0.103]
+        eff = np.clip(spot, floor, cap) + goo
+        expected_revenue = float(np.sum(pv * eff))
+        actual_revenue = float(np.sum(result["revenue"]))
+        assert abs(actual_revenue - expected_revenue) < 0.01
+
+    def test_collar_after_expiry_no_cap_no_floor(self) -> None:
+        """After PPA expiry (cap=0, floor=0), effective = spot (no goo)."""
+        pv = np.array([100.0, 100.0])
+        spot = np.array([0.08, 0.12])
+        bess = _make_bess(power_kw=0.01, capacity_kwh=0.1)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="green",
+            start_soc_kwh=0.05,
+            goo_premium_eur_per_kwh=0.0,
+            price_cap_eur_per_kwh=0.0,
+        )
+
+        expected_revenue = float(np.sum(pv * spot))
+        actual_revenue = float(np.sum(result["revenue"]))
+        assert abs(actual_revenue - expected_revenue) < 0.01
+
+    def test_collar_cap_limits_revenue_compared_to_floor_only(self) -> None:
+        """With cap active and spot > cap, revenue is less than floor-only case."""
+        pv = np.array([100.0, 100.0, 100.0, 100.0])
+        spot = np.array([0.15, 0.15, 0.15, 0.15])
+        floor = 0.05
+        cap = 0.10
+        bess = _make_bess(power_kw=0.01, capacity_kwh=0.1)
+
+        result_floor_only = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=floor,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="green",
+            start_soc_kwh=0.05,
+            price_cap_eur_per_kwh=0.0,
+        )
+        result_collar = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=floor,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="green",
+            start_soc_kwh=0.05,
+            price_cap_eur_per_kwh=cap,
+        )
+
+        rev_floor = float(np.sum(result_floor_only["revenue"]))
+        rev_collar = float(np.sum(result_collar["revenue"]))
+        assert rev_collar < rev_floor, (
+            f"Collar should reduce revenue when cap binds: "
+            f"collar={rev_collar:.4f} >= floor_only={rev_floor:.4f}"
+        )
+
+    def test_collar_offline_day_applies_cap(self) -> None:
+        """dispatch_offline_day also applies cap price correctly."""
+        pv = np.array([100.0, 100.0])
+        spot = np.array([0.15, 0.03])
+        floor = 0.05
+        cap = 0.10
+        goo = 0.003
+
+        result = dispatch_offline_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=floor,
+            grid_max_kw=500.0,
+            start_soc_kwh=50.0,
+            goo_premium_eur_per_kwh=goo,
+            price_cap_eur_per_kwh=cap,
+        )
+
+        # t=0: clip(0.15, 0.05, 0.10) = 0.10, + goo = 0.103
+        # t=1: clip(0.03, 0.05, 0.10) = 0.05, + goo = 0.053
+        expected_eff = np.array([0.103, 0.053])
+        expected_rev = pv * expected_eff
+        np.testing.assert_allclose(result["revenue"], expected_rev, atol=ATOL)
+
+
+# ============================================================================
+# EEG FLOOR WITHOUT GOO IN OPTIMIZER
+# ============================================================================
+
+
+class TestEegFloorNoGooInOptimizer:
+    """Verify that EEG floor price is applied WITHOUT GoO premium.
+
+    The EEG marketing type does not use GoO.  When goo_premium=0.0 and
+    cap_price=0.0, the effective price should be max(spot, floor).
+    """
+
+    def test_eeg_floor_no_goo_numerical(self) -> None:
+        """With EEG floor and no GoO, effective = max(spot, floor)."""
+        pv = np.array([100.0, 100.0, 100.0, 100.0])
+        spot = np.array([0.02, 0.08, 0.0735, 0.10])
+        floor = 0.0735
+        bess = _make_bess(power_kw=0.01, capacity_kwh=0.1)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=floor,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="green",
+            start_soc_kwh=0.05,
+            goo_premium_eur_per_kwh=0.0,
+            price_cap_eur_per_kwh=0.0,
+        )
+
+        eff = np.maximum(spot, floor)
+        expected_revenue = float(np.sum(pv * eff))
+        actual_revenue = float(np.sum(result["revenue"]))
+        assert abs(actual_revenue - expected_revenue) < 0.01
+
+    def test_eeg_floor_spot_all_above(self) -> None:
+        """When all spot prices exceed EEG floor, floor has no effect."""
+        pv = np.array([100.0, 100.0])
+        spot = np.array([0.10, 0.12])
+        floor = 0.0735
+        bess = _make_bess(power_kw=0.01, capacity_kwh=0.1)
+
+        result_with_floor = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=floor,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="green",
+            start_soc_kwh=0.05,
+        )
+        result_no_floor = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="green",
+            start_soc_kwh=0.05,
+        )
+
+        rev_with = float(np.sum(result_with_floor["revenue"]))
+        rev_without = float(np.sum(result_no_floor["revenue"]))
+        assert abs(rev_with - rev_without) < 0.01

@@ -207,6 +207,18 @@ def _build_fixed_prices_yearly(
                 # GoO premium is NOT added here; it is passed separately via
                 # _build_goo_prices_yearly() and added after the floor comparison.
 
+        elif ppa_type == PPA_TYPE_COLLAR:
+            ppa_cfg = ppa_config_from_dict(ppa_dict)
+            if year <= ppa_cfg.duration_years:
+                base = ppa_cfg.floor_price_eur_per_kwh or 0.0
+                if ppa_cfg.inflation_enabled:
+                    price = inflate_value(base, inflation_rate, year)
+                else:
+                    price = base
+                # GoO premium is NOT added here; it is passed separately via
+                # _build_goo_prices_yearly() and added after the clip operation.
+                # Cap price is handled via _build_cap_prices_yearly().
+
         elif ppa_type == PPA_TYPE_PAY_AS_PRODUCED:
             ppa_cfg = ppa_config_from_dict(ppa_dict)
             price = pay_as_produced_price(ppa_cfg, year, inflation_rate)
@@ -250,6 +262,50 @@ def _build_goo_prices_yearly(
         return [goo if year <= duration else 0.0 for year in range(1, lifetime + 1)]
 
     return [0.0] * lifetime
+
+
+def _build_cap_prices_yearly(
+    scenario: ScenarioConfig,
+    inflation_rate: float,
+) -> list[float]:
+    """Build the per-year cap price list for the dispatch engine.
+
+    Only relevant for PPA Collar.  Returns 0.0 for each year when no cap is
+    active (0.0 = no cap, i.e. unbounded upside).
+
+    Parameters
+    ----------
+    scenario:
+        Validated scenario configuration.
+    inflation_rate:
+        Annual inflation rate as a fraction.
+
+    Returns
+    -------
+    list[float]
+        Cap price in €/kWh for each project year (length = lifetime_years).
+        Index 0 = year 1.  0.0 means no cap for that year.
+    """
+    lifetime = scenario.lifetime_years
+    ppa_dict = scenario.finance.get("revenue_streams", {}).get("ppa", {})
+    ppa_type = ppa_dict.get("type", PPA_TYPE_NONE)
+
+    if ppa_type != PPA_TYPE_COLLAR:
+        return [0.0] * lifetime
+
+    ppa_cfg = ppa_config_from_dict(ppa_dict)
+    cap_prices: list[float] = []
+    for year in range(1, lifetime + 1):
+        if year <= ppa_cfg.duration_years:
+            base = ppa_cfg.cap_price_eur_per_kwh or 0.0
+            if ppa_cfg.inflation_enabled:
+                price = inflate_value(base, inflation_rate, year)
+            else:
+                price = base
+        else:
+            price = 0.0
+        cap_prices.append(price)
+    return cap_prices
 
 
 def _build_spot_prices_yearly(
@@ -557,6 +613,8 @@ def run(args: argparse.Namespace) -> int:
     fixed_prices_yearly = _build_fixed_prices_yearly(scenario, inflation_rate)
     # GoO premium per year (for floor and collar PPA types)
     goo_prices_yearly = _build_goo_prices_yearly(scenario)
+    # Cap prices per year (PPA Collar only; 0.0 = no cap)
+    cap_prices_yearly = _build_cap_prices_yearly(scenario, inflation_rate)
 
     # ------------------------------------------------------------------
     # Step 5: Grid Search
@@ -592,6 +650,7 @@ def run(args: argparse.Namespace) -> int:
         spot_prices_yearly=spot_prices_yearly,
         fixed_prices_yearly=fixed_prices_yearly,
         goo_prices_yearly=goo_prices_yearly,
+        cap_prices_yearly=cap_prices_yearly,
         lifetime_years=lifetime,
         leverage_pct=leverage_pct,
         interest_rate_pct=interest_rate_pct,
@@ -668,6 +727,7 @@ def run(args: argparse.Namespace) -> int:
         fixed_prices_yearly=fixed_prices_yearly,
         offline_days_yearly=offline_days_yearly,
         goo_prices_yearly=goo_prices_yearly,
+        cap_prices_yearly=cap_prices_yearly,
     )
 
     annual_revenues = [r.total_revenue for r in sim.annual_results]
