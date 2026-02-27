@@ -226,7 +226,7 @@
 ---
 
 ### FIX-S2-09: Excel Lock Error Handling
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `output/csv_writer.py`
 
 **Problem:** Wenn eine CSV-Datei in Excel geöffnet ist, schlägt das Schreiben mit `PermissionError` fehl.
@@ -655,7 +655,7 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 | FIX-S2-06 | CSV User Input | ERLEDIGT                   | Mittel | Defaults, Schema, CSV Writer |
 | FIX-S2-07 | Output Dir aus JSON | ERLEDIGT                   | Niedrig | Main.py (3 Zeilen) |
 | FIX-S2-08 | Dezimalkomma | ERLEDIGT                   | Mittel | Formatting, Defaults, Tests |
-| FIX-S2-09 | Excel Lock Handling | OFFEN                      | Niedrig | CSV Writer |
+| FIX-S2-09 | Excel Lock Handling | ERLEDIGT                   | Niedrig | CSV Writer |
 | FIX-S2-10 | Debt Service Split | OFFEN                      | Mittel | Cashflow, Debt, CSV Writer |
 | FIX-S2-11 | Grid Search Skip | OFFEN                      | Niedrig | Grid Search, Performance |
 | FIX-S2-12 | Collar Bug (BESS Discharge-Koeffizient auf Spot) | OFFEN                      | Hoch | Optimizer, Engine (LP + Revenue) |

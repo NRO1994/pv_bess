@@ -173,6 +173,9 @@ DEFAULT_OUTPUT_DIR: str = ".data/output"
 DISPATCH_SAMPLE_YEAR: int = 1
 """Project year exported to the dispatch sample CSV (1-indexed)."""
 
+_MAX_LOCK_RETRIES: int = 10
+"""Maximum number of alternative filenames tried when the target is locked."""
+
 CSV_DELIMITER: str = ";"
 """Delimiter used in all input and output CSV files."""
 

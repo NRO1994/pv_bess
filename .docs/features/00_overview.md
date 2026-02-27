@@ -29,7 +29,7 @@ auf früheren aufbauen.
 | S2-07 | Output Directory aus JSON | Klein (3 Zeilen) | Keine | ERLEDIGT |
 | S2-08 | Dezimalkomma Default | Klein-Mittel | Keine | ERLEDIGT |
 | S2-06 | CSV User Input (Separator/Decimal/Timestamp) | Mittel | S2-08 | ERLEDIGT |
-| S2-09 | Excel Lock Error Handling | Klein | Keine | OFFEN    |
+| S2-09 | Excel Lock Error Handling | Klein | Keine | ERLEDIGT |
 | S2-10 | Debt Service Split (Interest + Repayment) | Mittel | Keine | OFFEN    |
 | S2-11 | Grid Search Skip bei Einzel-Werten | Klein | Keine | OFFEN    |
 

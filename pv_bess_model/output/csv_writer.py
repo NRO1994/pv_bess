@@ -37,6 +37,7 @@ from pv_bess_model.config.defaults import (
     CSV_TIMESTAMP_FORMAT,
     HOURS_PER_YEAR,
     KWH_TO_MWH,
+    _MAX_LOCK_RETRIES
 )
 from pv_bess_model.dispatch.engine import HourlySample
 from pv_bess_model.finance.cashflow import CashflowProjection
@@ -421,8 +422,37 @@ def write_dispatch_sample_csv(
 
 
 # ---------------------------------------------------------------------------
-# Internal helper
+# Internal helpers
 # ---------------------------------------------------------------------------
+
+def _write_csv(
+    path: Path,
+    fieldnames: list[str],
+    rows: list[dict],
+    delimiter: str,
+) -> None:
+    """Write *rows* to *path* as a CSV file.
+
+    Parameters
+    ----------
+    path:
+        Destination file path (must already have its parent directory created).
+    fieldnames:
+        Ordered list of column names.
+    rows:
+        Row dicts to write.
+    delimiter:
+        Field delimiter character.
+
+    Raises
+    ------
+    PermissionError
+        When the file cannot be opened for writing (e.g. locked by Excel).
+    """
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, delimiter=delimiter)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def _write_dicts(
@@ -431,6 +461,12 @@ def _write_dicts(
     delimiter: str = CSV_DELIMITER,
 ) -> None:
     """Write a list of dicts to a CSV file, creating parent directories.
+
+    If the target file is locked (e.g. open in Excel), up to
+    ``_MAX_LOCK_RETRIES`` alternative filenames are tried by appending an
+    incrementing index to the stem (e.g. ``summary_1.csv``,
+    ``summary_2.csv``).  A ``PermissionError`` is re-raised only when all
+    alternatives are also locked.
 
     Parameters
     ----------
@@ -450,7 +486,17 @@ def _write_dicts(
         return
 
     fieldnames = list(rows[0].keys())
-    with path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=fieldnames, delimiter=delimiter)
-        writer.writeheader()
-        writer.writerows(rows)
+    try:
+        _write_csv(path, fieldnames, rows, delimiter)
+    except PermissionError:
+        for idx in range(1, _MAX_LOCK_RETRIES + 1):
+            alt_path = path.with_stem(f"{path.stem}_{idx}")
+            try:
+                _write_csv(alt_path, fieldnames, rows, delimiter)
+                logger.warning(
+                    "File '%s' is locked; saved as '%s' instead.", path, alt_path
+                )
+                return
+            except PermissionError:
+                continue
+        raise
