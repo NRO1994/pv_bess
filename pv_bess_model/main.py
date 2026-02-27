@@ -445,8 +445,14 @@ def run(args: argparse.Namespace) -> int:
         print(f"Dry run: scenario '{scenario.name}' validated successfully.")
         return 0
 
-    # Determine output directory
-    output_base = Path(args.output) if args.output else Path(DEFAULT_OUTPUT_DIR)
+    # Determine output directory (CLI > JSON > default)
+    scenario_output_dir = scenario.raw.get("scenario", {}).get("output", {}).get("directory")
+    if args.output:
+        output_base = Path(args.output)
+    elif scenario_output_dir:
+        output_base = Path(scenario_output_dir)
+    else:
+        output_base = Path(DEFAULT_OUTPUT_DIR)
     output_dir = output_base / scenario.name
     output_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Output directory: %s", output_dir)

@@ -164,7 +164,7 @@
 ---
 
 ### FIX-S2-07: Output Directory aus JSON übernehmen
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `main.py`
 
 **Problem:** `scenario.output.directory` aus dem JSON wird komplett ignoriert. Es wird immer `DEFAULT_OUTPUT_DIR` oder `--output` CLI-Flag verwendet.
@@ -653,7 +653,7 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 | FIX-S2-04 | OPEX eur_per_kw/kwh | BEREITS IMPLEMENTIERT      | – | – |
 | FIX-S2-05 | Loan Tenor | BEREITS IMPLEMENTIERT      | – | – |
 | FIX-S2-06 | CSV User Input | OFFEN                      | Mittel | Defaults, Schema, CSV Writer |
-| FIX-S2-07 | Output Dir aus JSON | OFFEN                      | Niedrig | Main.py (3 Zeilen) |
+| FIX-S2-07 | Output Dir aus JSON | ERLEDIGT                   | Niedrig | Main.py (3 Zeilen) |
 | FIX-S2-08 | Dezimalkomma | OFFEN                      | Mittel | Formatting, Defaults, Tests |
 | FIX-S2-09 | Excel Lock Handling | OFFEN                      | Niedrig | CSV Writer |
 | FIX-S2-10 | Debt Service Split | OFFEN                      | Mittel | Cashflow, Debt, CSV Writer |
