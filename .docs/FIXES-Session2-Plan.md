@@ -324,6 +324,219 @@
 
 ---
 
+### FIX-S2-12: BESS Charging nur am ersten Tag des PPA/EEG-Jahres (Collar Bug)
+**Status:** OFFEN
+**Dateien:** `dispatch/engine.py`, `dispatch/optimizer.py`, `config/defaults.py`
+
+**Problem:** In einem "Green PV+BESS"-Szenario mit Collar-PPA wird der BESS nur am ersten Tag jedes PPA-Jahres geladen/entladen. Erst nach Ablauf des PPA funktioniert der BESS an allen Tagen korrekt.
+
+**Analyse:**
+- Die Preiskonstruktion (`_build_fixed_prices_yearly`, `_build_cap_prices_yearly` in `main.py`) ist korrekt – Floor- und Cap-Preise werden für alle 8.760 Stunden pro Jahr gebaut.
+- `_effective_green_price` in `optimizer.py` Zeile 219-226 ist mathematisch korrekt: `eff = min(max(spot, floor), cap)`.
+- **Hauptursache:** Der BESS startet bei `soc_max_kwh * 0.50` (50% der oberen SoC-Grenze). Am ersten Tag wird entladen, weil der SoC über dem Optimum liegt. Danach bietet der Collar-Cap wenig Anreiz zum Nachladen, weil der Spread zwischen Lade- und Entladepreis (nach Cap-Begrenzung und RTE-Verlusten) marginal oder negativ ist.
+- **Zusammenhang mit FIX-S2-17:** Wenn der Start-SoC auf `soc_min_kwh` gesetzt wird, beginnt der BESS leer und lädt über den Tag auf. Der Optimizer sieht dann über alle Tage einen Arbitrage-Anreiz (Laden zu Niedrigpreisen, Entladen zu Hochpreisen – auch innerhalb des Cap).
+- **Zusätzlich prüfen:** Ob die effektiven Preise korrekt an den Optimizer übergeben werden. In `engine.py` Zeile 543-555 werden `price_fixed` und `price_cap` pro Jahr gesetzt und an `optimize_day()` durchgereicht. Diese Werte sollten für alle Tage identisch sein – Logging einbauen, um dies zu verifizieren.
+
+**Empfohlene Änderung:**
+1. **Primär:** FIX-S2-17 implementieren (Start-SoC = `soc_min_kwh`). Dies löst das beobachtete Symptom.
+2. **Diagnose:** Debug-Logging in `engine.py` für die ersten 3 Tage einbauen: effektive Preise, SoC-Verlauf, Optimizer-Entscheidungen. Damit verifizieren, dass der Collar-Spread nach RTE-Verlusten den BESS-Einsatz nicht rechtfertigt.
+3. **Falls nach FIX-S2-17 das Problem weiterhin besteht:** Detailanalyse der Preiskonstruktion mit konkreten Szenario-Daten (Spotpreise, Floor, Cap) durchführen.
+
+**Abhängigkeiten:**
+- Hängt stark von FIX-S2-17 (SoC Start = MIN_SOC) ab
+- Betrifft alle PPA/EEG-Szenarien, nicht nur Collar
+
+---
+
+### FIX-S2-13: BESS-Replacement CAPEX fremdfinanzieren
+**Status:** OFFEN
+**Dateien:** `finance/cashflow.py`, `finance/debt.py`, `bess/replacement.py`, `optimization/grid_search.py`, `optimization/monte_carlo.py`
+
+**Problem:** Der BESS-Replacement-CAPEX wird aktuell vollständig aus Eigenkapital finanziert. Er soll stattdessen (anteilig) fremdfinanziert werden – die Restschuld des bestehenden Kredits wird um den FK-Anteil des Replacements erhöht.
+
+**Analyse:**
+- `cashflow.py` Zeile 132-136: Kommentar bestätigt "equity-financed, no additional debt". `replacement_capex_this_year` wird vollständig von Equity-CF abgezogen.
+- `debt.py`: `build_annuity_schedule()` baut einen fixen Tilgungsplan ab Jahr 1. Es gibt keine Funktion für Mid-Project-Debt.
+- `AnnuitySchedule` (Zeile 15-31) enthält `interest_payments`, `principal_payments`, `remaining_balance` pro Jahr – die Restschuld ist verfügbar.
+- `replacement.py` `ReplacementConfig` (Zeile 19-54): Enthält die Kostenkomponenten, aber kein Feld `pct_of_capex` (obwohl `main.py` es liest).
+
+**Empfohlene Änderung:**
+1. **`finance/debt.py`**: Neue Funktion `add_replacement_debt()`:
+   ```python
+   def add_replacement_debt(
+       existing_schedule: AnnuitySchedule,
+       replacement_cost: float,
+       leverage_pct: float,
+       annual_interest_rate: float,
+       replacement_year: int,
+       remaining_tenor_years: int,
+   ) -> AnnuitySchedule:
+       """Erhöhe die Restschuld ab replacement_year um den FK-Anteil des Replacements.
+
+       Berechne eine neue Annuität für den Replacement-FK-Anteil über die Restlaufzeit
+       und addiere diese auf die bestehenden Zahlungen.
+       """
+   ```
+   - `replacement_debt = replacement_cost * leverage_pct / 100`
+   - Neue Annuität über `remaining_tenor_years = loan_tenor_years - replacement_year + 1`
+   - `interest_payments[y]` und `principal_payments[y]` für `y >= replacement_year` erhöhen
+   - `annual_payment` wird variabel (vor Replacement: alte Annuität, danach: alte + neue)
+2. **`finance/cashflow.py`**:
+   - `replacement_capex_this_year` aufteilen in `replacement_equity` und `replacement_debt`
+   - `replacement_equity = replacement_cost * (1 - leverage_pct / 100)`
+   - Equity-CF-Abzug nur mit `replacement_equity`, nicht dem vollen Betrag
+   - Debt Schedule muss **vor** der Cashflow-Schleife um den Replacement-Debt erweitert werden (oder in der Schleife bei `y == replacement_year` modifiziert werden)
+3. **`bess/replacement.py`**: `pct_of_capex` als Feld zu `ReplacementConfig` hinzufügen (aktuell fehlt es)
+4. **Tests:** `test_debt.py` um `add_replacement_debt` erweitern; `test_cashflow.py` Replacement-Szenario anpassen
+
+**Abhängigkeiten:**
+- FIX-S2-10 (Debt Split) sollte vorher implementiert sein, da die neuen Debt-Komponenten (Interest + Principal) auch für den Replacement-Kredit relevant sind
+- Hat Impact auf alle Szenarien mit `replacement.enabled: true`
+- Ändert Equity-CF und DSCR in Replacement-Szenarien signifikant
+
+---
+
+### FIX-S2-14: `-v` Flag setzt `max_workers=1`
+**Status:** OFFEN
+**Dateien:** `main.py`
+
+**Problem:** Das `-v` / `--verbose` CLI-Flag setzt nur den Log-Level auf DEBUG, aber nicht `max_workers=1`. Multi-Processing erschwert Debugging erheblich.
+
+**Analyse:**
+- `main.py` Zeile 979: `log_level = logging.DEBUG if args.verbose else logging.INFO` – einzige Nutzung von `args.verbose`
+- `GridSearchConfig` (Zeile 628-674): `max_workers` wird nie gesetzt → Default `None` (= alle CPU-Kerne)
+- `MCParams` (Zeile 838-848): `max_workers` wird nie gesetzt → Default `None`
+- Beide Dataclasses haben bereits ein `max_workers: int | None = None` Feld
+
+**Empfohlene Änderung:**
+1. In `main.py` bei der Konstruktion von `GridSearchConfig` (ca. Zeile 674):
+   ```python
+   max_workers=1 if args.verbose else None,
+   ```
+2. In `main.py` bei der Konstruktion von `MCParams` (ca. Zeile 848):
+   ```python
+   max_workers=1 if args.verbose else None,
+   ```
+
+**Abhängigkeiten:**
+- Keine Abhängigkeiten
+- Isolierter 2-Zeilen-Fix
+- Kein Impact auf Testergebnisse (nur Performance)
+
+---
+
+### FIX-S2-15: BESS-Replacement Kapazitäts-Upgrade-Faktor
+**Status:** OFFEN
+**Dateien:** `config/schema.py`, `bess/replacement.py`, `dispatch/engine.py`, `main.py`, `optimization/grid_search.py`
+
+**Problem:** Es soll möglich sein, dem BESS-Replacement einen Kapazitäts-Upgrade-Faktor mitzugeben, um Technologiesprünge zu simulieren (z.B. neuer BESS hat 120% der ursprünglichen Kapazität). Default = 1.0 (100%, kein Upgrade).
+
+**Analyse:**
+- `dispatch/engine.py` Zeile 442-445: Bei Replacement wird `bess_cap = config.bess_nameplate_kwh` gesetzt (100% der Ursprungskapazität)
+- `bess/replacement.py` `ReplacementConfig` (Zeile 19-54): Kein Feld für Upgrade-Faktor
+- `config/schema.py` `_BESS_REPLACEMENT` (Zeile 189-201): Kein Feld definiert
+- Der Upgrade-Faktor muss auf die **Kapazität (kWh)** angewandt werden, die **Leistung (kW)** bleibt gleich (da der Netzanschluss und die Leistungselektronik bestehen bleiben)
+
+**Empfohlene Änderung:**
+1. **Schema** (`config/schema.py` `_BESS_REPLACEMENT`):
+   ```python
+   "capacity_factor_pct": {"type": "number", "minimum": 0, "default": 100}
+   ```
+2. **`bess/replacement.py`** `ReplacementConfig`:
+   - Neues Feld: `capacity_factor_pct: float = 100.0`
+   - In `replacement_config_from_dict()`: Feld lesen mit Default 100.0
+3. **`dispatch/engine.py`** Zeile 444:
+   ```python
+   # Vorher:
+   bess_cap = config.bess_nameplate_kwh
+   # Nachher:
+   upgrade = config.replacement.capacity_factor_pct / 100.0
+   bess_cap = config.bess_nameplate_kwh * upgrade
+   ```
+4. **`config/defaults.py`**: `DEFAULT_BESS_REPLACEMENT_CAPACITY_FACTOR_PCT: float = 100.0`
+5. **`optimization/grid_search.py`**: `_GridPointArgs` und `_evaluate_grid_point` um `replacement_capacity_factor_pct` erweitern
+6. **`main.py`**: Feld aus JSON lesen und durchreichen
+7. **Impact auf Kosten:** Der Upgrade-Faktor sollte auch die Replacement-Kosten beeinflussen – die `eur_per_kwh`-Komponente bezieht sich auf die **neue** Kapazität: `replacement_cost_kwh = eur_per_kwh × bess_capacity_kwh × upgrade_factor`
+
+**Abhängigkeiten:**
+- Kann unabhängig implementiert werden
+- Sinnvoll in Kombination mit FIX-S2-13 (Replacement-CAPEX fremdfinanzieren), da höhere Kapazität → höhere Kosten → höherer Kredit
+- Impact auf: Dispatch (höhere Kapazität → mehr Speicher), Kosten (höhere kWh-Basis), DSCR
+
+---
+
+### FIX-S2-16: DSCR auf P90-Basis entfernen
+**Status:** ABGEDECKT DURCH FEATURE 06
+**Dateien:** `main.py`, `optimization/grid_search.py`, `config/schema.py`
+
+**Problem:** Die P90-Zeitreihe wird nur noch für eine separate DSCR-Berechnung verwendet. Da P90 aus der PV-Zeitreihe eliminiert wurde, ist dieser Aufwand (kompletter zweiter Dispatch-Lauf pro Grid-Punkt) nicht mehr gerechtfertigt.
+
+**Analyse:**
+- `main.py` Zeile 557-562: `p90_timeseries` wird weiterhin berechnet und geloggt
+- `main.py` Zeile 670-674: `debt_uses_p90`, `pv_base_timeseries_p90`, `spot_prices_yearly_p90` werden an `GridSearchConfig` übergeben
+- `grid_search.py` Zeile 139-146: `GridSearchConfig` enthält P90-Felder
+- `grid_search.py` Zeile 441-454: **Vollständiger zweiter Dispatch-Lauf** (`run_simulation()`) mit P90-Timeseries – das ist der Performance-Overhead
+- `grid_search.py` Zeile 518-524: P90-DSCR überschreibt die P50-DSCR
+- `grid_search.py` Zeile 677-687: P90-Felder in `_GridPointArgs`
+- `config/schema.py` Zeile 352, 361: `debt_uses_p90` als Schema-Feld
+
+**Empfohlene Änderung:**
+1. **`optimization/grid_search.py`**:
+   - Entferne aus `GridSearchConfig`: `debt_uses_p90`, `pv_base_timeseries_p90`, `spot_prices_yearly_p90`
+   - Entferne aus `_GridPointArgs`: `pv_base_timeseries_p90`, `spot_prices_yearly_p90`
+   - Entferne den kompletten P90-Simulationsblock (Zeile 441-454)
+   - Entferne die P90-DSCR-Überschreibung (Zeile 518-524)
+2. **`main.py`**:
+   - Entferne `debt_uses_p90` aus Szenario-Lesung
+   - Entferne `p90_timeseries` aus `GridSearchConfig`-Konstruktion
+   - `compute_p50_p90()` kann beibehalten werden (P90 wird noch für Logging/Info genutzt), aber die P90-Timeseries wird nicht mehr an den Grid-Search weitergegeben
+3. **`config/schema.py`**: `debt_uses_p90` aus `_FINANCE` properties und required-Liste entfernen
+4. **Performance-Gewinn:** Pro Grid-Punkt fällt ein kompletter Multi-Year-Dispatch weg → ~50% schneller
+
+**Abhängigkeiten:**
+- Unabhängig von anderen Fixes
+- **Achtung:** Bestehende JSON-Dateien enthalten `"debt_uses_p90": true` → Schema-Validierung wird fehlschlagen, wenn das Feld entfernt wird. Option: Feld im Schema belassen aber ignorieren (mit `additionalProperties: true` oder einfach nicht mehr auswerten)
+- Impact auf Testergebnisse: DSCR-Werte ändern sich (vorher P90-basiert, nachher P50-basiert)
+
+---
+
+### FIX-S2-17: SoC Start = MIN_SOC statt 50%
+**Status:** OFFEN
+**Dateien:** `config/defaults.py`, `dispatch/engine.py`
+
+**Problem:** Der BESS startet die Simulation bei 50% des maximalen SoC. Ökonomisch sinnvoller (und realistischer) ist der Start bei MIN_SOC (leer), da der BESS am ersten Tag aus PV oder Netz geladen wird.
+
+**Analyse:**
+- `config/defaults.py` Zeile 78-79: `DEFAULT_START_SOC_FRACTION: float = 0.50`
+- `dispatch/engine.py` Zeile 469-471:
+  ```python
+  current_soc = bess_params.soc_max_kwh * DEFAULT_START_SOC_FRACTION
+  current_soc_green = current_soc
+  current_soc_grey = 0.0
+  ```
+- `bess_params.soc_max_kwh` ist die absolute obere SoC-Grenze in kWh (z.B. 3.600 kWh bei 4.000 kWh Kapazität und 90% max_soc)
+- Aktuell: Start-SoC = 3.600 × 0.50 = 1.800 kWh
+- Gewünscht: Start-SoC = `bess_params.soc_min_kwh` (z.B. 400 kWh bei 10% min_soc)
+- `DEFAULT_START_SOC_FRACTION` wird nur an dieser einen Stelle verwendet
+
+**Empfohlene Änderung:**
+1. **`dispatch/engine.py`** Zeile 470 ändern:
+   ```python
+   # Vorher:
+   current_soc = bess_params.soc_max_kwh * DEFAULT_START_SOC_FRACTION
+   # Nachher:
+   current_soc = bess_params.soc_min_kwh
+   ```
+2. **`config/defaults.py`**: `DEFAULT_START_SOC_FRACTION` entfernen (nicht mehr benötigt)
+3. **Grey Mode** Zeile 471-472: `current_soc_green = current_soc` und `current_soc_grey = 0.0` bleiben unverändert (BESS startet mit gesamtem SoC als "green")
+
+**Abhängigkeiten:**
+- FIX-S2-12 (Collar Bug) hängt von diesem Fix ab
+- **Impact auf Tests:** `test_engine.py`, `test_optimizer.py` – alle Tests die den initialen SoC prüfen
+- **Impact auf Ergebnisse:** Erste Tage des ersten Jahres haben andere Dispatch-Entscheidungen. Über das Gesamtjahr gleicht sich der Effekt aus, da der Optimizer den SoC schnell auf das ökonomische Optimum bringt.
+
+---
+
 ## Abhängigkeiten zwischen Fixes
 
 ```
@@ -331,20 +544,29 @@ FIX-S2-06 (CSV User Input) ──umfasst──→ FIX-S2-08 (Dezimalkomma)
 FIX-S2-08 (Dezimalkomma) ──────────→ FIX-S2-01 (Benchmark Test) [konsistentes Parsing]
 FIX-S2-07 (Output Dir) ───────────→ FIX-S2-01 (Benchmark Test) [korrekter Output-Pfad]
 FIX-S2-10 (Debt Split) ───────────→ FIX-S2-01 (Benchmark Test) [Spaltenänderung berücksichtigen]
+FIX-S2-10 (Debt Split) ───────────→ FIX-S2-13 (Replacement Debt) [Debt-Komponenten benötigt]
 FIX-S2-03 (BESS-Only) ────────────→ FIX-S2-11 (Grid Search Skip) [einzelne Konfiguration]
+FIX-S2-17 (SoC Start MIN_SOC) ────→ FIX-S2-12 (Collar Bug) [löst Hauptursache]
+FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt) [höhere Kapazität → höhere Kosten]
 ```
 
 ## Empfohlene Reihenfolge
 
-1. **FIX-S2-07** – Output Directory aus JSON (kleiner, isolierter Fix)
-2. **FIX-S2-08** – Dezimalkomma (Voraussetzung für Benchmark-Vergleich)
-3. **FIX-S2-06** – CSV User Input (erweitert FIX-S2-08 um konfigurierbare Settings)
-4. **FIX-S2-10** – Debt Service Split (ändert CSV-Format)
-5. **FIX-S2-09** – Excel Lock Handling (defensiver Fix)
-6. **FIX-S2-11** – Grid Search Skip (Performance-Optimierung)
-7. **FIX-S2-03** – BESS-Only (größte strukturelle Änderung)
-8. **FIX-S2-02** – Smoke Test (validiert End-to-End nach allen Änderungen)
-9. **FIX-S2-01** – Cashflow Benchmark (validiert Finanzergebnisse, nutzt finales CSV-Format)
+1. **FIX-S2-17** – SoC Start = MIN_SOC (2 Zeilen, löst Collar-Bug)
+2. **FIX-S2-14** – `-v` → `max_workers=1` (2 Zeilen, sofort nützlich für Debugging)
+3. **FIX-S2-12** – Collar Bug verifizieren (nach FIX-S2-17, ggf. nur Diagnose)
+4. **FIX-S2-07** – Output Directory aus JSON (kleiner, isolierter Fix)
+5. **FIX-S2-08** – Dezimalkomma (Voraussetzung für Benchmark-Vergleich)
+6. **FIX-S2-06** – CSV User Input (erweitert FIX-S2-08 um konfigurierbare Settings)
+7. **FIX-S2-10** – Debt Service Split (ändert CSV-Format)
+8. **FIX-S2-09** – Excel Lock Handling (defensiver Fix)
+9. **FIX-S2-16** – P90-DSCR entfernen (Performance-Gewinn, Vereinfachung)
+10. **FIX-S2-11** – Grid Search Skip (Performance-Optimierung)
+11. **FIX-S2-15** – BESS-Replacement Upgrade-Faktor (neues Feature)
+12. **FIX-S2-13** – BESS-Replacement fremdfinanzieren (komplexe Finanz-Änderung)
+13. **FIX-S2-03** – BESS-Only (größte strukturelle Änderung)
+14. **FIX-S2-02** – Smoke Test (validiert End-to-End nach allen Änderungen)
+15. **FIX-S2-01** – Cashflow Benchmark (validiert Finanzergebnisse, nutzt finales CSV-Format)
 
 ## Zusammenfassung
 
@@ -361,3 +583,9 @@ FIX-S2-03 (BESS-Only) ────────────→ FIX-S2-11 (Grid Se
 | FIX-S2-09 | Excel Lock Handling | OFFEN | Niedrig | CSV Writer |
 | FIX-S2-10 | Debt Service Split | OFFEN | Mittel | Cashflow, Debt, CSV Writer |
 | FIX-S2-11 | Grid Search Skip | OFFEN | Niedrig | Grid Search, Performance |
+| FIX-S2-12 | Collar Bug (BESS Charging) | OFFEN | Hoch | Engine, Optimizer (Diagnose nach S2-17) |
+| FIX-S2-13 | BESS-Replacement fremdfinanzieren | OFFEN | Hoch | Cashflow, Debt, Replacement |
+| FIX-S2-14 | `-v` → `max_workers=1` | OFFEN | Niedrig | Main.py (2 Zeilen) |
+| FIX-S2-15 | BESS-Replacement Upgrade-Faktor | OFFEN | Mittel | Schema, Replacement, Engine |
+| FIX-S2-16 | P90-DSCR entfernen | ABGEDECKT DURCH FEATURE 06 | – | Feature 06 eliminiert P90 komplett |
+| FIX-S2-17 | SoC Start = MIN_SOC | OFFEN | Hoch | Engine, Defaults (2 Zeilen) |
