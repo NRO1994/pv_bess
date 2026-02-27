@@ -25,7 +25,7 @@ auf früheren aufbauen.
 | # | Item | Aufwand | Abhängigkeiten | Status   |
 |---|------|---------|----------------|----------|
 | S2-17 | SoC Start = MIN_SOC | Klein (2 Zeilen) | Keine | ERLEDIGT |
-| S2-14 | `-v` → `max_workers=1` | Klein (2 Zeilen) | Keine | OFFEN    |
+| S2-14 | `-v` → `max_workers=1` | Klein (2 Zeilen) | Keine | ERLEDIGT |
 | S2-12 | Collar Bug Verifikation | Klein (Diagnose) | S2-17 | OFFEN    |
 | S2-07 | Output Directory aus JSON | Klein (3 Zeilen) | Keine | OFFEN    |
 | S2-08 | Dezimalkomma Default | Klein-Mittel | Keine | OFFEN    |

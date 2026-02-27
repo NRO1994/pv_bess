@@ -471,7 +471,7 @@ Profitabel wenn `spot[t_discharge] > eff[t_charge] / RTE`. Bei EEG floor = 54.9 
 ---
 
 ### FIX-S2-14: `-v` Flag setzt `max_workers=1`
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `main.py`
 
 **Problem:** Das `-v` / `--verbose` CLI-Flag setzt nur den Log-Level auf DEBUG, aber nicht `max_workers=1`. Multi-Processing erschwert Debugging erheblich.
@@ -660,7 +660,7 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 | FIX-S2-11 | Grid Search Skip | OFFEN                      | Niedrig | Grid Search, Performance |
 | FIX-S2-12 | Collar Bug (BESS Discharge-Koeffizient auf Spot) | OFFEN                      | Hoch | Optimizer, Engine (LP + Revenue) |
 | FIX-S2-13 | BESS-Replacement fremdfinanzieren | OFFEN                      | Hoch | Cashflow, Debt, Replacement |
-| FIX-S2-14 | `-v` → `max_workers=1` | OFFEN                      | Niedrig | Main.py (2 Zeilen) |
+| FIX-S2-14 | `-v` → `max_workers=1` | ERLEDIGT                   | Niedrig | Main.py (2 Zeilen) |
 | FIX-S2-15 | BESS-Replacement Upgrade-Faktor | OFFEN                      | Mittel | Schema, Replacement, Engine |
 | FIX-S2-16 | P90-DSCR entfernen | ABGEDECKT DURCH FEATURE 06 | – | Feature 06 eliminiert P90 komplett |
 | FIX-S2-17 | SoC Start = MIN_SOC | ERLEDIGT                   | Hoch | Engine, Defaults (2 Zeilen) |

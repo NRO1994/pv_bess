@@ -671,6 +671,7 @@ def run(args: argparse.Namespace) -> int:
         debt_uses_p90=debt_uses_p90,
         pv_base_timeseries_p90=p90_timeseries if debt_uses_p90 else None,
         spot_prices_yearly_p90=spot_prices_yearly_p90 if debt_uses_p90 else None,
+        max_workers=1 if args.verbose else None,
     )
 
     logger.info("Starting grid search…")
@@ -845,6 +846,7 @@ def run(args: argparse.Namespace) -> int:
             mu_bess_availability=bess_availability_pct / 100.0,
             sigma_bess_availability=sigma_bess_avail,
             price_scenarios=mc_price_scenarios,
+            max_workers=1 if args.verbose else None,
         )
 
         logger.info("Starting Monte Carlo (%d iterations)…", mc_iterations)
