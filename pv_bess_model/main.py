@@ -47,13 +47,14 @@ from pv_bess_model.config.defaults import (
     DEFAULT_LOAN_TENOR_YEARS,
     DEFAULT_MC_ITERATIONS,
     DEFAULT_MC_SIGMA_BESS_AVAILABILITY_PCT,
-    DEFAULT_MC_SIGMA_CAPEX_PCT,
-    DEFAULT_MC_SIGMA_OPEX_PCT,
-    DEFAULT_MC_SIGMA_PV_YIELD_PCT,
+    DEFAULT_MC_SIGMA_CAPEX_BESS_PCT,
+    DEFAULT_MC_SIGMA_CAPEX_PV_PCT,
+    DEFAULT_MC_SIGMA_OPEX_BESS_PCT,
+    DEFAULT_MC_SIGMA_OPEX_PV_PCT,
+    DEFAULT_MC_SIGMA_PV_AVAILABILITY_PCT,
     DEFAULT_OUTPUT_DIR,
     DEFAULT_PV_DEGRADATION_RATE_PCT,
     DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
-    DEFAULT_SYSTEM_LOSS_PCT,
     HOURS_PER_YEAR,
     MARKETING_TYPE_EEG,
     PPA_TYPE_COLLAR,
@@ -207,6 +208,18 @@ def _build_fixed_prices_yearly(
                 # GoO premium is NOT added here; it is passed separately via
                 # _build_goo_prices_yearly() and added after the floor comparison.
 
+        elif ppa_type == PPA_TYPE_COLLAR:
+            ppa_cfg = ppa_config_from_dict(ppa_dict)
+            if year <= ppa_cfg.duration_years:
+                base = ppa_cfg.floor_price_eur_per_kwh or 0.0
+                if ppa_cfg.inflation_enabled:
+                    price = inflate_value(base, inflation_rate, year)
+                else:
+                    price = base
+                # GoO premium is NOT added here; it is passed separately via
+                # _build_goo_prices_yearly() and added after the clip operation.
+                # Cap price is handled via _build_cap_prices_yearly().
+
         elif ppa_type == PPA_TYPE_PAY_AS_PRODUCED:
             ppa_cfg = ppa_config_from_dict(ppa_dict)
             price = pay_as_produced_price(ppa_cfg, year, inflation_rate)
@@ -250,6 +263,50 @@ def _build_goo_prices_yearly(
         return [goo if year <= duration else 0.0 for year in range(1, lifetime + 1)]
 
     return [0.0] * lifetime
+
+
+def _build_cap_prices_yearly(
+    scenario: ScenarioConfig,
+    inflation_rate: float,
+) -> list[float]:
+    """Build the per-year cap price list for the dispatch engine.
+
+    Only relevant for PPA Collar.  Returns 0.0 for each year when no cap is
+    active (0.0 = no cap, i.e. unbounded upside).
+
+    Parameters
+    ----------
+    scenario:
+        Validated scenario configuration.
+    inflation_rate:
+        Annual inflation rate as a fraction.
+
+    Returns
+    -------
+    list[float]
+        Cap price in €/kWh for each project year (length = lifetime_years).
+        Index 0 = year 1.  0.0 means no cap for that year.
+    """
+    lifetime = scenario.lifetime_years
+    ppa_dict = scenario.finance.get("revenue_streams", {}).get("ppa", {})
+    ppa_type = ppa_dict.get("type", PPA_TYPE_NONE)
+
+    if ppa_type != PPA_TYPE_COLLAR:
+        return [0.0] * lifetime
+
+    ppa_cfg = ppa_config_from_dict(ppa_dict)
+    cap_prices: list[float] = []
+    for year in range(1, lifetime + 1):
+        if year <= ppa_cfg.duration_years:
+            base = ppa_cfg.cap_price_eur_per_kwh or 0.0
+            if ppa_cfg.inflation_enabled:
+                price = inflate_value(base, inflation_rate, year)
+            else:
+                price = base
+        else:
+            price = 0.0
+        cap_prices.append(price)
+    return cap_prices
 
 
 def _build_spot_prices_yearly(
@@ -417,7 +474,6 @@ def run(args: argparse.Namespace) -> int:
     pv_perf = pv.get("performance", {})
     pv_peak_kwp = float(pv_design["peak_power_kwp"])
     pv_degradation_rate = float(pv_perf.get("degradation_rate_pct_per_year", DEFAULT_PV_DEGRADATION_RATE_PCT)) / 100.0
-    system_loss_pct = float(pv_perf.get("system_loss_pct", DEFAULT_SYSTEM_LOSS_PCT))
 
     # BESS parameters
     bess = scenario.bess
@@ -429,6 +485,7 @@ def run(args: argparse.Namespace) -> int:
     bess_availability_pct = float(bess_perf.get("bess_availability_pct", DEFAULT_BESS_AVAILABILITY_PCT))
 
     bess_costs = bess.get("costs", {})
+    optimization_fee_pct = float(bess_costs.get("optimization_fee_pct", 0.0))
     replacement_cfg = bess_costs.get("replacement", {})
     replacement_enabled = bool(replacement_cfg.get("enabled", False))
     replacement_year = int(replacement_cfg.get("year", 0))
@@ -440,6 +497,8 @@ def run(args: argparse.Namespace) -> int:
     # Grid connection
     grid_connection = scenario.grid_connection
     grid_max_kw = float(grid_connection.get("max_export_kw", pv_peak_kwp))
+    system_loss_pct = float(grid_connection.get("system_loss_pct", 0.0))
+    grid_loss_factor = 1.0 - system_loss_pct / 100.0
 
     # BESS design space (for grid search)
     bess_design_space = bess.get("design_space", {})
@@ -482,7 +541,7 @@ def run(args: argparse.Namespace) -> int:
             latitude=latitude,
             longitude=longitude,
             peak_power_kwp=pv_peak_kwp,
-            system_loss_pct=system_loss_pct,
+            system_loss_pct=0.0,
             mounting_type=mounting_type,
             azimuth_deg=azimuth_deg,
             tilt_deg=tilt_deg,
@@ -557,6 +616,8 @@ def run(args: argparse.Namespace) -> int:
     fixed_prices_yearly = _build_fixed_prices_yearly(scenario, inflation_rate)
     # GoO premium per year (for floor and collar PPA types)
     goo_prices_yearly = _build_goo_prices_yearly(scenario)
+    # Cap prices per year (PPA Collar only; 0.0 = no cap)
+    cap_prices_yearly = _build_cap_prices_yearly(scenario, inflation_rate)
 
     # ------------------------------------------------------------------
     # Step 5: Grid Search
@@ -585,13 +646,16 @@ def run(args: argparse.Namespace) -> int:
         replacement_eur_per_kw=replacement_eur_per_kw,
         replacement_eur_per_kwh=replacement_eur_per_kwh,
         replacement_pct_of_capex=replacement_pct_of_capex,
+        optimization_fee_pct=optimization_fee_pct,
         grid_max_kw=grid_max_kw,
+        grid_loss_factor=grid_loss_factor,
         grid_costs_capex=grid_capex_cfg,
         grid_costs_opex=grid_opex_cfg,
         operating_mode=scenario.operating_mode,
         spot_prices_yearly=spot_prices_yearly,
         fixed_prices_yearly=fixed_prices_yearly,
         goo_prices_yearly=goo_prices_yearly,
+        cap_prices_yearly=cap_prices_yearly,
         lifetime_years=lifetime,
         leverage_pct=leverage_pct,
         interest_rate_pct=interest_rate_pct,
@@ -650,6 +714,7 @@ def run(args: argparse.Namespace) -> int:
         bess_max_charge_kw=opt.bess_power_kw,
         bess_max_discharge_kw=opt.bess_power_kw,
         bess_rte=bess_rte,
+        grid_loss_factor=grid_loss_factor,
         bess_min_soc_pct=bess_min_soc_pct,
         bess_max_soc_pct=bess_max_soc_pct,
         bess_degradation_rate=bess_degradation_rate,
@@ -668,11 +733,13 @@ def run(args: argparse.Namespace) -> int:
         fixed_prices_yearly=fixed_prices_yearly,
         offline_days_yearly=offline_days_yearly,
         goo_prices_yearly=goo_prices_yearly,
+        cap_prices_yearly=cap_prices_yearly,
     )
 
     annual_revenues = [r.total_revenue for r in sim.annual_results]
-    annual_pv_kwh = [r.pv_production for r in sim.annual_results]
+    annual_pv_kwh = [r.pv_export for r in sim.annual_results]
     annual_bess_throughput = [r.bess_throughput for r in sim.annual_results]
+    annual_bess_spot_revenues = [r.bess_spot_revenue for r in sim.annual_results]
     total_production_kwh = sum(annual_pv_kwh)
 
     # Build cashflow
@@ -705,9 +772,16 @@ def run(args: argparse.Namespace) -> int:
         solidaritaetszuschlag_pct=solidaritaetszuschlag_pct,
         replacement_cost=replacement_cost if replacement_enabled else 0.0,
         replacement_year=replacement_year if replacement_enabled else None,
+        optimization_fee_pct=optimization_fee_pct,
+        annual_bess_spot_revenues=annual_bess_spot_revenues,
     )
 
-    annual_opex = [inflate_value(opt.opex_base, inflation_rate, y) for y in range(1, lifetime + 1)]
+    annual_opex = []
+    for y in range(1, lifetime + 1):
+        opex_y = inflate_value(opt.opex_base, inflation_rate, y)
+        if optimization_fee_pct > 0.0:
+            opex_y += annual_bess_spot_revenues[y - 1] * optimization_fee_pct / 100.0
+        annual_opex.append(opex_y)
     annual_debt_service = [cashflow.years[y - 1].debt_service for y in range(1, lifetime + 1)]
     annual_dscr: list[float | None] = []
     for y in range(lifetime):
@@ -737,10 +811,12 @@ def run(args: argparse.Namespace) -> int:
     mc_result = None
     if mc_enabled:
         mc_iterations = int(mc_cfg.get("iterations", 1000))
-        sigma_pv = float(mc_cfg.get("sigma_pv_yield_pct", 5.0)) / 100.0
-        sigma_capex = float(mc_cfg.get("sigma_capex_pct", 8.0)) / 100.0
-        sigma_opex = float(mc_cfg.get("sigma_opex_pct", 5.0)) / 100.0
-        sigma_avail = float(mc_cfg.get("sigma_bess_availability_pct", 2.0)) / 100.0
+        sigma_capex_pv = float(mc_cfg.get("sigma_capex_pv_pct", DEFAULT_MC_SIGMA_CAPEX_PV_PCT)) / 100.0
+        sigma_capex_bess = float(mc_cfg.get("sigma_capex_bess_pct", DEFAULT_MC_SIGMA_CAPEX_BESS_PCT)) / 100.0
+        sigma_opex_pv = float(mc_cfg.get("sigma_opex_pv_pct", DEFAULT_MC_SIGMA_OPEX_PV_PCT)) / 100.0
+        sigma_opex_bess = float(mc_cfg.get("sigma_opex_bess_pct", DEFAULT_MC_SIGMA_OPEX_BESS_PCT)) / 100.0
+        sigma_pv_avail = float(mc_cfg.get("sigma_pv_availability_pct", DEFAULT_MC_SIGMA_PV_AVAILABILITY_PCT)) / 100.0
+        sigma_bess_avail = float(mc_cfg.get("sigma_bess_availability_pct", DEFAULT_MC_SIGMA_BESS_AVAILABILITY_PCT)) / 100.0
 
         # Build scenario price mapping (using already-extended prices)
         scenario_prices: dict[str, list[np.ndarray]] = {}
@@ -761,11 +837,13 @@ def run(args: argparse.Namespace) -> int:
 
         mc_params = MCParams(
             iterations=mc_iterations,
-            sigma_pv_yield=sigma_pv,
-            sigma_capex=sigma_capex,
-            sigma_opex=sigma_opex,
+            sigma_capex_pv=sigma_capex_pv,
+            sigma_capex_bess=sigma_capex_bess,
+            sigma_opex_pv=sigma_opex_pv,
+            sigma_opex_bess=sigma_opex_bess,
+            sigma_pv_availability=sigma_pv_avail,
             mu_bess_availability=bess_availability_pct / 100.0,
-            sigma_bess_availability=sigma_avail,
+            sigma_bess_availability=sigma_bess_avail,
             price_scenarios=mc_price_scenarios,
         )
 

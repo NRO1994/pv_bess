@@ -4,14 +4,25 @@
     "monte_carlo": {
       "enabled": true,
       "iterations": 10,
-      "sigma_pv_yield_pct": 5.0,
-      "sigma_capex_pct": 8.0,
-      "sigma_opex_pct": 5.0,
+      "sigma_capex_pv_pct": 5.0,
+      "sigma_capex_bess_pct": 10.0,
+      "sigma_opex_pv_pct": 3.0,
+      "sigma_opex_bess_pct": 8.0,
+      "sigma_pv_availability_pct": 2.0,
       "sigma_bess_availability_pct": 2.0,
       "price_scenarios": {
-        "low":  {"csv_column": "LOW",  "weight": 0.25},
-        "mid":  {"csv_column": "MID",  "weight": 0.50},
-        "high": {"csv_column": "HIGH", "weight": 0.25}
+        "low": {
+          "csv_column": "LOW",
+          "weight": 0.25
+        },
+        "mid": {
+          "csv_column": "MID",
+          "weight": 0.5
+        },
+        "high": {
+          "csv_column": "HIGH",
+          "weight": 0.25
+        }
       }
     },
     "output": {
@@ -37,7 +48,6 @@
           "tilt_deg": 30
         },
         "performance": {
-          "system_loss_pct": 14.0,
           "degradation_rate_pct_per_year": 0.4
         },
         "costs": {
@@ -53,8 +63,14 @@
       },
       "bess": {
         "design_space": {
-          "scale_pct_of_pv": [0, 30, 60],
-          "e_to_p_ratio_hours": [2]
+          "scale_pct_of_pv": [
+            0,
+            30,
+            60
+          ],
+          "e_to_p_ratio_hours": [
+            2
+          ]
         },
         "performance": {
           "round_trip_efficiency_pct": 88.0,
@@ -92,7 +108,8 @@
           "opex": {
             "fixed_eur": 500
           }
-        }
+        },
+        "system_loss_pct": 14.0
       }
     },
     "finance": {

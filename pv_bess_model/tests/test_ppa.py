@@ -753,3 +753,168 @@ class TestPpaInflation:
         price_y1 = effective_floor_price(cfg, year=1, inflation_rate=0.02)
         price_y10 = effective_floor_price(cfg, year=10, inflation_rate=0.02)
         assert math.isclose(price_y1, price_y10)
+
+
+# ---------------------------------------------------------------------------
+# PPA Collar integration with main.py price builders
+# ---------------------------------------------------------------------------
+
+
+class TestBuildFixedPricesYearlyCollar:
+    """Tests for _build_fixed_prices_yearly with PPA Collar type.
+
+    Verifies that the collar branch correctly sets the floor price for each
+    project year and that GoO is NOT included in the fixed prices.
+    """
+
+    @pytest.fixture
+    def _make_scenario(self):
+        """Factory for minimal ScenarioConfig-like objects with collar PPA."""
+        from unittest.mock import MagicMock
+
+        def factory(
+            lifetime: int = 25,
+            floor: float = 0.04,
+            cap: float = 0.10,
+            duration: int = 10,
+            inflation_on_ppa: bool = False,
+            goo: float = 0.003,
+        ):
+            scenario = MagicMock()
+            scenario.lifetime_years = lifetime
+            scenario.finance = {
+                "revenue_streams": {
+                    "marketing": {"type": "ppa"},
+                    "ppa": {
+                        "type": "ppa_collar",
+                        "pay_as_produced_price_eur_per_kwh": None,
+                        "baseload_mw": None,
+                        "floor_price_eur_per_kwh": floor,
+                        "cap_price_eur_per_kwh": cap,
+                        "duration_years": duration,
+                        "inflation_on_ppa": inflation_on_ppa,
+                        "guarantee_of_origin_eur_per_kwh": goo,
+                    },
+                },
+            }
+            return scenario
+        return factory
+
+    def test_collar_floor_within_period(self, _make_scenario) -> None:
+        """During PPA period, fixed price = floor (without GoO)."""
+        from pv_bess_model.main import _build_fixed_prices_yearly
+
+        scenario = _make_scenario(lifetime=15, floor=0.04, duration=10)
+        prices = _build_fixed_prices_yearly(scenario, inflation_rate=0.02)
+        # Years 1-10: floor = 0.04 (no inflation)
+        for y in range(10):
+            assert math.isclose(prices[y], 0.04), f"Year {y+1}: expected 0.04, got {prices[y]}"
+        # Years 11-15: after PPA expiry = 0.0
+        for y in range(10, 15):
+            assert prices[y] == 0.0, f"Year {y+1}: expected 0.0, got {prices[y]}"
+
+    def test_collar_floor_with_inflation(self, _make_scenario) -> None:
+        """Floor price is inflated when inflation_on_ppa is True."""
+        from pv_bess_model.main import _build_fixed_prices_yearly
+
+        scenario = _make_scenario(
+            lifetime=5, floor=0.04, duration=5, inflation_on_ppa=True,
+        )
+        prices = _build_fixed_prices_yearly(scenario, inflation_rate=0.02)
+        for y in range(5):
+            from pv_bess_model.finance.inflation import inflate_value
+            expected = inflate_value(0.04, 0.02, y + 1)
+            assert math.isclose(prices[y], expected, rel_tol=1e-9), (
+                f"Year {y+1}: expected {expected}, got {prices[y]}"
+            )
+
+    def test_collar_no_goo_in_fixed_prices(self, _make_scenario) -> None:
+        """GoO premium must NOT be included in fixed_prices_yearly."""
+        from pv_bess_model.main import _build_fixed_prices_yearly
+
+        scenario = _make_scenario(floor=0.04, goo=0.010, duration=10)
+        prices = _build_fixed_prices_yearly(scenario, inflation_rate=0.0)
+        # Floor = 0.04, GoO = 0.010.  fixed_prices should be 0.04, NOT 0.05.
+        assert math.isclose(prices[0], 0.04), (
+            f"GoO should not be in fixed price: got {prices[0]}, expected 0.04"
+        )
+
+
+class TestBuildCapPricesYearly:
+    """Tests for _build_cap_prices_yearly from main.py."""
+
+    @pytest.fixture
+    def _make_scenario(self):
+        """Factory for minimal ScenarioConfig-like objects."""
+        from unittest.mock import MagicMock
+
+        def factory(
+            lifetime: int = 25,
+            ppa_type: str = "ppa_collar",
+            floor: float = 0.04,
+            cap: float = 0.10,
+            duration: int = 10,
+            inflation_on_ppa: bool = False,
+            goo: float = 0.003,
+        ):
+            scenario = MagicMock()
+            scenario.lifetime_years = lifetime
+            scenario.finance = {
+                "revenue_streams": {
+                    "marketing": {"type": "ppa"},
+                    "ppa": {
+                        "type": ppa_type,
+                        "pay_as_produced_price_eur_per_kwh": None,
+                        "baseload_mw": None,
+                        "floor_price_eur_per_kwh": floor,
+                        "cap_price_eur_per_kwh": cap,
+                        "duration_years": duration,
+                        "inflation_on_ppa": inflation_on_ppa,
+                        "guarantee_of_origin_eur_per_kwh": goo,
+                    },
+                },
+            }
+            return scenario
+        return factory
+
+    def test_cap_within_period(self, _make_scenario) -> None:
+        """During PPA period, cap_prices = cap (no inflation)."""
+        from pv_bess_model.main import _build_cap_prices_yearly
+
+        scenario = _make_scenario(lifetime=15, cap=0.10, duration=10)
+        caps = _build_cap_prices_yearly(scenario, inflation_rate=0.02)
+        for y in range(10):
+            assert math.isclose(caps[y], 0.10), f"Year {y+1}: expected 0.10, got {caps[y]}"
+        for y in range(10, 15):
+            assert caps[y] == 0.0, f"Year {y+1}: expected 0.0, got {caps[y]}"
+
+    def test_cap_with_inflation(self, _make_scenario) -> None:
+        """Cap price is inflated when inflation_on_ppa is True."""
+        from pv_bess_model.main import _build_cap_prices_yearly
+
+        scenario = _make_scenario(
+            lifetime=5, cap=0.10, duration=5, inflation_on_ppa=True,
+        )
+        caps = _build_cap_prices_yearly(scenario, inflation_rate=0.03)
+        for y in range(5):
+            from pv_bess_model.finance.inflation import inflate_value
+            expected = inflate_value(0.10, 0.03, y + 1)
+            assert math.isclose(caps[y], expected, rel_tol=1e-9)
+
+    def test_cap_non_collar_type_returns_zeros(self, _make_scenario) -> None:
+        """For non-collar PPA types, cap_prices_yearly is all zeros."""
+        from pv_bess_model.main import _build_cap_prices_yearly
+
+        scenario = _make_scenario(ppa_type="ppa_floor", cap=0.10)
+        caps = _build_cap_prices_yearly(scenario, inflation_rate=0.02)
+        assert all(c == 0.0 for c in caps)
+
+    def test_cap_eeg_marketing_returns_zeros(self, _make_scenario) -> None:
+        """For EEG marketing type, cap_prices_yearly is all zeros."""
+        from pv_bess_model.main import _build_cap_prices_yearly
+
+        scenario = _make_scenario(ppa_type="none")
+        # Override marketing to EEG
+        scenario.finance["revenue_streams"]["marketing"]["type"] = "eeg"
+        caps = _build_cap_prices_yearly(scenario, inflation_rate=0.02)
+        assert all(c == 0.0 for c in caps)

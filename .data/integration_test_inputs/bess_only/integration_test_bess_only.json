@@ -4,14 +4,25 @@
     "monte_carlo": {
       "enabled": true,
       "iterations": 1000,
-      "sigma_pv_yield_pct": 3.0,
-      "sigma_capex_pct": 15.0,
-      "sigma_opex_pct": 10.0,
+      "sigma_capex_pv_pct": 5.0,
+      "sigma_capex_bess_pct": 15.0,
+      "sigma_opex_pv_pct": 3.0,
+      "sigma_opex_bess_pct": 10.0,
+      "sigma_pv_availability_pct": 2.0,
       "sigma_bess_availability_pct": 2.0,
       "price_scenarios": {
-        "low":  {"csv_column": "Low",  "weight": 0.33},
-        "mid":  {"csv_column": "Mid",  "weight": 0.34},
-        "high": {"csv_column": "High", "weight": 0.33}
+        "low": {
+          "csv_column": "Low",
+          "weight": 0.33
+        },
+        "mid": {
+          "csv_column": "Mid",
+          "weight": 0.34
+        },
+        "high": {
+          "csv_column": "High",
+          "weight": 0.33
+        }
       }
     },
     "output": {
@@ -23,7 +34,7 @@
     "commissioning_year": 2027,
     "lifetime_years": 25,
     "discount_rate": 0.056,
-    "operating_mode": "green",
+    "operating_mode": "grey",
     "location": {
       "latitude": 53.817,
       "longitude": 10.668,
@@ -38,7 +49,6 @@
           "tilt_deg": 18
         },
         "performance": {
-          "system_loss_pct": 0,
           "degradation_rate_pct_per_year": 0
         },
         "costs": {
@@ -55,8 +65,17 @@
       },
       "bess": {
         "design_space": {
-          "scale_pct_of_pv": [0, 50, 80, 100],
-          "e_to_p_ratio_hours": [1, 2, 4]
+          "scale_pct_of_pv": [
+            0,
+            50,
+            80,
+            100
+          ],
+          "e_to_p_ratio_hours": [
+            1,
+            2,
+            4
+          ]
         },
         "performance": {
           "round_trip_efficiency_pct": 98.5,
@@ -73,14 +92,14 @@
           },
           "opex": {
             "fixed_eur": 0,
-            "pct_of_capex": 0
+            "eur_per_kw": 10
           },
           "replacement": {
             "enabled": true,
             "year": 12,
             "fixed_eur": 0,
-            "eur_per_kw": 300,
-            "eur_per_kwh": 150
+            "eur_per_kw": 262.4,
+            "eur_per_kwh": 106.2
           }
         }
       },
@@ -95,7 +114,8 @@
             "fixed_eur": 0,
             "pct_of_capex": 0
           }
-        }
+        },
+        "system_loss_pct": 0
       }
     },
     "finance": {
@@ -124,7 +144,7 @@
         }
       },
       "price_inputs": {
-        "day_ahead_csv": "prognos_prices_original_2025.csv",
+        "day_ahead_csv": "C:/Users/roescni/Codebase/CoLocation_Analyse/.data/integration_test_inputs/prognos_prices_original_2025.csv",
         "price_unit": "eur_per_mwh",
         "inflation_on_input_data": true
       },

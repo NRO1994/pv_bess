@@ -629,3 +629,128 @@ class TestBessReplacement:
 
         caps = [ar.bess_capacity_kwh for ar in result.annual_results]
         assert caps[0] > caps[1] > caps[2]
+
+
+# ---------------------------------------------------------------------------
+# BESS spot revenue tracking (Feature 03)
+# ---------------------------------------------------------------------------
+
+
+class TestBessSpotRevenue:
+    """Verify that bess_spot_revenue is tracked correctly in AnnualResult."""
+
+    def test_bess_spot_revenue_positive_with_bess(self) -> None:
+        """With BESS and price spread, bess_spot_revenue should be positive."""
+        daily_pv = np.zeros(HOURS_PER_DAY)
+        daily_pv[10:14] = 200.0  # Surplus PV to charge BESS
+        pv_year = _make_yearly_pv(daily_pv)
+
+        daily_spot = np.full(HOURS_PER_DAY, 0.02)
+        daily_spot[18:22] = 0.10  # Evening peak → BESS discharges here
+        spot_year = _make_yearly_prices(daily_spot)
+
+        config = _make_config(
+            bess_nameplate_kwh=200.0,
+            bess_power_kw=100.0,
+            grid_max_kw=150.0,
+            lifetime_years=1,
+        )
+
+        result = run_simulation(
+            config=config,
+            pv_base_timeseries=pv_year,
+            spot_prices_yearly=[spot_year],
+            fixed_prices_yearly=[0.0],
+            offline_days_yearly=[set()],
+        )
+
+        ar = result.annual_results[0]
+        assert ar.bess_spot_revenue > 0.0
+
+    def test_bess_spot_revenue_zero_without_bess(self) -> None:
+        """PV-only (BESS=0): bess_spot_revenue must be zero."""
+        daily_pv = np.zeros(HOURS_PER_DAY)
+        daily_pv[10:14] = 100.0
+        pv_year = _make_yearly_pv(daily_pv)
+
+        spot_year = _make_yearly_prices(np.full(HOURS_PER_DAY, 0.05))
+
+        config = _make_config(
+            bess_nameplate_kwh=0.0,
+            bess_power_kw=0.0,
+            grid_max_kw=500.0,
+            lifetime_years=1,
+        )
+
+        result = run_simulation(
+            config=config,
+            pv_base_timeseries=pv_year,
+            spot_prices_yearly=[spot_year],
+            fixed_prices_yearly=[0.0],
+            offline_days_yearly=[set()],
+        )
+
+        assert abs(result.annual_results[0].bess_spot_revenue) < ATOL
+
+    def test_bess_spot_revenue_uses_spot_not_floor(self) -> None:
+        """bess_spot_revenue uses spot price, not effective price with floor.
+
+        With floor > spot for all hours, revenue_bess_green uses floor but
+        bess_spot_revenue uses spot price.
+        """
+        daily_pv = np.zeros(HOURS_PER_DAY)
+        daily_pv[10:14] = 200.0
+        pv_year = _make_yearly_pv(daily_pv)
+
+        spot_price = 0.03  # EUR/kWh
+        floor_price = 0.08  # EUR/kWh — much higher than spot
+        daily_spot = np.full(HOURS_PER_DAY, spot_price)
+        daily_spot[18:22] = 0.04  # Still below floor
+        spot_year = _make_yearly_prices(daily_spot)
+
+        config = _make_config(
+            bess_nameplate_kwh=200.0,
+            bess_power_kw=100.0,
+            grid_max_kw=150.0,
+            lifetime_years=1,
+        )
+
+        result = run_simulation(
+            config=config,
+            pv_base_timeseries=pv_year,
+            spot_prices_yearly=[spot_year],
+            fixed_prices_yearly=[floor_price],
+            offline_days_yearly=[set()],
+        )
+
+        ar = result.annual_results[0]
+        # bess_spot_revenue should be based on spot price
+        # revenue_bess_green is based on effective price (floor)
+        # So bess_spot_revenue < revenue_bess_green when floor > spot
+        if ar.bess_discharge_green > 0.0:
+            assert ar.bess_spot_revenue < ar.revenue_bess_green
+
+    def test_bess_spot_revenue_all_offline_is_zero(self) -> None:
+        """With all days offline, bess_spot_revenue must be zero."""
+        daily_pv = np.zeros(HOURS_PER_DAY)
+        daily_pv[10:14] = 200.0
+        pv_year = _make_yearly_pv(daily_pv)
+
+        daily_spot = np.full(HOURS_PER_DAY, 0.05)
+        spot_year = _make_yearly_prices(daily_spot)
+
+        config = _make_config(
+            bess_nameplate_kwh=200.0,
+            bess_power_kw=100.0,
+            lifetime_years=1,
+        )
+
+        result = run_simulation(
+            config=config,
+            pv_base_timeseries=pv_year,
+            spot_prices_yearly=[spot_year],
+            fixed_prices_yearly=[0.0],
+            offline_days_yearly=[set(range(DAYS_PER_YEAR))],
+        )
+
+        assert abs(result.annual_results[0].bess_spot_revenue) < ATOL

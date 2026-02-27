@@ -55,9 +55,11 @@ _MONTE_CARLO = {
     "properties": {
         "enabled": {"type": "boolean"},
         "iterations": {"type": "integer", "minimum": 1},
-        "sigma_pv_yield_pct": {"type": "number", "minimum": 0},
-        "sigma_capex_pct": {"type": "number", "minimum": 0},
-        "sigma_opex_pct": {"type": "number", "minimum": 0},
+        "sigma_capex_pv_pct": {"type": "number", "minimum": 0},
+        "sigma_capex_bess_pct": {"type": "number", "minimum": 0},
+        "sigma_opex_pv_pct": {"type": "number", "minimum": 0},
+        "sigma_opex_bess_pct": {"type": "number", "minimum": 0},
+        "sigma_pv_availability_pct": {"type": "number", "minimum": 0},
         "sigma_bess_availability_pct": {"type": "number", "minimum": 0},
         "price_scenarios": {
             "type": "object",
@@ -107,9 +109,8 @@ _PV_DESIGN = {
 
 _PV_PERFORMANCE = {
     "type": "object",
-    "required": ["system_loss_pct", "degradation_rate_pct_per_year"],
+    "required": ["degradation_rate_pct_per_year"],
     "properties": {
-        "system_loss_pct": {"type": "number", "minimum": 0, "maximum": 100},
         "degradation_rate_pct_per_year": {
             "type": "number",
             "minimum": 0,
@@ -205,6 +206,7 @@ _BESS_COSTS = {
     "properties": {
         "capex": _COST_COMPONENT,
         "opex": _COST_COMPONENT,
+        "optimization_fee_pct": {"type": "number", "minimum": 0, "maximum": 100},
         "replacement": _BESS_REPLACEMENT,
     },
     "additionalProperties": False,
@@ -230,6 +232,7 @@ _GRID_CONNECTION = {
     "required": ["max_export_kw", "costs"],
     "properties": {
         "max_export_kw": {"type": "number", "exclusiveMinimum": 0},
+        "system_loss_pct": {"type": "number", "minimum": 0, "maximum": 100},
         "costs": {
             "type": "object",
             "required": ["capex", "opex"],

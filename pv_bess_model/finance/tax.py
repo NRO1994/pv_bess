@@ -147,6 +147,9 @@ def calculate_tax_for_year(
     hebesatz: float = DEFAULT_GEWERBESTEUER_HEBESATZ,
     kst_rate_pct: float = DEFAULT_KOERPERSCHAFTSTEUER_PCT,
     soli_rate_pct: float = DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
+    capex_bess_replacement: float = 0.0,
+    replacement_year: int | None = None,
+    afa_years_bess_replacement: int | None = None,
 ) -> TaxResult:
     """Calculate tax for a single project year with Verlustvortrag.
 
@@ -170,13 +173,31 @@ def calculate_tax_for_year(
         hebesatz: GewSt Hebesatz.
         kst_rate_pct: Körperschaftsteuer rate in percent.
         soli_rate_pct: Solidaritätszuschlag rate in percent (on KSt).
+        capex_bess_replacement: BESS replacement CAPEX (depreciation base for
+            the second AfA line).  0.0 if no replacement.
+        replacement_year: Project year (1-indexed) when the replacement occurs.
+            The replacement AfA starts in this year.
+        afa_years_bess_replacement: Depreciation period for the replacement BESS.
+            Defaults to ``afa_years_bess`` if not provided.
 
     Returns:
         :class:`TaxResult` with full breakdown.
     """
     # 1. Calculate depreciation
     depr_pv = calculate_annual_depreciation(capex_pv, afa_years_pv, project_year)
-    depr_bess = calculate_annual_depreciation(capex_bess, afa_years_bess, project_year)
+    depr_bess_original = calculate_annual_depreciation(capex_bess, afa_years_bess, project_year)
+
+    # Replacement BESS AfA (second depreciation line starting at replacement_year)
+    depr_bess_replacement = 0.0
+    if replacement_year is not None and capex_bess_replacement > 0.0:
+        years_since_replacement = project_year - replacement_year + 1
+        if years_since_replacement >= 1:
+            afa_yrs = afa_years_bess_replacement or afa_years_bess
+            depr_bess_replacement = calculate_annual_depreciation(
+                capex_bess_replacement, afa_yrs, years_since_replacement
+            )
+
+    depr_bess = depr_bess_original + depr_bess_replacement
     depr_total = depr_pv + depr_bess
 
     # 1. taxable_income = Revenue - OPEX - AfA
