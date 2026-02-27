@@ -22,12 +22,26 @@
   Leistung/Kapazität angegeben werden kann. Zudem muss es möglich sein das "pv" Attribut komplett wegzulassen, bzw. die
   Leistung auf 0 zu setzen. Entwickle hierfür ebenfalls ein integration test, der auf
   .data/integration_test_inputs/bess_only Dateien beruht
+- [ ] Wird zum Beispiel ein "Green PV BESS Szenario" berechnet, dass mit einem Collar PPA als Vermarktungsstrategie
+  ausgestattet ist,
+  so wird das BESS Charging nur am ersten Tag des jeweiligen PPA-Jahres durchgeführt, nicht aber im kompletten
+  Jahresverlauf. Erst nach Beendigung der PPA's wird der Speicher auch an anderen Tagen des Jahres entsprechend
+  optimiert, und es kommt ein Revenue Beitrag dazu. Dies ist falsch. Auch während der Laufzeit eines PPA's (egal welcher
+  Struktur) sowie des EEG's, sind die Revenue Beiträge des BESS relevant für jeden TAg eines Jahres!
 
 ## Logik
 
 - [ ] OPEX soll ebenfalls per "eur_pro_kw" und "eur_pro_kwh" berechnet werden können, passe auch das json-Schema
   entsprechend an
 - [ ] loan tenor ist Teil des inputs, aber in der Berechnung des Debt Services nicht berücksichtigt
+- [ ] der CAPEX des BESS-Replacements soll ebenso fremdfinanziert werden, wie der CAPEX zu Beginn. Die Restschuld des
+  ersten Kredits soll dann entsprechend um den Fremdkapital Anteil des BESS Replacements erhöht werden.
+- [ ] das -v argument aus der CLI soll auch dazu beitragen, dass nur ein worker-thread verwendet wird, um einfacher
+  debuggen zu
+  können
+- Um Technologiesrpünge mit zu simulieren, soll es möglich sein dem BESS-Replacement einen prozentualen Faktor
+  mitzugeben. Dieser soll angeben, wie viel zusätzliche Kapazität der neue BESS gegenüber dem ursprünglichen hat.
+  Default = 1
 
 ## Kosmetik
 
@@ -39,5 +53,8 @@
   Excel geöffnet ist. Implementiere für diesen Fehler ein catch, der dann dem Dateinamen einen Index hinzufügt
 - [ ] die Spalte des "debt_service" soll in "debt_interest_rate" und "debt_repayment" aufgeteilt werden, und dann die
   entsprechenden Werte aus dem Finanzmodell beinhalten.
-- [ ] ermögliche die GRid-Search zu überspringen, und zwar wenn für die "scale_pct_of_pv" und "e_to_p_ratio_hours" nur
+- [ ] ermögliche die Grid-Search zu überspringen, und zwar wenn für die "scale_pct_of_pv" und "e_to_p_ratio_hours" nur
   ein Wert im Array enthalten ist
+- [ ] Entferne die DSCR Berechnung auf P90 Basis. P90 aus der PV Zeitreihe ist bereits eliminiert, für nur die
+  Neuberechnung des DSCR ist dieser Aufwand nicht mehr nötig.
+- [ ] SOC zum Start der Simulation soll im ersten Jahr als MIN_SOC angenommen werden, nicht mehr mit 50%

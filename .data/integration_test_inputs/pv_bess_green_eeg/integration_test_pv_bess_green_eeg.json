@@ -1,6 +1,6 @@
 {
   "scenario": {
-    "name": "BESS only Testcase",
+    "name": "PV-BESS Green EEG",
     "monte_carlo": {
       "enabled": true,
       "iterations": 1000,
@@ -34,7 +34,7 @@
     "commissioning_year": 2027,
     "lifetime_years": 25,
     "discount_rate": 0.056,
-    "operating_mode": "grey",
+    "operating_mode": "green",
     "location": {
       "latitude": 53.817,
       "longitude": 10.668,
@@ -43,21 +43,21 @@
     "technology": {
       "pv": {
         "design": {
-          "peak_power_kwp": 1,
+          "peak_power_kwp": 10722,
           "mounting_type": "free",
           "azimuth_deg": 0,
           "tilt_deg": 18
         },
         "performance": {
-          "degradation_rate_pct_per_year": 0
+          "degradation_rate_pct_per_year": 0.3
         },
         "costs": {
           "capex": {
-            "fixed_eur": 0,
+            "fixed_eur": 5307000,
             "eur_per_kw": 0
           },
           "opex": {
-            "fixed_eur": 0,
+            "fixed_eur": 132721,
             "eur_per_kw": 0,
             "pct_of_capex": 0
           }
@@ -98,13 +98,14 @@
             "enabled": true,
             "year": 12,
             "fixed_eur": 0,
-            "eur_per_kw": 262.4,
-            "eur_per_kwh": 106.2
+            "eur_per_kw": 162.4,
+            "eur_per_kwh": 56.2
           }
         }
       },
       "grid_connection": {
         "max_export_kw": 11000,
+        "system_loss_pct": 12.4,
         "costs": {
           "capex": {
             "fixed_eur": 0,
@@ -114,8 +115,7 @@
             "fixed_eur": 0,
             "pct_of_capex": 0
           }
-        },
-        "system_loss_pct": 0
+        }
       }
     },
     "finance": {
@@ -127,20 +127,20 @@
       "inflation_rate": 0.02,
       "revenue_streams": {
         "marketing": {
-          "type": "eeg",
-          "floor_price_eur_per_kwh": 0,
+          "type": "market",
+          "floor_price_eur_per_kwh": 0.0549,
           "fixed_price_years": 20,
           "eeg_inflation": false
         },
         "ppa": {
-          "type": "none",
+          "type": "ppa_collar",
           "pay_as_produced_price_eur_per_kwh": null,
           "baseload_mw": null,
           "floor_price_eur_per_kwh": 0.0549,
           "cap_price_eur_per_kwh": 0.0549,
-          "duration_years": 5,
+          "duration_years": 1,
           "inflation_on_ppa": false,
-          "guarantee_of_origin_eur_per_kwh": 0.005
+          "guarantee_of_origin_eur_per_kwh": 0.0
         }
       },
       "price_inputs": {

@@ -708,7 +708,7 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                 n_combinations,
                 a.scale_pct,
                 a.e_to_p_ratio,
-                f"{(result.equity_irr or 0.0) * 100:.2f} %%" if result.equity_irr is not None else "N/A",
+                f"{(result.equity_irr or 0.0) * 100:.2f} %" if result.equity_irr is not None else "N/A",
             )
     else:
         with concurrent.futures.ProcessPoolExecutor(
