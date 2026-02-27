@@ -75,9 +75,6 @@ MC_WEIGHT_TOLERANCE: float = 1e-6
 # BESS / dispatch defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_START_SOC_FRACTION: float = 0.50
-"""Initial state-of-charge for the first day of simulation (fraction of usable capacity)."""
-
 DEFAULT_BESS_AVAILABILITY_PCT: float = 100.0
 """Default BESS availability percentage (100 % = always online)."""
 

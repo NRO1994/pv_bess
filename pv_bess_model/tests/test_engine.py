@@ -12,7 +12,6 @@ import pytest
 
 from pv_bess_model.bess.replacement import ReplacementConfig
 from pv_bess_model.config.defaults import (
-    DEFAULT_START_SOC_FRACTION,
     DAYS_PER_YEAR,
     HOURS_PER_DAY,
     HOURS_PER_YEAR,

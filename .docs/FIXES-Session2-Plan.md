@@ -575,7 +575,7 @@ Profitabel wenn `spot[t_discharge] > eff[t_charge] / RTE`. Bei EEG floor = 54.9 
 ---
 
 ### FIX-S2-17: SoC Start = MIN_SOC statt 50%
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `config/defaults.py`, `dispatch/engine.py`
 
 **Problem:** Der BESS startet die Simulation bei 50% des maximalen SoC. Ökonomisch sinnvoller (und realistischer) ist der Start bei MIN_SOC (leer), da der BESS am ersten Tag aus PV oder Netz geladen wird.
@@ -645,22 +645,22 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 
 ## Zusammenfassung
 
-| # | Beschreibung | Status | Priorität | Impact |
-|---|---|---|---|---|
-| FIX-S2-01 | Cashflow Benchmark-Test | OFFEN | Hoch | Neuer Test, keine Code-Änderung |
-| FIX-S2-02 | Smoke Test | OFFEN | Hoch | Neuer Test + JSON-Fix |
-| FIX-S2-03 | BESS-Only Cases | OFFEN | Hoch | Schema, Main, Grid Search |
-| FIX-S2-04 | OPEX eur_per_kw/kwh | BEREITS IMPLEMENTIERT | – | – |
-| FIX-S2-05 | Loan Tenor | BEREITS IMPLEMENTIERT | – | – |
-| FIX-S2-06 | CSV User Input | OFFEN | Mittel | Defaults, Schema, CSV Writer |
-| FIX-S2-07 | Output Dir aus JSON | OFFEN | Niedrig | Main.py (3 Zeilen) |
-| FIX-S2-08 | Dezimalkomma | OFFEN | Mittel | Formatting, Defaults, Tests |
-| FIX-S2-09 | Excel Lock Handling | OFFEN | Niedrig | CSV Writer |
-| FIX-S2-10 | Debt Service Split | OFFEN | Mittel | Cashflow, Debt, CSV Writer |
-| FIX-S2-11 | Grid Search Skip | OFFEN | Niedrig | Grid Search, Performance |
-| FIX-S2-12 | Collar Bug (BESS Discharge-Koeffizient auf Spot) | OFFEN | Hoch | Optimizer, Engine (LP + Revenue) |
-| FIX-S2-13 | BESS-Replacement fremdfinanzieren | OFFEN | Hoch | Cashflow, Debt, Replacement |
-| FIX-S2-14 | `-v` → `max_workers=1` | OFFEN | Niedrig | Main.py (2 Zeilen) |
-| FIX-S2-15 | BESS-Replacement Upgrade-Faktor | OFFEN | Mittel | Schema, Replacement, Engine |
+| # | Beschreibung | Status                     | Priorität | Impact |
+|---|---|----------------------------|---|---|
+| FIX-S2-01 | Cashflow Benchmark-Test | OFFEN                      | Hoch | Neuer Test, keine Code-Änderung |
+| FIX-S2-02 | Smoke Test | OFFEN                      | Hoch | Neuer Test + JSON-Fix |
+| FIX-S2-03 | BESS-Only Cases | OFFEN                      | Hoch | Schema, Main, Grid Search |
+| FIX-S2-04 | OPEX eur_per_kw/kwh | BEREITS IMPLEMENTIERT      | – | – |
+| FIX-S2-05 | Loan Tenor | BEREITS IMPLEMENTIERT      | – | – |
+| FIX-S2-06 | CSV User Input | OFFEN                      | Mittel | Defaults, Schema, CSV Writer |
+| FIX-S2-07 | Output Dir aus JSON | OFFEN                      | Niedrig | Main.py (3 Zeilen) |
+| FIX-S2-08 | Dezimalkomma | OFFEN                      | Mittel | Formatting, Defaults, Tests |
+| FIX-S2-09 | Excel Lock Handling | OFFEN                      | Niedrig | CSV Writer |
+| FIX-S2-10 | Debt Service Split | OFFEN                      | Mittel | Cashflow, Debt, CSV Writer |
+| FIX-S2-11 | Grid Search Skip | OFFEN                      | Niedrig | Grid Search, Performance |
+| FIX-S2-12 | Collar Bug (BESS Discharge-Koeffizient auf Spot) | OFFEN                      | Hoch | Optimizer, Engine (LP + Revenue) |
+| FIX-S2-13 | BESS-Replacement fremdfinanzieren | OFFEN                      | Hoch | Cashflow, Debt, Replacement |
+| FIX-S2-14 | `-v` → `max_workers=1` | OFFEN                      | Niedrig | Main.py (2 Zeilen) |
+| FIX-S2-15 | BESS-Replacement Upgrade-Faktor | OFFEN                      | Mittel | Schema, Replacement, Engine |
 | FIX-S2-16 | P90-DSCR entfernen | ABGEDECKT DURCH FEATURE 06 | – | Feature 06 eliminiert P90 komplett |
-| FIX-S2-17 | SoC Start = MIN_SOC | OFFEN | Hoch | Engine, Defaults (2 Zeilen) |
+| FIX-S2-17 | SoC Start = MIN_SOC | ERLEDIGT                   | Hoch | Engine, Defaults (2 Zeilen) |

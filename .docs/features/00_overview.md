@@ -22,17 +22,17 @@ auf früheren aufbauen.
 
 ### Phase 3: Fixes Session 2 – Quick Wins & Stabilisierung
 
-| # | Item | Aufwand | Abhängigkeiten | Status |
-|---|------|---------|----------------|--------|
-| S2-17 | SoC Start = MIN_SOC | Klein (2 Zeilen) | Keine | OFFEN |
-| S2-14 | `-v` → `max_workers=1` | Klein (2 Zeilen) | Keine | OFFEN |
-| S2-12 | Collar Bug Verifikation | Klein (Diagnose) | S2-17 | OFFEN |
-| S2-07 | Output Directory aus JSON | Klein (3 Zeilen) | Keine | OFFEN |
-| S2-08 | Dezimalkomma Default | Klein-Mittel | Keine | OFFEN |
-| S2-06 | CSV User Input (Separator/Decimal/Timestamp) | Mittel | S2-08 | OFFEN |
-| S2-09 | Excel Lock Error Handling | Klein | Keine | OFFEN |
-| S2-10 | Debt Service Split (Interest + Repayment) | Mittel | Keine | OFFEN |
-| S2-11 | Grid Search Skip bei Einzel-Werten | Klein | Keine | OFFEN |
+| # | Item | Aufwand | Abhängigkeiten | Status   |
+|---|------|---------|----------------|----------|
+| S2-17 | SoC Start = MIN_SOC | Klein (2 Zeilen) | Keine | ERLEDIGT |
+| S2-14 | `-v` → `max_workers=1` | Klein (2 Zeilen) | Keine | OFFEN    |
+| S2-12 | Collar Bug Verifikation | Klein (Diagnose) | S2-17 | OFFEN    |
+| S2-07 | Output Directory aus JSON | Klein (3 Zeilen) | Keine | OFFEN    |
+| S2-08 | Dezimalkomma Default | Klein-Mittel | Keine | OFFEN    |
+| S2-06 | CSV User Input (Separator/Decimal/Timestamp) | Mittel | S2-08 | OFFEN    |
+| S2-09 | Excel Lock Error Handling | Klein | Keine | OFFEN    |
+| S2-10 | Debt Service Split (Interest + Repayment) | Mittel | Keine | OFFEN    |
+| S2-11 | Grid Search Skip bei Einzel-Werten | Klein | Keine | OFFEN    |
 
 ### Phase 4: Fixes Session 2 – Finanzmodell & Strukturelle Änderungen
 

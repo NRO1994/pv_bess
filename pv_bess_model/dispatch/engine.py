@@ -54,7 +54,6 @@ import numpy as np
 from pv_bess_model.bess.replacement import ReplacementConfig
 from pv_bess_model.config.defaults import (
     DAYS_PER_YEAR,
-    DEFAULT_START_SOC_FRACTION,
     DISPATCH_SAMPLE_YEAR,
     HOURS_PER_DAY,
     HOURS_PER_YEAR,
@@ -467,7 +466,7 @@ def run_simulation(
 
         # ---- 4. Initialise or clip SoC to new limits ----
         if not soc_initialised:
-            current_soc = bess_params.soc_max_kwh * DEFAULT_START_SOC_FRACTION
+            current_soc = bess_params.soc_min_kwh
             current_soc_green = current_soc
             current_soc_grey = 0.0
             soc_initialised = True
