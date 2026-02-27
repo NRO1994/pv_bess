@@ -326,25 +326,99 @@
 
 ### FIX-S2-12: BESS Charging nur am ersten Tag des PPA/EEG-Jahres (Collar Bug)
 **Status:** OFFEN
-**Dateien:** `dispatch/engine.py`, `dispatch/optimizer.py`, `config/defaults.py`
+**Dateien:** `dispatch/optimizer.py`, `dispatch/engine.py`
 
-**Problem:** In einem "Green PV+BESS"-Szenario mit Collar-PPA wird der BESS nur am ersten Tag jedes PPA-Jahres geladen/entladen. Erst nach Ablauf des PPA funktioniert der BESS an allen Tagen korrekt.
+**Problem:** In einem "Green PV+BESS"-Szenario mit Collar-PPA (oder EEG/Floor-PPA) wird der BESS nur am ersten Tag jedes PPA-Jahres geladen/entladen. Erst nach Ablauf des PPA/EEG funktioniert der BESS an allen Tagen korrekt.
 
 **Analyse:**
-- Die Preiskonstruktion (`_build_fixed_prices_yearly`, `_build_cap_prices_yearly` in `main.py`) ist korrekt – Floor- und Cap-Preise werden für alle 8.760 Stunden pro Jahr gebaut.
-- `_effective_green_price` in `optimizer.py` Zeile 219-226 ist mathematisch korrekt: `eff = min(max(spot, floor), cap)`.
-- **Hauptursache:** Der BESS startet bei `soc_max_kwh * 0.50` (50% der oberen SoC-Grenze). Am ersten Tag wird entladen, weil der SoC über dem Optimum liegt. Danach bietet der Collar-Cap wenig Anreiz zum Nachladen, weil der Spread zwischen Lade- und Entladepreis (nach Cap-Begrenzung und RTE-Verlusten) marginal oder negativ ist.
-- **Zusammenhang mit FIX-S2-17:** Wenn der Start-SoC auf `soc_min_kwh` gesetzt wird, beginnt der BESS leer und lädt über den Tag auf. Der Optimizer sieht dann über alle Tage einen Arbitrage-Anreiz (Laden zu Niedrigpreisen, Entladen zu Hochpreisen – auch innerhalb des Cap).
-- **Zusätzlich prüfen:** Ob die effektiven Preise korrekt an den Optimizer übergeben werden. In `engine.py` Zeile 543-555 werden `price_fixed` und `price_cap` pro Jahr gesetzt und an `optimize_day()` durchgereicht. Diese Werte sollten für alle Tage identisch sein – Logging einbauen, um dies zu verifizieren.
+
+Die Root Cause liegt in `_build_green_lp` (optimizer.py Zeile 256-261). **Beide** LP-Koeffizienten – `export_pv` UND `discharge_green` – verwenden `eff_prices` (floor/cap-adjustierte Preise):
+
+```python
+c[2 * T + t] = -(grid_loss_factor * eff_prices[t])            # export_pv
+c[T + t] = -(rte * grid_loss_factor * eff_prices[t])          # discharge_green
+```
+
+Da `charge_pv` keinen direkten Koeffizienten hat (Kosten ergeben sich implizit aus der Energy-Balance `export + charge + curtail = pv`), sind die impliziten Ladekosten ebenfalls `eff_prices[t]`.
+
+**Konsequenz:** Der BESS-Arbitrage-Gewinn pro Zyklus beträgt:
+```
+profit = glf × (RTE × eff[t_discharge] - eff[t_charge])
+```
+
+Wenn der Floor-Preis die meisten Spot-Preise dominiert (`floor > spot` für die meisten Stunden), wird `eff[t]` nahezu konstant = floor. Dann:
+```
+profit = glf × floor × (RTE - 1) < 0   →   IMMER VERLUST
+```
+
+Der LP-Solver erkennt korrekt, dass jeder Zyklus Verluste erzeugt, und lässt den BESS unangetastet. Das "Laden nur am Tag 0"-Verhalten entsteht dadurch, dass der BESS bei 50% startet und sich einmalig auflädt (oder bei Jahreswechsel durch SoC-Clipping nach Degradation erneut Platz zum Laden hat).
+
+**Dasselbe Problem betrifft `_build_grey_lp`:** Dort wird `discharge_green` ebenfalls mit `eff_prices` bewertet (Zeile 356), während `discharge_grey` bereits korrekt mit `spot_prices` arbeitet (Zeile 357).
+
+**FIX-S2-17 (SoC Start = MIN_SOC) löst dieses Problem NICHT**, wie vom User verifiziert. Es verändert nur den initialen SoC, aber der LP findet trotzdem keine profitablen BESS-Zyklen wenn `eff_prices` flat sind.
+
+**Ökonomisches Modell des Fixes:**
+- PV-Direkteinspeisung geht über den EEG/PPA-Vertrag → bekommt Floor/Cap-Schutz (`eff_prices`)
+- BESS-Entladung ist ein separater Spot-Markt-Erlösstrom → soll zu `spot_prices` bewertet werden
+- BESS-Ladekosten (Opportunitätskosten) bleiben bei `eff_prices` (weil die entgangene PV-Einspeisung den Floor-Schutz verliert)
+
+Mit dem Fix wird der BESS-Gewinn:
+```
+profit = RTE × spot[t_discharge] - eff[t_charge]
+```
+Profitabel wenn `spot[t_discharge] > eff[t_charge] / RTE`. Bei EEG floor = 54.9 €/MWh und RTE = 0.985: `spot > 55.7 €/MWh` – mit realen Preisdaten an vielen Stunden des Tages gegeben.
 
 **Empfohlene Änderung:**
-1. **Primär:** FIX-S2-17 implementieren (Start-SoC = `soc_min_kwh`). Dies löst das beobachtete Symptom.
-2. **Diagnose:** Debug-Logging in `engine.py` für die ersten 3 Tage einbauen: effektive Preise, SoC-Verlauf, Optimizer-Entscheidungen. Damit verifizieren, dass der Collar-Spread nach RTE-Verlusten den BESS-Einsatz nicht rechtfertigt.
-3. **Falls nach FIX-S2-17 das Problem weiterhin besteht:** Detailanalyse der Preiskonstruktion mit konkreten Szenario-Daten (Spotpreise, Floor, Cap) durchführen.
+
+1. **`dispatch/optimizer.py` – `_build_green_lp`:**
+   - Neuer Parameter `spot_prices` neben `eff_prices`
+   - Discharge-Koeffizient auf Spot-Preise umstellen:
+     ```python
+     c[2 * T + t] = -(grid_loss_factor * eff_prices[t])            # export_pv → eff (unverändert)
+     c[T + t] = -(rte * grid_loss_factor * spot_prices[t])          # discharge_green → SPOT
+     ```
+
+2. **`dispatch/optimizer.py` – `_build_grey_lp`:**
+   - Discharge-Green-Koeffizient auf Spot umstellen (analog zu discharge_grey):
+     ```python
+     c[T + t] = -(rte * grid_loss_factor * spot_prices_eur_per_kwh[t])   # discharge_green → SPOT
+     ```
+
+3. **`dispatch/optimizer.py` – `optimize_day`:**
+   - `spot_prices_eur_per_kwh` an `_build_green_lp` durchreichen
+
+4. **`dispatch/optimizer.py` – `_extract_green_result`:**
+   - Neuer Parameter `spot_prices` für BESS-Discharge-Revenue:
+     ```python
+     revenue = (
+         export_pv * grid_loss_factor * eff_prices                    # PV-Export: eff
+         + discharge_green * rte * grid_loss_factor * spot_prices     # BESS: spot
+     )
+     ```
+
+5. **`dispatch/optimizer.py` – `_extract_grey_result`:**
+   - Discharge-Green-Revenue auf Spot umstellen (konsistent mit discharge_grey):
+     ```python
+     revenue = (
+         export_pv * grid_loss_factor * eff_prices                    # PV-Export: eff
+         + discharge_green * rte * grid_loss_factor * spot_prices     # BESS green: spot
+         + discharge_grey * rte * spot_prices                         # BESS grey: spot (unverändert)
+         - charge_grid * spot_prices                                  # Grid import: spot (unverändert)
+     )
+     ```
+
+6. **`dispatch/engine.py` – Revenue-Accounting (Zeile 580-583):**
+   - `day_rev_green` mit `spot_day` statt `eff_day`:
+     ```python
+     day_rev_green = float(np.sum(result["discharge_green"] * config.bess_rte * glf * spot_day))
+     ```
+   - `day_rev_pv` bleibt bei `eff_day` (PV-Export behält Floor-Schutz)
 
 **Abhängigkeiten:**
-- Hängt stark von FIX-S2-17 (SoC Start = MIN_SOC) ab
-- Betrifft alle PPA/EEG-Szenarien, nicht nur Collar
+- Unabhängig von FIX-S2-17 (SoC Start = MIN_SOC ist weiterhin sinnvoll, löst aber diesen Bug nicht)
+- Betrifft alle PPA/EEG-Szenarien (Collar, Floor, EEG, Pay-as-Produced)
+- Impact auf bestehende Tests: `test_optimizer.py`, `test_monte_carlo.py` – Revenue-Assertions müssen angepasst werden
+- Impact auf Cashflow: BESS-Green-Revenue wird nun separat (zu Spot) berechnet → Cashflow-Werte ändern sich
 
 ---
 
@@ -531,7 +605,8 @@
 3. **Grey Mode** Zeile 471-472: `current_soc_green = current_soc` und `current_soc_grey = 0.0` bleiben unverändert (BESS startet mit gesamtem SoC als "green")
 
 **Abhängigkeiten:**
-- FIX-S2-12 (Collar Bug) hängt von diesem Fix ab
+- Unabhängig von FIX-S2-12 (Collar Bug wird durch LP-Koeffizienten-Fix gelöst, nicht durch SoC-Start)
+- Weiterhin sinnvoll als eigenständiger Fix (realistischerer Simulationsstart)
 - **Impact auf Tests:** `test_engine.py`, `test_optimizer.py` – alle Tests die den initialen SoC prüfen
 - **Impact auf Ergebnisse:** Erste Tage des ersten Jahres haben andere Dispatch-Entscheidungen. Über das Gesamtjahr gleicht sich der Effekt aus, da der Optimizer den SoC schnell auf das ökonomische Optimum bringt.
 
@@ -546,15 +621,15 @@ FIX-S2-07 (Output Dir) ───────────→ FIX-S2-01 (Benchmark
 FIX-S2-10 (Debt Split) ───────────→ FIX-S2-01 (Benchmark Test) [Spaltenänderung berücksichtigen]
 FIX-S2-10 (Debt Split) ───────────→ FIX-S2-13 (Replacement Debt) [Debt-Komponenten benötigt]
 FIX-S2-03 (BESS-Only) ────────────→ FIX-S2-11 (Grid Search Skip) [einzelne Konfiguration]
-FIX-S2-17 (SoC Start MIN_SOC) ────→ FIX-S2-12 (Collar Bug) [löst Hauptursache]
+FIX-S2-17 (SoC Start MIN_SOC)       (unabhängig von FIX-S2-12, aber weiterhin sinnvoll)
 FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt) [höhere Kapazität → höhere Kosten]
 ```
 
 ## Empfohlene Reihenfolge
 
-1. **FIX-S2-17** – SoC Start = MIN_SOC (2 Zeilen, löst Collar-Bug)
-2. **FIX-S2-14** – `-v` → `max_workers=1` (2 Zeilen, sofort nützlich für Debugging)
-3. **FIX-S2-12** – Collar Bug verifizieren (nach FIX-S2-17, ggf. nur Diagnose)
+1. **FIX-S2-12** – Collar Bug: LP-Koeffizienten korrigieren (BESS-Dispatch auf Spot-Preise)
+2. **FIX-S2-17** – SoC Start = MIN_SOC (2 Zeilen, weiterhin sinnvoll aber unabhängig von S2-12)
+3. **FIX-S2-14** – `-v` → `max_workers=1` (2 Zeilen, sofort nützlich für Debugging)
 4. **FIX-S2-07** – Output Directory aus JSON (kleiner, isolierter Fix)
 5. **FIX-S2-08** – Dezimalkomma (Voraussetzung für Benchmark-Vergleich)
 6. **FIX-S2-06** – CSV User Input (erweitert FIX-S2-08 um konfigurierbare Settings)
@@ -583,7 +658,7 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 | FIX-S2-09 | Excel Lock Handling | OFFEN | Niedrig | CSV Writer |
 | FIX-S2-10 | Debt Service Split | OFFEN | Mittel | Cashflow, Debt, CSV Writer |
 | FIX-S2-11 | Grid Search Skip | OFFEN | Niedrig | Grid Search, Performance |
-| FIX-S2-12 | Collar Bug (BESS Charging) | OFFEN | Hoch | Engine, Optimizer (Diagnose nach S2-17) |
+| FIX-S2-12 | Collar Bug (BESS Discharge-Koeffizient auf Spot) | OFFEN | Hoch | Optimizer, Engine (LP + Revenue) |
 | FIX-S2-13 | BESS-Replacement fremdfinanzieren | OFFEN | Hoch | Cashflow, Debt, Replacement |
 | FIX-S2-14 | `-v` → `max_workers=1` | OFFEN | Niedrig | Main.py (2 Zeilen) |
 | FIX-S2-15 | BESS-Replacement Upgrade-Faktor | OFFEN | Mittel | Schema, Replacement, Engine |
