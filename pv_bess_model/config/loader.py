@@ -22,6 +22,8 @@ import pandas as pd
 
 from pv_bess_model.config.defaults import (
     CSV_DELIMITER,
+    CSV_INPUT_DECIMAL_SEPARATOR,
+    CSV_TIMESTAMP_COLUMN,
     KWH_TO_MWH,
     MIN_PRICE_TIMESERIES_HOURS,
     PRICE_UNIT_EUR_PER_KWH,
@@ -280,10 +282,14 @@ def load_price_csv(
     required_columns: list[str],
     price_unit: str,
     commissioning_year: int | None = None,
+    delimiter: str = CSV_DELIMITER,
+    decimal: str = CSV_INPUT_DECIMAL_SEPARATOR,
+    timestamp_column: str = CSV_TIMESTAMP_COLUMN,
+    timestamp_format: str | None = None,
 ) -> PriceData:
     """Load and validate an electricity price CSV file.
 
-    The CSV must contain a ``timestamp`` column (ISO 8601) and at least one
+    The CSV must contain a timestamp column (ISO 8601) and at least one
     numeric price column. The function converts all price values to **€/kWh**
     regardless of the input unit declared in *price_unit*.
 
@@ -293,13 +299,26 @@ def load_price_csv(
         Path to the price CSV file.
     required_columns:
         List of column names that must be present (e.g. ``["MID"]``).
-        The ``timestamp`` column is always required implicitly.
+        The timestamp column is always required implicitly when
+        *commissioning_year* is set.
     price_unit:
         Unit of the price values in the CSV: ``"eur_per_mwh"`` or
         ``"eur_per_kwh"``.
     commissioning_year:
         If provided, rows with timestamps before January 1st of the
         commissioning year are discarded before validation and conversion.
+    delimiter:
+        Column delimiter used in the CSV file (default: ``CSV_DELIMITER``).
+    decimal:
+        Decimal separator used for numeric values in the CSV
+        (default: ``CSV_INPUT_DECIMAL_SEPARATOR`` = ``"."``).
+    timestamp_column:
+        Name of the column containing ISO 8601 timestamps
+        (default: ``CSV_TIMESTAMP_COLUMN`` = ``"timestamp"``).
+    timestamp_format:
+        ``strftime``-compatible format string for parsing timestamps, e.g.
+        ``"%Y-%m-%dT%H:%M:%S"``.  ``None`` (default) lets pandas
+        auto-detect the format.
 
     Returns
     -------
@@ -312,7 +331,7 @@ def load_price_csv(
         When *path* does not exist.
     ValueError
         When the CSV fails any validation check (too few rows, NaN values,
-        missing columns, unknown price unit, or no ``timestamp`` column
+        missing columns, unknown price unit, or no timestamp column
         when *commissioning_year* is set).
     """
     path = Path(path)
@@ -331,13 +350,17 @@ def load_price_csv(
     logger.debug("Loading price CSV from '%s' (unit=%s)", path, price_unit)
 
     try:
-        df = pd.read_csv(path, sep=CSV_DELIMITER)
+        df = pd.read_csv(path, sep=delimiter, decimal=decimal)
     except Exception as exc:
         raise ValueError(f"Failed to parse price CSV '{path}': {exc}") from exc
 
     # --- filter by commissioning year --------------------------------------
     if commissioning_year is not None:
-        df = _filter_from_commissioning_year(df, path, commissioning_year)
+        df = _filter_from_commissioning_year(
+            df, path, commissioning_year,
+            timestamp_column=timestamp_column,
+            timestamp_format=timestamp_format,
+        )
 
     # --- column presence ---------------------------------------------------
     _check_required_columns(df, path, required_columns)
@@ -389,29 +412,49 @@ def _filter_from_commissioning_year(
     df: pd.DataFrame,
     path: Path,
     commissioning_year: int,
+    timestamp_column: str = CSV_TIMESTAMP_COLUMN,
+    timestamp_format: str | None = None,
 ) -> pd.DataFrame:
     """Discard rows with timestamps before January 1st of *commissioning_year*.
 
-    The function parses the ``timestamp`` column, drops all rows whose
+    The function parses the timestamp column, drops all rows whose
     timestamp falls before the commissioning year, and resets the index.
+
+    Parameters
+    ----------
+    df:
+        DataFrame loaded from the price CSV.
+    path:
+        Original file path (for error messages only).
+    commissioning_year:
+        Rows before January 1st of this year are discarded.
+    timestamp_column:
+        Name of the column containing timestamps
+        (default: ``CSV_TIMESTAMP_COLUMN``).
+    timestamp_format:
+        ``strftime``-compatible format string for parsing timestamps.
+        ``None`` (default) lets pandas auto-detect the format.
 
     Raises
     ------
     ValueError
-        If the CSV has no ``timestamp`` column or if none of its timestamps
+        If the CSV has no timestamp column or if none of its timestamps
         can be parsed.
     """
-    if "timestamp" not in df.columns:
+    if timestamp_column not in df.columns:
         raise ValueError(
-            f"Price CSV '{path}' has no 'timestamp' column, which is "
+            f"Price CSV '{path}' has no '{timestamp_column}' column, which is "
             "required when commissioning_year filtering is enabled."
         )
 
     try:
-        timestamps = pd.to_datetime(df["timestamp"])
+        if timestamp_format is not None:
+            timestamps = pd.to_datetime(df[timestamp_column], format=timestamp_format)
+        else:
+            timestamps = pd.to_datetime(df[timestamp_column])
     except Exception as exc:
         raise ValueError(
-            f"Failed to parse 'timestamp' column in price CSV '{path}': {exc}"
+            f"Failed to parse '{timestamp_column}' column in price CSV '{path}': {exc}"
         ) from exc
 
     cutoff = pd.Timestamp(year=commissioning_year, month=1, day=1)
@@ -431,6 +474,7 @@ def _filter_from_commissioning_year(
         )
 
     return df
+
 
 
 def _check_required_columns(

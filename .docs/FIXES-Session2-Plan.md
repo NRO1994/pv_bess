@@ -132,7 +132,7 @@
 ## Kosmetik
 
 ### FIX-S2-06: CSV Timestamp/Separator/Decimal als User Input
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `config/defaults.py`, `config/schema.py`, `output/csv_writer.py`, `output/formatting.py`, `main.py`
 
 **Problem:** Timestamp-Spaltenname, Zeitformat, CSV-Separator und Dezimalzeichen sind nicht vom User konfigurierbar.
@@ -652,7 +652,7 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 | FIX-S2-03 | BESS-Only Cases | OFFEN                      | Hoch | Schema, Main, Grid Search |
 | FIX-S2-04 | OPEX eur_per_kw/kwh | BEREITS IMPLEMENTIERT      | – | – |
 | FIX-S2-05 | Loan Tenor | BEREITS IMPLEMENTIERT      | – | – |
-| FIX-S2-06 | CSV User Input | OFFEN                      | Mittel | Defaults, Schema, CSV Writer |
+| FIX-S2-06 | CSV User Input | ERLEDIGT                   | Mittel | Defaults, Schema, CSV Writer |
 | FIX-S2-07 | Output Dir aus JSON | ERLEDIGT                   | Niedrig | Main.py (3 Zeilen) |
 | FIX-S2-08 | Dezimalkomma | ERLEDIGT                   | Mittel | Formatting, Defaults, Tests |
 | FIX-S2-09 | Excel Lock Handling | OFFEN                      | Niedrig | CSV Writer |

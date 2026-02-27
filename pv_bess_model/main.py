@@ -29,6 +29,11 @@ from pathlib import Path
 import numpy as np
 
 from pv_bess_model.config.defaults import (
+    CSV_DECIMAL_SEPARATOR,
+    CSV_DELIMITER,
+    CSV_INPUT_DECIMAL_SEPARATOR,
+    CSV_TIMESTAMP_COLUMN,
+    CSV_TIMESTAMP_FORMAT,
     DEFAULT_AFA_YEARS_BESS,
     DEFAULT_AFA_YEARS_PV,
     DEFAULT_BESS_AVAILABILITY_PCT,
@@ -84,6 +89,7 @@ from pv_bess_model.market.ppa import (
 from pv_bess_model.optimization.grid_search import GridSearchConfig, run_grid_search
 from pv_bess_model.optimization.monte_carlo import MCParams, run_monte_carlo
 from pv_bess_model.output.csv_writer import (
+    CsvConfig,
     write_cashflows_csv,
     write_dispatch_sample_csv,
     write_grid_search_csv,
@@ -457,6 +463,15 @@ def run(args: argparse.Namespace) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Output directory: %s", output_dir)
 
+    # CSV formatting settings (CLI > JSON > defaults)
+    _out_block = scenario.raw.get("scenario", {}).get("output", {})
+    csv_config = CsvConfig(
+        delimiter=_out_block.get("csv_separator", CSV_DELIMITER),
+        decimal=_out_block.get("csv_decimal", CSV_DECIMAL_SEPARATOR),
+        timestamp_column=_out_block.get("csv_timestamp_column", CSV_TIMESTAMP_COLUMN),
+        timestamp_format=_out_block.get("csv_timestamp_format", CSV_TIMESTAMP_FORMAT),
+    )
+
     # Finance parameters
     finance = scenario.finance
     inflation_rate = float(finance.get("inflation_rate", DEFAULT_INFLATION_RATE))
@@ -574,6 +589,10 @@ def run(args: argparse.Namespace) -> int:
     price_csv_path = price_inputs.get("day_ahead_csv", "")
     price_unit = price_inputs.get("price_unit", "eur_per_mwh")
     inflation_on_prices = bool(price_inputs.get("inflation_on_input_data", False))
+    price_csv_delimiter = price_inputs.get("csv_separator", CSV_DELIMITER)
+    price_csv_decimal = price_inputs.get("csv_decimal", CSV_INPUT_DECIMAL_SEPARATOR)
+    price_csv_timestamp_column = price_inputs.get("csv_timestamp_column", CSV_TIMESTAMP_COLUMN)
+    price_csv_timestamp_format = price_inputs.get("csv_timestamp_format", None)
 
     # Collect required price columns
     mc_cfg = scenario.monte_carlo
@@ -600,6 +619,10 @@ def run(args: argparse.Namespace) -> int:
             required_columns=required_columns,
             price_unit=price_unit,
             commissioning_year=scenario.commissioning_year,
+            delimiter=price_csv_delimiter,
+            decimal=price_csv_decimal,
+            timestamp_column=price_csv_timestamp_column,
+            timestamp_format=price_csv_timestamp_format,
         )
     except Exception as exc:
         logger.error("Price CSV load failed: %s", exc)
@@ -889,6 +912,7 @@ def run(args: argparse.Namespace) -> int:
         lcoe=metrics.lcoe,
         payback_year=metrics.payback_year,
         total_production_kwh=total_production_kwh,
+        config=csv_config,
     )
 
     write_cashflows_csv(
@@ -898,28 +922,30 @@ def run(args: argparse.Namespace) -> int:
         annual_bess_throughput_kwh=annual_bess_throughput,
         annual_dscr=annual_dscr,
         commissioning_year=scenario.commissioning_year,
+        config=csv_config,
     )
 
     write_grid_search_csv(
         path=output_dir / f"{scenario.name}_grid_search.csv",
         grid_result=grid_result,
+        config=csv_config,
     )
 
     if mc_result is not None:
         write_monte_carlo_csv(
             path=output_dir / f"{scenario.name}_monte_carlo.csv",
             mc_result=mc_result,
+            config=csv_config,
         )
 
     # Dispatch sample (if requested)
-    export_dispatch = scenario.raw.get("scenario", {}).get(
-        "output", {}
-    ).get("export_dispatch_sample", True)
+    export_dispatch = _out_block.get("export_dispatch_sample", True)
     if export_dispatch:
         write_dispatch_sample_csv(
             path=output_dir / f"{scenario.name}_dispatch_sample.csv",
             hourly_sample=sim.hourly_sample,
             start_year=scenario.commissioning_year,
+            config=csv_config,
         )
 
     # ------------------------------------------------------------------

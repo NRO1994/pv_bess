@@ -76,6 +76,10 @@ _OUTPUT = {
     "properties": {
         "directory": {"type": "string", "minLength": 1},
         "export_dispatch_sample": {"type": "boolean"},
+        "csv_separator": {"type": "string", "minLength": 1},
+        "csv_decimal": {"type": "string", "minLength": 1},
+        "csv_timestamp_column": {"type": "string", "minLength": 1},
+        "csv_timestamp_format": {"type": "string", "minLength": 1},
     },
     "additionalProperties": False,
 }
@@ -318,6 +322,10 @@ _PRICE_INPUTS = {
             "enum": ["eur_per_mwh", "eur_per_kwh"],
         },
         "inflation_on_input_data": {"type": "boolean"},
+        "csv_separator": {"type": "string", "minLength": 1},
+        "csv_decimal": {"type": "string", "minLength": 1},
+        "csv_timestamp_column": {"type": "string", "minLength": 1},
+        "csv_timestamp_format": {"type": "string", "minLength": 1},
     },
     "additionalProperties": False,
 }

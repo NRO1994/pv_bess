@@ -179,6 +179,12 @@ CSV_DELIMITER: str = ";"
 CSV_DECIMAL_SEPARATOR: str = ","
 """Decimal separator used in all output CSV files (German locale default)."""
 
+CSV_INPUT_DECIMAL_SEPARATOR: str = "."
+"""Decimal separator expected in input CSV files (standard market data format)."""
+
+CSV_TIMESTAMP_COLUMN: str = "timestamp"
+"""Column name for the timestamp field in price input and dispatch sample CSV files."""
+
 CSV_TIMESTAMP_FORMAT: str = "%Y-%m-%dT%H:%M:%S"
 """ISO 8601 timestamp format used in CSV files."""
 
