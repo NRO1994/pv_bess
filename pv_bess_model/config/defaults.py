@@ -176,6 +176,9 @@ DISPATCH_SAMPLE_YEAR: int = 1
 CSV_DELIMITER: str = ";"
 """Delimiter used in all input and output CSV files."""
 
+CSV_DECIMAL_SEPARATOR: str = ","
+"""Decimal separator used in all output CSV files (German locale default)."""
+
 CSV_TIMESTAMP_FORMAT: str = "%Y-%m-%dT%H:%M:%S"
 """ISO 8601 timestamp format used in CSV files."""
 

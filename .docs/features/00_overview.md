@@ -27,7 +27,7 @@ auf früheren aufbauen.
 | S2-17 | SoC Start = MIN_SOC | Klein (2 Zeilen) | Keine | ERLEDIGT |
 | S2-14 | `-v` → `max_workers=1` | Klein (2 Zeilen) | Keine | ERLEDIGT |
 | S2-07 | Output Directory aus JSON | Klein (3 Zeilen) | Keine | ERLEDIGT |
-| S2-08 | Dezimalkomma Default | Klein-Mittel | Keine | OFFEN    |
+| S2-08 | Dezimalkomma Default | Klein-Mittel | Keine | ERLEDIGT |
 | S2-06 | CSV User Input (Separator/Decimal/Timestamp) | Mittel | S2-08 | OFFEN    |
 | S2-09 | Excel Lock Error Handling | Klein | Keine | OFFEN    |
 | S2-10 | Debt Service Split (Interest + Repayment) | Mittel | Keine | OFFEN    |

@@ -13,7 +13,11 @@ fmt_optional – Format any optional float, returning "" for None.
 
 from __future__ import annotations
 
-from pv_bess_model.config.defaults import CURRENCY_PRECISION, FLOAT_PRECISION
+from pv_bess_model.config.defaults import (
+    CSV_DECIMAL_SEPARATOR,
+    CURRENCY_PRECISION,
+    FLOAT_PRECISION,
+)
 
 
 def fmt_float(
@@ -32,11 +36,11 @@ def fmt_float(
     Returns
     -------
     str
-        Formatted string, e.g. ``"3.1416"``.
+        Formatted string, e.g. ``"3,1416"`` (using CSV_DECIMAL_SEPARATOR).
     """
     if value is None:
         return ""
-    return f"{value:.{precision}f}"
+    return f"{value:.{precision}f}".replace(".", CSV_DECIMAL_SEPARATOR)
 
 
 def fmt_currency(
@@ -55,11 +59,11 @@ def fmt_currency(
     Returns
     -------
     str
-        Formatted string, e.g. ``"1234567.89"``.
+        Formatted string, e.g. ``"1234567,89"`` (using CSV_DECIMAL_SEPARATOR).
     """
     if value is None:
         return ""
-    return f"{value:.{precision}f}"
+    return f"{value:.{precision}f}".replace(".", CSV_DECIMAL_SEPARATOR)
 
 
 def fmt_pct(
@@ -85,12 +89,13 @@ def fmt_pct(
     Returns
     -------
     str
-        Formatted percentage string, e.g. ``"7.35"`` (without the % sign).
+        Formatted percentage string, e.g. ``"7,35"`` (using CSV_DECIMAL_SEPARATOR,
+        without the % sign).
     """
     if value is None:
         return ""
     display = value if already_pct else value * 100.0
-    return f"{display:.{precision}f}"
+    return f"{display:.{precision}f}".replace(".", CSV_DECIMAL_SEPARATOR)
 
 
 def fmt_optional(

@@ -198,7 +198,7 @@
 ---
 
 ### FIX-S2-08: Dezimalkomma als Default
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `config/defaults.py`, `output/formatting.py`, `output/csv_writer.py`
 
 **Problem:** Der CSV-Writer gibt Dezimalpunkte aus. Für deutsche Nutzer soll Dezimalkomma der Default sein.
@@ -654,7 +654,7 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 | FIX-S2-05 | Loan Tenor | BEREITS IMPLEMENTIERT      | – | – |
 | FIX-S2-06 | CSV User Input | OFFEN                      | Mittel | Defaults, Schema, CSV Writer |
 | FIX-S2-07 | Output Dir aus JSON | ERLEDIGT                   | Niedrig | Main.py (3 Zeilen) |
-| FIX-S2-08 | Dezimalkomma | OFFEN                      | Mittel | Formatting, Defaults, Tests |
+| FIX-S2-08 | Dezimalkomma | ERLEDIGT                   | Mittel | Formatting, Defaults, Tests |
 | FIX-S2-09 | Excel Lock Handling | OFFEN                      | Niedrig | CSV Writer |
 | FIX-S2-10 | Debt Service Split | OFFEN                      | Mittel | Cashflow, Debt, CSV Writer |
 | FIX-S2-11 | Grid Search Skip | OFFEN                      | Niedrig | Grid Search, Performance |
