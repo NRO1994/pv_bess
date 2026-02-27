@@ -204,6 +204,12 @@ CURRENCY_PRECISION: int = 2
 GRID_SEARCH_SCALE_ZERO_PCT: float = 0.0
 """Scale percentage representing the PV-only baseline (no BESS)."""
 
+DEFAULT_SKIP_BASELINE: bool = False
+"""Whether to skip the automatic inclusion of the PV-only baseline (scale=0 %)
+in the grid search.  When ``True``, the user takes responsibility for including
+the baseline explicitly or accepting that no PV-only comparison point is produced.
+Default is ``False`` (baseline always added)."""
+
 # ---------------------------------------------------------------------------
 # PPA type identifiers
 # ---------------------------------------------------------------------------

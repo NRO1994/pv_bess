@@ -59,6 +59,7 @@ from pv_bess_model.config.defaults import (
     DEFAULT_MC_SIGMA_PV_AVAILABILITY_PCT,
     DEFAULT_OUTPUT_DIR,
     DEFAULT_PV_DEGRADATION_RATE_PCT,
+    DEFAULT_SKIP_BASELINE,
     DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
     HOURS_PER_YEAR,
     MARKETING_TYPE_EEG,
@@ -525,6 +526,9 @@ def run(args: argparse.Namespace) -> int:
     bess_design_space = bess.get("design_space", {})
     scale_pct_list = [float(v) for v in bess_design_space.get("scale_pct_of_pv", [0.0])]
     e_to_p_list = [float(v) for v in bess_design_space.get("e_to_p_ratio_hours", [2.0])]
+    skip_baseline = bool(
+        scenario.raw.get("scenario", {}).get("skip_baseline", DEFAULT_SKIP_BASELINE)
+    )
 
     # Handle fixed BESS override from CLI
     if args.bess_power is not None and args.bess_capacity is not None:
@@ -701,6 +705,7 @@ def run(args: argparse.Namespace) -> int:
         pv_base_timeseries_p90=p90_timeseries if debt_uses_p90 else None,
         spot_prices_yearly_p90=spot_prices_yearly_p90 if debt_uses_p90 else None,
         max_workers=1 if args.verbose else None,
+        skip_baseline=skip_baseline,
     )
 
     logger.info("Starting grid search…")

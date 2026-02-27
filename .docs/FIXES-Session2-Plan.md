@@ -301,7 +301,7 @@
 ---
 
 ### FIX-S2-11: Grid Search Skip bei Einzel-Werten
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `optimization/grid_search.py`, `main.py`
 
 **Problem:** Die Grid Search läuft auch bei nur einem Wert je Array mit dem vollen Parallel-Overhead (ProcessPoolExecutor).
@@ -313,8 +313,7 @@
 - **Achtung:** Scale=0% (PV-only Baseline) ist konzeptionell wichtig als Vergleichsbasis
 
 **Empfohlene Änderung:**
-1. In `run_grid_search()`: Wenn genau 1 Kombination (nach Hinzufügen von scale=0%), direkt im Hauptprozess evaluieren statt über ProcessPoolExecutor
-2. Alternativ: Wenn der User genau einen scale-Wert und einen E/P-Wert angibt, die automatische Hinzufügung von scale=0% optional machen (z.B. Flag `skip_baseline: true` im JSON)
+1. Wenn der User genau einen scale-Wert und einen E/P-Wert angibt, die automatische Hinzufügung von scale=0% optional machen (z.B. Flag `skip_baseline: true` im JSON)
 3. Logging: "Grid search skipped – single configuration" im Info-Log
 
 **Abhängigkeiten:**
@@ -657,7 +656,7 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 | FIX-S2-08 | Dezimalkomma | ERLEDIGT                   | Mittel | Formatting, Defaults, Tests |
 | FIX-S2-09 | Excel Lock Handling | ERLEDIGT                   | Niedrig | CSV Writer |
 | FIX-S2-10 | Debt Service Split | ERLEDIGT                   | Mittel | Cashflow, Debt, CSV Writer |
-| FIX-S2-11 | Grid Search Skip | OFFEN                      | Niedrig | Grid Search, Performance |
+| FIX-S2-11 | Grid Search Skip | ERLEDIGT                   | Niedrig | Grid Search, Performance |
 | FIX-S2-12 | Collar Bug (BESS Discharge-Koeffizient auf Spot) | OFFEN                      | Hoch | Optimizer, Engine (LP + Revenue) |
 | FIX-S2-13 | BESS-Replacement fremdfinanzieren | OFFEN                      | Hoch | Cashflow, Debt, Replacement |
 | FIX-S2-14 | `-v` → `max_workers=1` | ERLEDIGT                   | Niedrig | Main.py (2 Zeilen) |

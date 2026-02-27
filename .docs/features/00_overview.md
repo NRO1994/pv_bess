@@ -20,7 +20,7 @@ auf früheren aufbauen.
 | 02 | [Systemverluste am Netzanschluss](02_system_losses_restructuring.md) | Mittel (2-4h) | Keine | ERLEDIGT |
 | 05 | [MC Framework Erweiterungen](05_mc_framework_enhancements.md) | Mittel (3-4h) | Keine | ERLEDIGT |
 
-### Phase 3: Fixes Session 2 – Quick Wins & Stabilisierung
+### Phase 3: Fixes Session 2 – Quick Wins & Stabilisierung (abgeschlossen)
 
 | # | Item | Aufwand | Abhängigkeiten | Status   |
 |---|------|---------|----------------|----------|
@@ -31,7 +31,7 @@ auf früheren aufbauen.
 | S2-06 | CSV User Input (Separator/Decimal/Timestamp) | Mittel | S2-08 | ERLEDIGT |
 | S2-09 | Excel Lock Error Handling | Klein | Keine | ERLEDIGT |
 | S2-10 | Debt Service Split (Interest + Repayment) | Mittel | Keine | ERLEDIGT |
-| S2-11 | Grid Search Skip bei Einzel-Werten | Klein | Keine | OFFEN    |
+| S2-11 | Grid Search Skip bei Einzel-Werten | Klein | Keine | ERLEDIGT |
 
 ### Phase 4: Fixes Session 2 – Finanzmodell & Strukturelle Änderungen
 

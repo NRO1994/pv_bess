@@ -91,6 +91,7 @@ _SCENARIO_BLOCK = {
         "name": {"type": "string", "minLength": 1},
         "monte_carlo": _MONTE_CARLO,
         "output": _OUTPUT,
+        "skip_baseline": {"type": "boolean"},
     },
     "additionalProperties": False,
 }

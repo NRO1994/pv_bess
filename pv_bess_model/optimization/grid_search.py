@@ -220,6 +220,9 @@ class GridSearchConfig:
     # Parallelism
     max_workers: int | None = None
 
+    # Baseline control
+    skip_baseline: bool = False
+
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -576,9 +579,13 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
     GridSearchResult
         All evaluated combinations and the identified optimum.
     """
-    # Ensure PV-only baseline is included
+    # Ensure PV-only baseline is included (unless explicitly skipped)
     scales = list(config.scale_pct_of_pv)
-    if GRID_SEARCH_SCALE_ZERO_PCT not in scales:
+    if config.skip_baseline:
+        logger.info(
+            "skip_baseline=True: PV-only baseline (scale=0 %%) will NOT be added."
+        )
+    elif GRID_SEARCH_SCALE_ZERO_PCT not in scales:
         scales = [GRID_SEARCH_SCALE_ZERO_PCT] + scales
         logger.info("Added scale=0 %% (PV-only baseline) to grid search.")
 
@@ -697,8 +704,15 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
 
     # Parallel evaluation
     results: list[GridPointResult] = []
-    if config.max_workers == 1:
-        # Single-process execution (simpler for debugging / unit tests)
+    if config.max_workers == 1 or n_combinations == 1:
+        # Single-process execution: either forced via max_workers=1 (debug /
+        # unit tests) or only one combination to evaluate (multiprocessing
+        # overhead is not warranted – can only happen when skip_baseline=True
+        # and a single scale + E/P value is specified).
+        if n_combinations == 1 and config.max_workers != 1:
+            logger.info(
+                "Grid search: single configuration – skipping multiprocessing."
+            )
         for idx, a in enumerate(worker_args, start=1):
             result = _evaluate_grid_point(a)
             results.append(result)
