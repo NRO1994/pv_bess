@@ -92,10 +92,6 @@
    - Division-by-Zero-Guard bei `pv_peak_kwp = 0`
    - PVGIS-Fetch überspringen wenn `pv_peak_kwp == 0`
    - PV-Timeseries = `np.zeros(HOURS_PER_YEAR)` wenn keine PV
-4. **Integrationstest** (`@pytest.mark.integration`):
-   - BESS-Only-Szenario durchlaufen
-   - Prüfen: PV-Produktion = 0, BESS-Revenue > 0 (Grey Mode) oder = 0 (Green Mode)
-   - Prüfen: CAPEX enthält nur BESS + Grid
 
 **Abhängigkeiten:**
 - Unabhängig von anderen Fixes
@@ -499,7 +495,7 @@ Profitabel wenn `spot[t_discharge] > eff[t_charge] / RTE`. Bei EEG floor = 54.9 
 ---
 
 ### FIX-S2-15: BESS-Replacement Kapazitäts-Upgrade-Faktor
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `config/schema.py`, `bess/replacement.py`, `dispatch/engine.py`, `main.py`, `optimization/grid_search.py`
 
 **Problem:** Es soll möglich sein, dem BESS-Replacement einen Kapazitäts-Upgrade-Faktor mitzugeben, um Technologiesprünge zu simulieren (z.B. neuer BESS hat 120% der ursprünglichen Kapazität). Default = 1.0 (100%, kein Upgrade).
@@ -660,6 +656,6 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 | FIX-S2-12 | Collar Bug (BESS Discharge-Koeffizient auf Spot) | OFFEN                      | Hoch | Optimizer, Engine (LP + Revenue) |
 | FIX-S2-13 | BESS-Replacement fremdfinanzieren | OFFEN                      | Hoch | Cashflow, Debt, Replacement |
 | FIX-S2-14 | `-v` → `max_workers=1` | ERLEDIGT                   | Niedrig | Main.py (2 Zeilen) |
-| FIX-S2-15 | BESS-Replacement Upgrade-Faktor | OFFEN                      | Mittel | Schema, Replacement, Engine |
+| FIX-S2-15 | BESS-Replacement Upgrade-Faktor | ERLEDIGT                   | Mittel | Schema, Replacement, Engine |
 | FIX-S2-16 | P90-DSCR entfernen | ABGEDECKT DURCH FEATURE 06 | – | Feature 06 eliminiert P90 komplett |
 | FIX-S2-17 | SoC Start = MIN_SOC | ERLEDIGT                   | Hoch | Engine, Defaults (2 Zeilen) |

@@ -38,6 +38,7 @@ from pv_bess_model.config.defaults import (
     DEFAULT_AFA_YEARS_PV,
     DEFAULT_BESS_AVAILABILITY_PCT,
     DEFAULT_BESS_DEGRADATION_RATE_PCT,
+    DEFAULT_BESS_REPLACEMENT_CAPACITY_FACTOR_PCT,
     DEFAULT_BESS_MAX_SOC_PCT,
     DEFAULT_BESS_MIN_SOC_PCT,
     DEFAULT_BESS_RTE_PCT,
@@ -515,6 +516,11 @@ def run(args: argparse.Namespace) -> int:
     replacement_eur_per_kw = float(replacement_cfg.get("eur_per_kw", 0.0))
     replacement_eur_per_kwh = float(replacement_cfg.get("eur_per_kwh", 0.0))
     replacement_pct_of_capex = float(replacement_cfg.get("pct_of_capex", 0.0))
+    replacement_capacity_factor_pct = float(
+        replacement_cfg.get(
+            "capacity_factor_pct", DEFAULT_BESS_REPLACEMENT_CAPACITY_FACTOR_PCT
+        )
+    )
 
     # Grid connection
     grid_connection = scenario.grid_connection
@@ -679,6 +685,7 @@ def run(args: argparse.Namespace) -> int:
         replacement_eur_per_kw=replacement_eur_per_kw,
         replacement_eur_per_kwh=replacement_eur_per_kwh,
         replacement_pct_of_capex=replacement_pct_of_capex,
+        replacement_capacity_factor_pct=replacement_capacity_factor_pct,
         optimization_fee_pct=optimization_fee_pct,
         grid_max_kw=grid_max_kw,
         grid_loss_factor=grid_loss_factor,
@@ -741,6 +748,7 @@ def run(args: argparse.Namespace) -> int:
         fixed_eur=replacement_fixed_eur,
         eur_per_kw=replacement_eur_per_kw,
         eur_per_kwh=replacement_eur_per_kwh,
+        capacity_factor_pct=replacement_capacity_factor_pct,
     )
     engine_config = DispatchEngineConfig(
         mode=scenario.operating_mode,
@@ -784,10 +792,11 @@ def run(args: argparse.Namespace) -> int:
         annual_interest_rate=interest_rate_pct / 100.0,
         tenor_years=loan_tenor_years,
     )
+    _upgrade = replacement_capacity_factor_pct / 100.0
     replacement_cost = (
         replacement_fixed_eur
         + replacement_eur_per_kw * opt.bess_power_kw
-        + replacement_eur_per_kwh * opt.bess_capacity_kwh
+        + replacement_eur_per_kwh * opt.bess_capacity_kwh * _upgrade
         + replacement_pct_of_capex * opt.capex_bess
     )
     cashflow = build_cashflow_projection(

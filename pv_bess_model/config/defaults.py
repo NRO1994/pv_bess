@@ -78,6 +78,11 @@ MC_WEIGHT_TOLERANCE: float = 1e-6
 DEFAULT_BESS_AVAILABILITY_PCT: float = 100.0
 """Default BESS availability percentage (100 % = always online)."""
 
+DEFAULT_BESS_REPLACEMENT_CAPACITY_FACTOR_PCT: float = 100.0
+"""Default capacity upgrade factor for a mid-life BESS replacement (100 % = same
+nameplate capacity as original; values > 100 model a technology-upgrade where
+the replacement unit has a larger energy capacity)."""
+
 DEFAULT_OPTIMIZATION_FEE_PCT: float = 0.0
 """Default BESS optimization service fee as percentage of BESS spot revenue."""
 

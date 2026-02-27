@@ -99,9 +99,12 @@ class GridSearchConfig:
     replacement_eur_per_kw:
         Replacement cost per kW of BESS power (€/kW).
     replacement_eur_per_kwh:
-        Replacement cost per kWh of BESS capacity (€/kWh).
+        Replacement cost per kWh of the **new** (post-upgrade) BESS capacity (€/kWh).
     replacement_pct_of_capex:
         Replacement cost as fraction of BESS CAPEX.
+    replacement_capacity_factor_pct:
+        Capacity upgrade multiplier in percent (100 = no upgrade, 120 = 20 % larger
+        replacement unit). Applied to the nameplate capacity after replacement.
     grid_max_kw:
         Maximum grid export power in kW.
     grid_costs_capex:
@@ -175,6 +178,7 @@ class GridSearchConfig:
     replacement_eur_per_kw: float
     replacement_eur_per_kwh: float
     replacement_pct_of_capex: float
+    replacement_capacity_factor_pct: float
 
     # Grid
     grid_max_kw: float
@@ -339,6 +343,7 @@ class _GridPointArgs:
     replacement_fixed_eur: float
     replacement_eur_per_kw: float
     replacement_eur_per_kwh: float
+    replacement_capacity_factor_pct: float
     lifetime_years: int
 
     # PV
@@ -407,6 +412,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         fixed_eur=args.replacement_fixed_eur,
         eur_per_kw=args.replacement_eur_per_kw,
         eur_per_kwh=args.replacement_eur_per_kwh,
+        capacity_factor_pct=args.replacement_capacity_factor_pct,
     )
 
     engine_config = DispatchEngineConfig(
@@ -624,11 +630,12 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                 grid_max_export_kw=config.grid_max_kw,
             )
 
-            # Replacement cost (constant per kW/kWh regardless of scale)
+            # Replacement cost: eur_per_kwh applies to the NEW (upgraded) capacity
+            _upgrade = config.replacement_capacity_factor_pct / 100.0
             replacement_cost = (
                 config.replacement_fixed_eur
                 + config.replacement_eur_per_kw * bess_power_kw
-                + config.replacement_eur_per_kwh * bess_capacity_kwh
+                + config.replacement_eur_per_kwh * bess_capacity_kwh * _upgrade
                 + config.replacement_pct_of_capex * costs.capex_bess
             )
 
@@ -651,6 +658,7 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     replacement_fixed_eur=config.replacement_fixed_eur,
                     replacement_eur_per_kw=config.replacement_eur_per_kw,
                     replacement_eur_per_kwh=config.replacement_eur_per_kwh,
+                    replacement_capacity_factor_pct=config.replacement_capacity_factor_pct,
                     lifetime_years=config.lifetime_years,
                     pv_base_timeseries=config.pv_base_timeseries_p50,
                     spot_prices_yearly=config.spot_prices_yearly,

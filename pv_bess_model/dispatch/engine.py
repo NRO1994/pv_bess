@@ -419,8 +419,12 @@ def run_simulation(
 
     has_bess = config.bess_nameplate_kwh > 0.0
 
-    # BESS degradation: track years since start or last replacement
+    # BESS degradation: track years since start or last replacement.
+    # effective_nameplate_kwh is the reference capacity from which degradation
+    # is applied.  It equals config.bess_nameplate_kwh initially and is
+    # updated to the upgraded capacity after each replacement event.
     bess_age = 0
+    effective_nameplate_kwh = config.bess_nameplate_kwh
 
     # SoC state carried between days and years
     current_soc = 0.0
@@ -439,23 +443,27 @@ def run_simulation(
         replacement_cost = 0.0
         if has_bess:
             if config.replacement.enabled and year == config.replacement.year:
-                # Replacement: reset capacity to nameplate, restart degradation
-                bess_cap = config.bess_nameplate_kwh
+                # Replacement: reset capacity to nameplate × upgrade factor,
+                # restart degradation from zero.
+                upgrade = config.replacement.capacity_factor_pct / 100.0
+                effective_nameplate_kwh = config.bess_nameplate_kwh * upgrade
+                bess_cap = effective_nameplate_kwh
                 bess_age = 0
                 replacement_cost = config.replacement.replacement_cost(
                     config.bess_power_kw,
                     config.bess_nameplate_kwh,
                 )
                 logger.info(
-                    "BESS replacement at year %d: capacity reset to %.1f kWh, "
-                    "cost = %.2f EUR.",
+                    "BESS replacement at year %d: capacity set to %.1f kWh "
+                    "(upgrade factor %.0f %%), cost = %.2f EUR.",
                     year,
                     bess_cap,
+                    config.replacement.capacity_factor_pct,
                     replacement_cost,
                 )
             else:
                 bess_age += 1
-                bess_cap = config.bess_nameplate_kwh * degradation_factor(
+                bess_cap = effective_nameplate_kwh * degradation_factor(
                     config.bess_degradation_rate, bess_age
                 )
         else:

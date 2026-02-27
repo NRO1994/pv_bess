@@ -104,6 +104,7 @@ def base_config() -> GridSearchConfig:
         replacement_eur_per_kw=0.0,
         replacement_eur_per_kwh=0.0,
         replacement_pct_of_capex=0.0,
+        replacement_capacity_factor_pct=100.0,
         grid_max_kw=80.0,
         grid_loss_factor=1.0,
         grid_costs_capex={},

@@ -201,6 +201,7 @@ _BESS_REPLACEMENT = {
         "eur_per_kw": _NON_NEGATIVE_NUMBER,
         "eur_per_kwh": _NON_NEGATIVE_NUMBER,
         "pct_of_capex": {"type": "number", "minimum": 0, "maximum": 1},
+        "capacity_factor_pct": {"type": "number", "minimum": 0},
     },
     "additionalProperties": False,
 }
