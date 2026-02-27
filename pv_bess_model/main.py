@@ -714,6 +714,7 @@ def run(args: argparse.Namespace) -> int:
         bess_max_charge_kw=opt.bess_power_kw,
         bess_max_discharge_kw=opt.bess_power_kw,
         bess_rte=bess_rte,
+        grid_loss_factor=grid_loss_factor,
         bess_min_soc_pct=bess_min_soc_pct,
         bess_max_soc_pct=bess_max_soc_pct,
         bess_degradation_rate=bess_degradation_rate,
@@ -736,7 +737,7 @@ def run(args: argparse.Namespace) -> int:
     )
 
     annual_revenues = [r.total_revenue for r in sim.annual_results]
-    annual_pv_kwh = [r.pv_production for r in sim.annual_results]
+    annual_pv_kwh = [r.pv_export for r in sim.annual_results]
     annual_bess_throughput = [r.bess_throughput for r in sim.annual_results]
     annual_bess_spot_revenues = [r.bess_spot_revenue for r in sim.annual_results]
     total_production_kwh = sum(annual_pv_kwh)

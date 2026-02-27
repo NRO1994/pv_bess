@@ -596,20 +596,20 @@ def run_simulation(
             year_revenue_grey += day_rev_grey
             year_import_cost += day_import
             year_bess_spot_revenue += day_bess_spot_rev
-            year_pv_export += float(np.sum(result["export_pv"]))
+            year_pv_export += float(np.sum(result["export_pv"]) * glf)
             year_pv_curtailed += float(np.sum(result["curtail"]))
             year_charge_pv += float(np.sum(result["charge_pv"]))
             year_charge_grid += float(np.sum(result["charge_grid"]))
-            year_discharge_green += float(np.sum(result["discharge_green"]))
-            year_discharge_grey += float(np.sum(result["discharge_grey"]))
+            year_discharge_green += float(np.sum(result["discharge_green"]) * glf *config.bess_rte)
+            year_discharge_grey += float(np.sum(result["discharge_grey"]) * config.bess_rte)
 
             # Store hourly sample arrays
             if is_sample_year:
                 h_charge_pv[h_start:h_end] = result["charge_pv"]
                 h_charge_grid[h_start:h_end] = result["charge_grid"]
-                h_discharge_green[h_start:h_end] = result["discharge_green"]
-                h_discharge_grey[h_start:h_end] = result["discharge_grey"]
-                h_export_pv[h_start:h_end] = result["export_pv"]
+                h_discharge_green[h_start:h_end] = result["discharge_green"] * glf * config.bess_rte
+                h_discharge_grey[h_start:h_end] = result["discharge_grey"] * config.bess_rte
+                h_export_pv[h_start:h_end] = result["export_pv"] * glf
                 h_curtail[h_start:h_end] = result["curtail"]
                 h_soc[h_start:h_end] = result["soc"]
                 h_soc_green[h_start:h_end] = result["soc_green"]
