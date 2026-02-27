@@ -117,3 +117,25 @@ def get_debt_service(schedule: AnnuitySchedule, year: int) -> float:
     if year < 1 or year > len(schedule.interest_payments):
         return 0.0
     return schedule.annual_payment
+
+
+def get_debt_components(
+    schedule: AnnuitySchedule,
+    year: int,
+) -> tuple[float, float, float]:
+    """Return the interest, principal repayment, and total debt service for a year.
+
+    Args:
+        schedule: The annuity schedule.
+        year: Project year (1-indexed).
+
+    Returns:
+        A three-tuple ``(interest, repayment, total)`` where all values are 0.0
+        when *year* falls outside the loan tenor.
+    """
+    if year < 1 or year > len(schedule.interest_payments):
+        return (0.0, 0.0, 0.0)
+    interest = schedule.interest_payments[year - 1]
+    repayment = schedule.principal_payments[year - 1]
+    total = schedule.annual_payment
+    return (interest, repayment, total)

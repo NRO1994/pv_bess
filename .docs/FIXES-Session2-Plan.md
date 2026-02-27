@@ -271,7 +271,7 @@
 ---
 
 ### FIX-S2-10: Debt Service Split (Interest + Repayment)
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `finance/cashflow.py`, `finance/debt.py`, `output/csv_writer.py`, `tests/test_cashflow.py`, `tests/test_csv_writer_cashflows.py`
 
 **Problem:** Die `debt_service`-Spalte enthält nur den Gesamtwert. Gewünscht sind separate Spalten für Zinsanteil und Tilgungsanteil.
@@ -656,7 +656,7 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 | FIX-S2-07 | Output Dir aus JSON | ERLEDIGT                   | Niedrig | Main.py (3 Zeilen) |
 | FIX-S2-08 | Dezimalkomma | ERLEDIGT                   | Mittel | Formatting, Defaults, Tests |
 | FIX-S2-09 | Excel Lock Handling | ERLEDIGT                   | Niedrig | CSV Writer |
-| FIX-S2-10 | Debt Service Split | OFFEN                      | Mittel | Cashflow, Debt, CSV Writer |
+| FIX-S2-10 | Debt Service Split | ERLEDIGT                   | Mittel | Cashflow, Debt, CSV Writer |
 | FIX-S2-11 | Grid Search Skip | OFFEN                      | Niedrig | Grid Search, Performance |
 | FIX-S2-12 | Collar Bug (BESS Discharge-Koeffizient auf Spot) | OFFEN                      | Hoch | Optimizer, Engine (LP + Revenue) |
 | FIX-S2-13 | BESS-Replacement fremdfinanzieren | OFFEN                      | Hoch | Cashflow, Debt, Replacement |

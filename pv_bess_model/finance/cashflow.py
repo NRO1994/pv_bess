@@ -18,7 +18,7 @@ from pv_bess_model.config.defaults import (
     DEFAULT_KOERPERSCHAFTSTEUER_PCT,
     DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
 )
-from pv_bess_model.finance.debt import AnnuitySchedule, get_debt_service
+from pv_bess_model.finance.debt import AnnuitySchedule, get_debt_components, get_debt_service
 from pv_bess_model.finance.inflation import inflate_value
 from pv_bess_model.finance.tax import calculate_tax_for_year
 
@@ -32,6 +32,8 @@ class AnnualCashflow:
     opex: float
     capex: float
     debt_service: float
+    debt_interest: float
+    debt_repayment: float
     depreciation: float
     gewerbesteuer: float
     koerperschaftsteuer: float
@@ -134,7 +136,7 @@ def build_cashflow_projection(
         if replacement_year is not None and y == replacement_year:
             replacement_capex_this_year = replacement_cost
 
-        debt_svc = get_debt_service(debt_schedule, y)
+        debt_interest, debt_repayment, debt_svc = get_debt_components(debt_schedule, y)
 
         # Tax calculation with Verlustvortrag and replacement AfA
         tax_result = calculate_tax_for_year(
@@ -175,6 +177,8 @@ def build_cashflow_projection(
                 opex=opex,
                 capex=capex_this_year,
                 debt_service=debt_svc,
+                debt_interest=debt_interest,
+                debt_repayment=debt_repayment,
                 depreciation=tax_result.depreciation_total,
                 gewerbesteuer=tax_result.gewerbesteuer,
                 koerperschaftsteuer=tax_result.koerperschaftsteuer,
