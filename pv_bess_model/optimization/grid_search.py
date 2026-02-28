@@ -149,6 +149,14 @@ class GridSearchConfig:
         are reused.
     max_workers:
         Number of parallel worker processes. None = ``os.cpu_count()``.
+    bess_absolute_power_kw:
+        Absolute BESS power in kW for BESS-Only scenarios (``pv_peak_kwp``
+        = 0).  When set, all non-zero scale entries in ``scale_pct_of_pv``
+        use this value instead of the ratio-derived power.  Must be
+        provided together with ``bess_absolute_capacity_kwh``.
+    bess_absolute_capacity_kwh:
+        Absolute BESS energy capacity in kWh for BESS-Only scenarios.
+        Paired with ``bess_absolute_power_kw`` (both or neither).
     """
 
     # Design space
@@ -226,6 +234,10 @@ class GridSearchConfig:
 
     # Baseline control
     skip_baseline: bool = False
+
+    # BESS-Only absolute sizing (used when pv_peak_kwp == 0)
+    bess_absolute_power_kw: float | None = None
+    bess_absolute_capacity_kwh: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -607,8 +619,22 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
     worker_args: list[_GridPointArgs] = []
     for scale_pct in scales:
         for e_to_p in config.e_to_p_ratio_hours:
-            bess_power_kw = config.pv_peak_kwp * scale_pct / 100.0
-            bess_capacity_kwh = bess_power_kw * e_to_p
+            if config.pv_peak_kwp > 0:
+                # Standard ratio-based sizing
+                bess_power_kw = config.pv_peak_kwp * scale_pct / 100.0
+                bess_capacity_kwh = bess_power_kw * e_to_p
+            elif scale_pct > 0 and config.bess_absolute_power_kw is not None:
+                # BESS-Only: absolute sizing overrides ratio computation
+                bess_power_kw = config.bess_absolute_power_kw
+                bess_capacity_kwh = (
+                    config.bess_absolute_capacity_kwh
+                    if config.bess_absolute_capacity_kwh is not None
+                    else bess_power_kw * e_to_p
+                )
+            else:
+                # Baseline (scale = 0) or no absolute values → no BESS
+                bess_power_kw = 0.0
+                bess_capacity_kwh = 0.0
 
             # Cost configs aggregated for calculate_total_costs
             capex_cfg = {

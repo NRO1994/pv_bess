@@ -62,6 +62,7 @@ Umfassende Integration-Test-Suite, die alle Kombinationen aus technischem Setup,
 ### Besonderheiten
 
 - **Keine Grid-Search:** Alle Szenarien verwenden das fest definierte BESS-Setup aus dem Master-Input (`--bess-power` / `--bess-capacity` CLI-Override). Dadurch entfällt der Grid-Search-Overhead und die Ergebnisse sind direkt vergleichbar.
+- **Keine Post-Grid-Search Analysen:** Alle Szenarien sollen nur einmal den Hauptflow durchlaufen (Einlesen, Optimierung der 24hrs Intervalle der gesamten Lebenszeit) und keine weiteren MonteCarlo, oder anderen Analysen durchlaufen. dAzu ist der Smoke Test da. Diese Integration Suite soll die Korrektheit der oben definierten isolierten Szenarien bewerten.
 - **PV-Only:** BESS-Power und -Kapazität = 0, BESS-Kosten = 0. Green und Grey liefern identische Ergebnisse (kein BESS zum Laden aus dem Netz). Tests prüfen, dass Grey ≈ Green.
 - **BESS-Only:** `peak_power_kwp: 0` (erfordert FIX-S2-03), PV-Kosten = 0. In Green Mode kann der BESS nicht geladen werden (keine PV-Produktion, kein Netzimport) → Revenue = 0, NPV negativ. Grey Mode ermöglicht Arbitrage.
 - **PV+BESS:** Volle Funktionalität. Festes BESS-Setup: 500 kW / 1.000 kWh (50% der PV-Leistung, E/P = 2h).
@@ -97,8 +98,8 @@ MASTER_SCENARIO = {
         }
     },
     "project_settings": {
-        "commissioning_year": 2025,
-        "lifetime_years": 3,           # Kurz für schnelle Tests
+        "commissioning_year": 2026,
+        "lifetime_years": 20,           # Kurz für schnelle Tests
         "discount_rate": 0.06,
         "operating_mode": "green",      # Wird pro Szenario überschrieben
         "location": {
@@ -109,10 +110,10 @@ MASTER_SCENARIO = {
         "technology": {
             "pv": {
                 "design": {
-                    "peak_power_kwp": 1000,
+                    "peak_power_kwp": 10000,
                     "mounting_type": "free",
                     "azimuth_deg": 0,
-                    "tilt_deg": 30
+                    "tilt_deg": 18
                 },
                 "performance": {
                     "degradation_rate_pct_per_year": 0.4
@@ -124,11 +125,11 @@ MASTER_SCENARIO = {
             },
             "bess": {
                 "design_space": {
-                    "scale_pct_of_pv": [50],
+                    "scale_pct_of_pv": [100],
                     "e_to_p_ratio_hours": [2]
                 },
                 "performance": {
-                    "round_trip_efficiency_pct": 90.0,
+                    "round_trip_efficiency_pct": 98.0,
                     "min_soc_pct": 10.0,
                     "max_soc_pct": 90.0,
                     "degradation_rate_pct_per_year": 2.0,
@@ -146,14 +147,14 @@ MASTER_SCENARIO = {
                     "capex": {"fixed_eur": 5000, "eur_per_kw": 50},
                     "opex": {"fixed_eur": 1000}
                 },
-                "system_loss_pct": 5.0
+                "system_loss_pct": 12.0
             }
         },
         "finance": {
             "leverage_pct": 60,
             "interest_rate_pct": 4.0,
-            "loan_tenor_years": 3,
-            "equity_irr_target": null,
+            "loan_tenor_years": 10,
+            "equity_irr_target": 0.07,
             "debt_uses_p90": true,
             "inflation_rate": 0.02,
             "revenue_streams": {
@@ -194,7 +195,7 @@ MASTER_SCENARIO = {
 
 Eigene Preis-CSV `integration_suite_prices.csv` mit synthetischen, deterministischen Preisen.
 
-- 3 Jahre × 8.760 Stunden = 26.280 Zeilen
+- 20 Jahre × 8.760 Stunden = 175.280 Zeilen
 - Spalten: `timestamp;MID` (eine Spalte reicht, MC ist deaktiviert)
 - Preisprofil: Sinus-Tagesprofil mit saisonaler Variation, sodass BESS-Arbitrage möglich ist
 - Preisspanne: 20–120 €/MWh, Durchschnitt ~60 €/MWh

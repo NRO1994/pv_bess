@@ -68,7 +68,7 @@
 ---
 
 ### FIX-S2-03: BESS-Only Cases ermöglichen
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `config/schema.py`, `main.py`, `optimization/grid_search.py`, `tests/test_integration_bess_only.py` (neu)
 
 **Problem:** Das Modell unterstützt keine reinen BESS-Szenarien ohne PV. Die Eingabelogik erzwingt `peak_power_kwp > 0` und BESS-Sizing ist relativ zur PV-Leistung.
@@ -644,7 +644,7 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 |---|---|----------------------------|---|---|
 | FIX-S2-01 | Cashflow Benchmark-Test | OFFEN                      | Hoch | Neuer Test, keine Code-Änderung |
 | FIX-S2-02 | Smoke Test | OFFEN                      | Hoch | Neuer Test + JSON-Fix |
-| FIX-S2-03 | BESS-Only Cases | OFFEN                      | Hoch | Schema, Main, Grid Search |
+| FIX-S2-03 | BESS-Only Cases | ERLEDIGT                   | Hoch | Schema, Main, Grid Search |
 | FIX-S2-04 | OPEX eur_per_kw/kwh | BEREITS IMPLEMENTIERT      | – | – |
 | FIX-S2-05 | Loan Tenor | BEREITS IMPLEMENTIERT      | – | – |
 | FIX-S2-06 | CSV User Input | ERLEDIGT                   | Mittel | Defaults, Schema, CSV Writer |

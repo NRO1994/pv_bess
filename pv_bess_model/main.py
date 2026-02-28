@@ -536,21 +536,57 @@ def run(args: argparse.Namespace) -> int:
         scenario.raw.get("scenario", {}).get("skip_baseline", DEFAULT_SKIP_BASELINE)
     )
 
+    # Absolute BESS sizing for BESS-Only scenarios (pv_peak_kwp == 0)
+    bess_absolute_power_kw: float | None = (
+        float(bess_design_space["absolute_power_kw"])
+        if "absolute_power_kw" in bess_design_space
+        else None
+    )
+    bess_absolute_capacity_kwh: float | None = (
+        float(bess_design_space["absolute_capacity_kwh"])
+        if "absolute_capacity_kwh" in bess_design_space
+        else None
+    )
+
+    if pv_peak_kwp == 0:
+        logger.info(
+            "pv_peak_kwp = 0: BESS-Only scenario detected. "
+            "PVGIS fetch will be skipped; PV timeseries set to zero."
+        )
+        if scenario.operating_mode == "green":
+            logger.warning(
+                "BESS-Only with operating_mode='green': the BESS cannot be "
+                "charged (no PV surplus). Revenue will be zero. "
+                "Consider switching to operating_mode='grey'."
+            )
+
     # Handle fixed BESS override from CLI
     if args.bess_power is not None and args.bess_capacity is not None:
-        scale_pct_list = [args.bess_power / pv_peak_kwp * 100.0]
-        e_to_p_list = [args.bess_capacity / args.bess_power]
-        logger.info(
-            "CLI override: BESS power=%.1f kW, capacity=%.1f kWh → "
-            "scale=%.2f %%, E/P=%.2f h",
-            args.bess_power,
-            args.bess_capacity,
-            scale_pct_list[0],
-            e_to_p_list[0],
-        )
+        if pv_peak_kwp > 0:
+            scale_pct_list = [args.bess_power / pv_peak_kwp * 100.0]
+            e_to_p_list = [args.bess_capacity / args.bess_power]
+            logger.info(
+                "CLI override: BESS power=%.1f kW, capacity=%.1f kWh → "
+                "scale=%.2f %%, E/P=%.2f h",
+                args.bess_power,
+                args.bess_capacity,
+                scale_pct_list[0],
+                e_to_p_list[0],
+            )
+        else:
+            # BESS-Only: CLI override sets absolute sizing directly
+            bess_absolute_power_kw = float(args.bess_power)
+            bess_absolute_capacity_kwh = float(args.bess_capacity)
+            scale_pct_list = [100.0]  # non-zero scale triggers absolute sizing
+            e_to_p_list = [1.0]       # dummy (capacity is absolute)
+            logger.info(
+                "CLI override (BESS-Only): BESS power=%.1f kW, capacity=%.1f kWh",
+                bess_absolute_power_kw,
+                bess_absolute_capacity_kwh,
+            )
 
     # ------------------------------------------------------------------
-    # Step 2: Fetch PVGIS data
+    # Step 2: Fetch PVGIS data (skipped for BESS-Only scenarios)
     # ------------------------------------------------------------------
     location = scenario.project_settings.get("location", {})
     latitude = float(location.get("latitude", 51.0))
@@ -560,37 +596,43 @@ def run(args: argparse.Namespace) -> int:
     azimuth_deg = float(pv_design.get("azimuth_deg", 0))
     tilt_deg = float(pv_design.get("tilt_deg", 30))
 
-    logger.info(
-        "Fetching PVGIS data (lat=%.4f, lon=%.4f, %s)…",
-        latitude,
-        longitude,
-        pvgis_database,
-    )
-    client = PVGISClient()
-    try:
-        yearly_pvgis = client.fetch_hourly_production(
-            latitude=latitude,
-            longitude=longitude,
-            peak_power_kwp=pv_peak_kwp,
-            system_loss_pct=0.0,
-            mounting_type=mounting_type,
-            azimuth_deg=azimuth_deg,
-            tilt_deg=tilt_deg,
-            pvgis_database=pvgis_database,
+    if pv_peak_kwp > 0:
+        logger.info(
+            "Fetching PVGIS data (lat=%.4f, lon=%.4f, %s)…",
+            latitude,
+            longitude,
+            pvgis_database,
         )
-    except Exception as exc:
-        logger.error("PVGIS fetch failed: %s", exc)
-        return 1
+        client = PVGISClient()
+        try:
+            yearly_pvgis = client.fetch_hourly_production(
+                latitude=latitude,
+                longitude=longitude,
+                peak_power_kwp=pv_peak_kwp,
+                system_loss_pct=0.0,
+                mounting_type=mounting_type,
+                azimuth_deg=azimuth_deg,
+                tilt_deg=tilt_deg,
+                pvgis_database=pvgis_database,
+            )
+        except Exception as exc:
+            logger.error("PVGIS fetch failed: %s", exc)
+            return 1
 
-    # ------------------------------------------------------------------
-    # Step 3: Compute P50 and P90 timeseries
-    # ------------------------------------------------------------------
-    p50_timeseries, p90_timeseries = compute_p50_p90(yearly_pvgis)
-    logger.info(
-        "PV timeseries: P50 annual=%.0f kWh, P90 annual=%.0f kWh",
-        float(np.sum(p50_timeseries)),
-        float(np.sum(p90_timeseries)),
-    )
+        # ------------------------------------------------------------------
+        # Step 3: Compute P50 and P90 timeseries
+        # ------------------------------------------------------------------
+        p50_timeseries, p90_timeseries = compute_p50_p90(yearly_pvgis)
+        logger.info(
+            "PV timeseries: P50 annual=%.0f kWh, P90 annual=%.0f kWh",
+            float(np.sum(p50_timeseries)),
+            float(np.sum(p90_timeseries)),
+        )
+    else:
+        # BESS-Only: zero PV production for all hours
+        p50_timeseries = np.zeros(HOURS_PER_YEAR, dtype=float)
+        p90_timeseries = np.zeros(HOURS_PER_YEAR, dtype=float)
+        logger.info("BESS-Only: PV timeseries set to zero (8760 × 0 kWh).")
 
     # ------------------------------------------------------------------
     # Step 4: Load price CSV, extend to lifetime
@@ -713,6 +755,8 @@ def run(args: argparse.Namespace) -> int:
         spot_prices_yearly_p90=spot_prices_yearly_p90 if debt_uses_p90 else None,
         max_workers=1 if args.verbose else None,
         skip_baseline=skip_baseline,
+        bess_absolute_power_kw=bess_absolute_power_kw,
+        bess_absolute_capacity_kwh=bess_absolute_capacity_kwh,
     )
 
     logger.info("Starting grid search…")

@@ -104,7 +104,7 @@ _PV_DESIGN = {
     "type": "object",
     "required": ["peak_power_kwp", "mounting_type", "azimuth_deg", "tilt_deg"],
     "properties": {
-        "peak_power_kwp": {"type": "number", "exclusiveMinimum": 0},
+        "peak_power_kwp": {"type": "number", "minimum": 0},
         "mounting_type": {"type": "string", "enum": ["free", "building"]},
         "azimuth_deg": {"type": "number", "minimum": -180, "maximum": 180},
         "tilt_deg": {"type": "number", "minimum": 0, "maximum": 90},
@@ -164,6 +164,8 @@ _BESS_DESIGN_SPACE = {
             "items": {"type": "number", "exclusiveMinimum": 0},
             "minItems": 1,
         },
+        "absolute_power_kw": {"type": "number", "minimum": 0},
+        "absolute_capacity_kwh": {"type": "number", "minimum": 0},
     },
     "additionalProperties": False,
 }
@@ -486,6 +488,7 @@ def validate_scenario(data: dict) -> None:
     _validate_mc_weights(data)
     _validate_soc_limits(data)
     _validate_baseload_ppa(data)
+    _validate_bess_only(data)
 
 
 def _validate_mc_weights(data: dict) -> None:
@@ -558,6 +561,55 @@ def _validate_baseload_ppa(data: dict) -> None:
             f"baseload_mw ({baseload_mw} MW = {baseload_mw * 1000} kW) "
             f"exceeds PV peak power ({pv_peak_kwp} kWp). "
             f"The baseload level must not exceed the PV nominal capacity."
+        )
+
+
+def _validate_bess_only(data: dict) -> None:
+    """Check consistency of BESS-only configuration.
+
+    When ``pv_peak_kwp`` is zero, the ratio-based BESS sizing formula
+    (``bess_power = pv_peak × scale / 100``) always yields zero power for
+    every non-zero scale value.  The user must supply ``absolute_power_kw``
+    and ``absolute_capacity_kwh`` in ``bess.design_space`` to get a meaningful
+    non-zero BESS configuration.
+
+    Rules enforced:
+    - ``absolute_power_kw`` and ``absolute_capacity_kwh`` must be specified
+      together (both present or both absent).
+    - When ``pv_peak_kwp == 0`` and no absolute values are given, the grid
+      search will only evaluate the PV-only baseline (0 kW BESS); a
+      ``ValueError`` is raised to alert the user.
+    """
+    design_space = (
+        data.get("project_settings", {})
+        .get("technology", {})
+        .get("bess", {})
+        .get("design_space", {})
+    )
+    has_power = "absolute_power_kw" in design_space
+    has_capacity = "absolute_capacity_kwh" in design_space
+
+    if has_power != has_capacity:
+        raise ValueError(
+            "bess.design_space.absolute_power_kw and absolute_capacity_kwh "
+            "must both be specified or both omitted. "
+            "Provide both fields to enable BESS-Only sizing."
+        )
+
+    pv_peak_kwp = (
+        data.get("project_settings", {})
+        .get("technology", {})
+        .get("pv", {})
+        .get("design", {})
+        .get("peak_power_kwp")
+    )
+    if pv_peak_kwp == 0 and not has_power:
+        raise ValueError(
+            "pv_peak_kwp is 0 (BESS-Only scenario) but "
+            "bess.design_space.absolute_power_kw and absolute_capacity_kwh "
+            "are not specified. Without absolute sizing the grid search can "
+            "only evaluate the zero-BESS baseline. "
+            "Add absolute_power_kw and absolute_capacity_kwh to bess.design_space."
         )
 
 
