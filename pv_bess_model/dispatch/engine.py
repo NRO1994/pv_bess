@@ -150,7 +150,7 @@ class AnnualResult:
     revenue_pv_export: float
     """Revenue from PV exported directly to grid."""
     revenue_bess_green: float
-    """Revenue from green BESS discharge (discharge_green x RTE x eff_price)."""
+    """Revenue from green BESS discharge (discharge_green x RTE x spot_price)."""
     revenue_bess_grey: float
     """Revenue from grey BESS discharge (discharge_grey x RTE x spot).  0.0 in green mode."""
     grid_import_cost: float
@@ -573,7 +573,8 @@ def run_simulation(
             current_soc_green = result["end_soc_green"]
             current_soc_grey = result["end_soc_grey"]
 
-            # Revenue breakdown for this day (clip(spot, floor, cap) + goo)
+            # Revenue breakdown for this day
+            # PV export uses effective price (clip(spot, floor, cap) + goo)
             if fixed_price > 0.0:
                 eff_day = np.maximum(spot_day, fixed_price)
             else:
@@ -585,8 +586,9 @@ def run_simulation(
 
             glf = config.grid_loss_factor
             day_rev_pv = float(np.sum(result["export_pv"] * glf * eff_day))
+            # BESS green discharge revenue at spot price (separate revenue stream)
             day_rev_green = float(
-                np.sum(result["discharge_green"] * config.bess_rte * glf * eff_day)
+                np.sum(result["discharge_green"] * config.bess_rte * glf * spot_day)
             )
             day_rev_grey = float(
                 np.sum(result["discharge_grey"] * config.bess_rte * spot_day)

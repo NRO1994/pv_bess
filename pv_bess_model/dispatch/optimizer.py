@@ -172,7 +172,7 @@ class DailyDispatchResult(TypedDict):
 
     revenue: np.ndarray
     """Hourly revenue in €. shape (T,)
-    = export × eff_price + discharge_green × RTE × eff_price
+    = export × eff_price + discharge_green × RTE × spot
       + discharge_grey × RTE × spot  − charge_grid × spot"""
 
     end_soc: float
@@ -235,6 +235,7 @@ def _effective_green_price(
 def _build_green_lp(
     pv_production_kwh: np.ndarray,
     eff_prices: np.ndarray,
+    spot_prices: np.ndarray,
     rte: float,
     soc_min_kwh: float,
     soc_max_kwh: float,
@@ -248,17 +249,21 @@ def _build_green_lp(
 
     Returns (c, A_ub, b_ub, A_eq, b_eq) suitable for ``scipy.optimize.linprog``.
 
-    All prices in *eff_prices* are €/kWh (already floor-adjusted).
+    *eff_prices* (€/kWh, floor-adjusted) are used for PV direct export.
+    *spot_prices* (€/kWh, raw spot) are used for BESS discharge revenue,
+    because BESS discharge is a separate spot-market revenue stream.
+    Charging cost (opportunity cost of foregone PV export) remains at
+    *eff_prices* implicitly via the energy-balance constraint.
     """
     T = len(pv_production_kwh)
     n_vars = 4 * T  # charge_pv, disch_green, export_pv, curtail
 
-    # --- Objective: max Σ(export[t]*glf*eff[t] + disch_green[t]*RTE*glf*eff[t]) ---
+    # --- Objective: max Σ(export[t]*glf*eff[t] + disch_green[t]*RTE*glf*spot[t]) ---
     # linprog minimises → negate
     c = np.zeros(n_vars)
     for t in range(T):
-        c[2 * T + t] = -(grid_loss_factor * eff_prices[t])            # export_pv[t] × glf
-        c[T + t] = -(rte * grid_loss_factor * eff_prices[t])          # discharge_green[t] × RTE × glf
+        c[2 * T + t] = -(grid_loss_factor * eff_prices[t])            # export_pv[t] × glf × eff
+        c[T + t] = -(rte * grid_loss_factor * spot_prices[t])         # discharge_green[t] × RTE × glf × spot
 
     # --- Equality constraints ---
     # PV energy balance: export[t] + charge_pv[t] + curtail[t] = pv[t]  ∀t
@@ -348,12 +353,14 @@ def _build_grey_lp(
     n_vars = 6 * T  # charge_pv, disch_green, export_pv, curtail, charge_grid, disch_grey
 
     # --- Objective ---
-    # max Σ[ export[t]*glf*eff[t] + disch_green[t]*RTE*glf*eff[t]
+    # max Σ[ export[t]*glf*eff[t] + disch_green[t]*RTE*glf*spot[t]
     #        + disch_grey[t]*RTE*spot[t] - charge_grid[t]*spot[t] ]
+    # BESS discharge (both green and grey) is valued at spot prices,
+    # because it is a separate spot-market revenue stream.
     c = np.zeros(n_vars)
     for t in range(T):
-        c[2 * T + t] = -(grid_loss_factor * eff_prices[t])                # export_pv × glf
-        c[T + t] = -(rte * grid_loss_factor * eff_prices[t])               # discharge_green × RTE × glf
+        c[2 * T + t] = -(grid_loss_factor * eff_prices[t])                # export_pv × glf × eff
+        c[T + t] = -(rte * grid_loss_factor * spot_prices_eur_per_kwh[t]) # discharge_green × RTE × glf × spot
         c[5 * T + t] = -(rte * spot_prices_eur_per_kwh[t])                # discharge_grey revenue (no glf)
         c[4 * T + t] = spot_prices_eur_per_kwh[t]                         # charge_grid cost
 
@@ -447,11 +454,16 @@ def _extract_green_result(
     x: np.ndarray,
     T: int,
     eff_prices: np.ndarray,
+    spot_prices: np.ndarray,
     rte: float,
     start_soc_kwh: float,
     grid_loss_factor: float = 1.0,
 ) -> DailyDispatchResult:
-    """Parse the LP solution vector into a :class:`DailyDispatchResult` (Green)."""
+    """Parse the LP solution vector into a :class:`DailyDispatchResult` (Green).
+
+    PV export revenue uses *eff_prices* (floor/cap-adjusted).
+    BESS discharge revenue uses *spot_prices* (raw spot).
+    """
     charge_pv = x[0: T]
     discharge_green = x[T: 2 * T]
     export_pv = x[2 * T: 3 * T]
@@ -464,10 +476,11 @@ def _extract_green_result(
         cumulative += charge_pv[t] - discharge_green[t]
         soc[t] = cumulative
 
-    # Revenue per hour (€) – green energy reduced by grid_loss_factor
+    # Revenue per hour (€):
+    # PV export at effective price (floor/cap protected), BESS discharge at spot
     revenue = (
         export_pv * grid_loss_factor * eff_prices
-        + discharge_green * rte * grid_loss_factor * eff_prices
+        + discharge_green * rte * grid_loss_factor * spot_prices
     )
 
     return DailyDispatchResult(
@@ -518,10 +531,11 @@ def _extract_grey_result(
 
     soc = soc_green + soc_grey
 
-    # Revenue (€): green at effective price × glf, grey at spot (no glf), minus grid import
+    # Revenue (€): PV export at effective price × glf,
+    # BESS discharge (green + grey) at spot, minus grid import at spot
     revenue = (
         export_pv * grid_loss_factor * eff_prices
-        + discharge_green * rte * grid_loss_factor * eff_prices
+        + discharge_green * rte * grid_loss_factor * spot_prices_eur_per_kwh
         + discharge_grey * rte * spot_prices_eur_per_kwh
         - charge_grid * spot_prices_eur_per_kwh
     )
@@ -622,6 +636,7 @@ def optimize_day(
         c, A_ub, b_ub, A_eq, b_eq = _build_green_lp(
             pv_production_kwh=pv_production_kwh,
             eff_prices=eff,
+            spot_prices=spot_prices_eur_per_kwh,
             rte=rte,
             soc_min_kwh=bess.soc_min_kwh,
             soc_max_kwh=bess.soc_max_kwh,
@@ -694,7 +709,7 @@ def optimize_day(
     x = result.x
 
     if mode == "green":
-        return _extract_green_result(x, T, eff, rte, start_soc_kwh, grid_loss_factor)
+        return _extract_green_result(x, T, eff, spot_prices_eur_per_kwh, rte, start_soc_kwh, grid_loss_factor)
     else:
         return _extract_grey_result(
             x, T, spot_prices_eur_per_kwh, eff, rte,

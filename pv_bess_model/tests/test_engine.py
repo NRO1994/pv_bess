@@ -691,11 +691,12 @@ class TestBessSpotRevenue:
 
         assert abs(result.annual_results[0].bess_spot_revenue) < ATOL
 
-    def test_bess_spot_revenue_uses_spot_not_floor(self) -> None:
-        """bess_spot_revenue uses spot price, not effective price with floor.
+    def test_bess_spot_revenue_equals_bess_green_revenue(self) -> None:
+        """Both bess_spot_revenue and revenue_bess_green use spot price.
 
-        With floor > spot for all hours, revenue_bess_green uses floor but
-        bess_spot_revenue uses spot price.
+        After FIX-S2-12, BESS discharge revenue is always at spot price
+        (separate revenue stream from PV export). So bess_spot_revenue
+        and revenue_bess_green should be equal in Green Mode.
         """
         daily_pv = np.zeros(HOURS_PER_DAY)
         daily_pv[10:14] = 200.0
@@ -723,11 +724,9 @@ class TestBessSpotRevenue:
         )
 
         ar = result.annual_results[0]
-        # bess_spot_revenue should be based on spot price
-        # revenue_bess_green is based on effective price (floor)
-        # So bess_spot_revenue < revenue_bess_green when floor > spot
+        # Both revenue_bess_green and bess_spot_revenue use spot price
         if ar.bess_discharge_green > 0.0:
-            assert ar.bess_spot_revenue < ar.revenue_bess_green
+            assert abs(ar.bess_spot_revenue - ar.revenue_bess_green) < ATOL
 
     def test_bess_spot_revenue_all_offline_is_zero(self) -> None:
         """With all days offline, bess_spot_revenue must be zero."""
