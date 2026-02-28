@@ -504,6 +504,9 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         solidaritaetszuschlag_pct=args.solidaritaetszuschlag_pct,
         replacement_cost=replacement_cost,
         replacement_year=replacement_year_cf,
+        replacement_leverage_pct=args.leverage_pct,
+        replacement_interest_rate=args.interest_rate_pct / 100.0,
+        replacement_loan_tenor_years=args.loan_tenor_years,
         optimization_fee_pct=args.optimization_fee_pct,
         annual_bess_spot_revenues=annual_bess_spot_revenues_p50,
     )

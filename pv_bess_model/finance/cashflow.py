@@ -18,7 +18,12 @@ from pv_bess_model.config.defaults import (
     DEFAULT_KOERPERSCHAFTSTEUER_PCT,
     DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
 )
-from pv_bess_model.finance.debt import AnnuitySchedule, get_debt_components, get_debt_service
+from pv_bess_model.finance.debt import (
+    AnnuitySchedule,
+    add_replacement_debt,
+    get_debt_components,
+    get_debt_service,
+)
 from pv_bess_model.finance.inflation import inflate_value
 from pv_bess_model.finance.tax import calculate_tax_for_year
 
@@ -78,6 +83,9 @@ def build_cashflow_projection(
     solidaritaetszuschlag_pct: float = DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
     replacement_cost: float = 0.0,
     replacement_year: int | None = None,
+    replacement_leverage_pct: float = 0.0,
+    replacement_interest_rate: float = 0.0,
+    replacement_loan_tenor_years: int = 0,
     optimization_fee_pct: float = 0.0,
     annual_bess_spot_revenues: list[float] | None = None,
 ) -> CashflowProjection:
@@ -104,6 +112,12 @@ def build_cashflow_projection(
         solidaritaetszuschlag_pct: Soli rate in percent (default from defaults.py).
         replacement_cost: BESS replacement cost (CAPEX outflow in replacement year).
         replacement_year: Year of BESS replacement (1-indexed), or None.
+        replacement_leverage_pct: Debt share of replacement cost (e.g. 75.0).
+            When > 0, the debt-financed portion is added to the debt schedule
+            and only the equity portion reduces the equity cashflow.
+        replacement_interest_rate: Annual interest rate for the replacement loan.
+        replacement_loan_tenor_years: Original loan tenor, used to derive the
+            remaining tenor for the replacement loan.
         optimization_fee_pct: BESS optimization service fee as percentage of BESS spot
             revenue. Not inflation-adjusted (already based on current-year revenue).
         annual_bess_spot_revenues: BESS spot revenue per year for optimization fee
@@ -118,6 +132,25 @@ def build_cashflow_projection(
 
     equity_investment = capex_total - debt_schedule.loan_amount
 
+    # Incorporate replacement debt into the schedule if applicable
+    active_debt_schedule = debt_schedule
+    replacement_equity_share = replacement_cost  # default: 100% equity-financed
+    if (
+        replacement_year is not None
+        and replacement_cost > 0.0
+        and replacement_leverage_pct > 0.0
+    ):
+        active_debt_schedule = add_replacement_debt(
+            existing_schedule=debt_schedule,
+            replacement_cost=replacement_cost,
+            leverage_pct=replacement_leverage_pct,
+            annual_interest_rate=replacement_interest_rate,
+            replacement_year=replacement_year,
+            loan_tenor_years=replacement_loan_tenor_years,
+            lifetime_years=lifetime_years,
+        )
+        replacement_equity_share = replacement_cost * (1.0 - replacement_leverage_pct / 100.0)
+
     loss_carryforward = 0.0
 
     for y in range(1, lifetime_years + 1):
@@ -131,12 +164,14 @@ def build_cashflow_projection(
         if optimization_fee_pct > 0.0 and annual_bess_spot_revenues:
             opex += annual_bess_spot_revenues[idx] * optimization_fee_pct / 100.0
 
-        # Replacement CAPEX outflow (equity-financed, no additional debt)
+        # Replacement CAPEX outflow
         replacement_capex_this_year = 0.0
+        replacement_equity_this_year = 0.0
         if replacement_year is not None and y == replacement_year:
             replacement_capex_this_year = replacement_cost
+            replacement_equity_this_year = replacement_equity_share
 
-        debt_interest, debt_repayment, debt_svc = get_debt_components(debt_schedule, y)
+        debt_interest, debt_repayment, debt_svc = get_debt_components(active_debt_schedule, y)
 
         # Tax calculation with Verlustvortrag and replacement AfA
         tax_result = calculate_tax_for_year(
@@ -159,7 +194,7 @@ def build_cashflow_projection(
 
         # CAPEX is booked in Year 1; replacement CAPEX in replacement year
         capex_this_year = (capex_total if y == 1 else 0.0) + replacement_capex_this_year
-        equity_capex_this_year = (equity_investment if y == 1 else 0.0) + replacement_capex_this_year
+        equity_capex_this_year = (equity_investment if y == 1 else 0.0) + replacement_equity_this_year
 
         # Project CF (pre-leverage): Revenue - OPEX - Tax - CAPEX
         proj_cf = revenue - opex - tax_result.total_tax - capex_this_year

@@ -860,6 +860,9 @@ def run(args: argparse.Namespace) -> int:
         solidaritaetszuschlag_pct=solidaritaetszuschlag_pct,
         replacement_cost=replacement_cost if replacement_enabled else 0.0,
         replacement_year=replacement_year if replacement_enabled else None,
+        replacement_leverage_pct=leverage_pct,
+        replacement_interest_rate=interest_rate_pct / 100.0,
+        replacement_loan_tenor_years=loan_tenor_years,
         optimization_fee_pct=optimization_fee_pct,
         annual_bess_spot_revenues=annual_bess_spot_revenues,
     )

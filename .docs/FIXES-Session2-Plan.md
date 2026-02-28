@@ -418,7 +418,7 @@ Profitabel wenn `spot[t_discharge] > eff[t_charge] / RTE`. Bei EEG floor = 54.9 
 ---
 
 ### FIX-S2-13: BESS-Replacement CAPEX fremdfinanzieren
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `finance/cashflow.py`, `finance/debt.py`, `bess/replacement.py`, `optimization/grid_search.py`, `optimization/monte_carlo.py`
 
 **Problem:** Der BESS-Replacement-CAPEX wird aktuell vollständig aus Eigenkapital finanziert. Er soll stattdessen (anteilig) fremdfinanziert werden – die Restschuld des bestehenden Kredits wird um den FK-Anteil des Replacements erhöht.
@@ -456,6 +456,7 @@ Profitabel wenn `spot[t_discharge] > eff[t_charge] / RTE`. Bei EEG floor = 54.9 
    - Equity-CF-Abzug nur mit `replacement_equity`, nicht dem vollen Betrag
    - Debt Schedule muss **vor** der Cashflow-Schleife um den Replacement-Debt erweitert werden (oder in der Schleife bei `y == replacement_year` modifiziert werden)
 3. **`bess/replacement.py`**: `pct_of_capex` als Feld zu `ReplacementConfig` hinzufügen (aktuell fehlt es)
+4. Die Laufzeit des neuen Kredits ist das Minimum aus der im JSON definierten Laufzeit und der verbleibenden Projektlaufzeit vom Replacement jahr
 4. **Tests:** `test_debt.py` um `add_replacement_debt` erweitern; `test_cashflow.py` Replacement-Szenario anpassen
 
 **Abhängigkeiten:**
@@ -654,7 +655,7 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 | FIX-S2-10 | Debt Service Split | ERLEDIGT                   | Mittel | Cashflow, Debt, CSV Writer |
 | FIX-S2-11 | Grid Search Skip | ERLEDIGT                   | Niedrig | Grid Search, Performance |
 | FIX-S2-12 | Collar Bug (BESS Discharge-Koeffizient auf Spot) | OFFEN                      | Hoch | Optimizer, Engine (LP + Revenue) |
-| FIX-S2-13 | BESS-Replacement fremdfinanzieren | OFFEN                      | Hoch | Cashflow, Debt, Replacement |
+| FIX-S2-13 | BESS-Replacement fremdfinanzieren | ERLEDIGT                   | Hoch | Cashflow, Debt, Replacement |
 | FIX-S2-14 | `-v` → `max_workers=1` | ERLEDIGT                   | Niedrig | Main.py (2 Zeilen) |
 | FIX-S2-15 | BESS-Replacement Upgrade-Faktor | ERLEDIGT                   | Mittel | Schema, Replacement, Engine |
 | FIX-S2-16 | P90-DSCR entfernen | ABGEDECKT DURCH FEATURE 06 | – | Feature 06 eliminiert P90 komplett |

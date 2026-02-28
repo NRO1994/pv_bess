@@ -385,6 +385,9 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         solidaritaetszuschlag_pct=base.solidaritaetszuschlag_pct,
         replacement_cost=replacement_cost,
         replacement_year=replacement_year_cf,
+        replacement_leverage_pct=base.leverage_pct,
+        replacement_interest_rate=base.interest_rate_pct / 100.0,
+        replacement_loan_tenor_years=base.loan_tenor_years,
         optimization_fee_pct=base.optimization_fee_pct,
         annual_bess_spot_revenues=annual_bess_spot_revenues,
     )

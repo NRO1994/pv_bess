@@ -39,7 +39,7 @@ auf früheren aufbauen.
 |---|------|---------|----------------|----------|
 | S2-12 | Collar Bug Verifikation | Klein (Diagnose) | S2-17 | OFFEN    |
 | S2-15 | BESS-Replacement Upgrade-Faktor | Mittel | Keine | ERLEDIGT |
-| S2-13 | BESS-Replacement fremdfinanzieren | Groß | S2-10, S2-15 | OFFEN    |
+| S2-13 | BESS-Replacement fremdfinanzieren | Groß | S2-10, S2-15 | ERLEDIGT |
 | S2-03 | BESS-Only Cases ermöglichen | Groß | Keine | ERLEDIGT |
 
 ### Phase 5: Großes Datenmodell-Refactoring
