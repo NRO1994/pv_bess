@@ -42,6 +42,7 @@ from pv_bess_model.config.defaults import (
     DEFAULT_BESS_MAX_SOC_PCT,
     DEFAULT_BESS_MIN_SOC_PCT,
     DEFAULT_BESS_RTE_PCT,
+    DEFAULT_DEBT_SIZING_DOWNSIDE_PCT,
     DEFAULT_DISCOUNT_RATE,
     DEFAULT_GEWERBESTEUER_HEBESATZ,
     DEFAULT_GEWERBESTEUER_MESSZAHL,
@@ -62,19 +63,26 @@ from pv_bess_model.config.defaults import (
     DEFAULT_PV_DEGRADATION_RATE_PCT,
     DEFAULT_SKIP_BASELINE,
     DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
+    HOURS_PER_DAY,
     HOURS_PER_YEAR,
+    INTERVALS_PER_DAY,
+    INTERVALS_PER_HOUR,
+    INTERVALS_PER_YEAR,
     MARKETING_TYPE_EEG,
     PPA_TYPE_COLLAR,
     PPA_TYPE_FLOOR,
     PPA_TYPE_NONE,
     PPA_TYPE_PAY_AS_PRODUCED,
+    TIMESTEP_HOURS,
 )
 from pv_bess_model.config.loader import (
     PriceData,
+    PriceWeatherScenario,
     ScenarioConfig,
     extend_price_timeseries,
     load_price_csv,
     load_scenario,
+    parse_scenarios,
 )
 from pv_bess_model.dispatch.engine import run_simulation
 from pv_bess_model.finance.cashflow import build_cashflow_projection
@@ -99,7 +107,11 @@ from pv_bess_model.output.csv_writer import (
     write_summary_csv,
 )
 from pv_bess_model.pv.pvgis_client import PVGISClient
-from pv_bess_model.pv.timeseries import compute_p50_p90
+from pv_bess_model.pv.timeseries import (
+    align_weather_to_forecast_year,
+    compute_p50_p90,
+    hourly_to_quarter_hourly,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -322,29 +334,33 @@ def _build_spot_prices_yearly(
     lifetime_years: int,
     inflation_rate: float,
     apply_inflation: bool,
+    intervals_per_year: int = HOURS_PER_YEAR,
 ) -> list[np.ndarray]:
     """Split an extended price array into per-year slices with optional inflation.
 
     Parameters
     ----------
     price_array:
-        Extended price array of length >= ``lifetime_years × HOURS_PER_YEAR`` (€/kWh).
+        Extended price array of length >= ``lifetime_years × intervals_per_year``
+        (€/kWh).
     lifetime_years:
         Number of project years.
     inflation_rate:
         Annual inflation rate as a fraction.
     apply_inflation:
         Whether to scale each year's prices by the annual inflation factor.
+    intervals_per_year:
+        Number of intervals per year (8 760 for hourly, 35 040 for 15-min).
 
     Returns
     -------
     list[np.ndarray]
-        One (8760,) array per project year (index 0 = year 1).
+        One array of length ``intervals_per_year`` per project year.
     """
     yearly: list[np.ndarray] = []
     for y in range(1, lifetime_years + 1):
-        start = (y - 1) * HOURS_PER_YEAR
-        end = y * HOURS_PER_YEAR
+        start = (y - 1) * intervals_per_year
+        end = y * intervals_per_year
         year_prices = price_array[start:end].copy()
         if apply_inflation:
             factor = inflate_value(1.0, inflation_rate, y)
@@ -362,6 +378,7 @@ def _extend_all_price_columns(
     price_data: PriceData,
     required_columns: list[str],
     target_years: int,
+    intervals_per_year: int = HOURS_PER_YEAR,
 ) -> dict[str, np.ndarray]:
     """Extend all required price columns to cover the full project lifetime.
 
@@ -376,19 +393,22 @@ def _extend_all_price_columns(
         List of column names to extend.
     target_years:
         Project lifetime in years.
+    intervals_per_year:
+        Number of intervals per year for extension (8 760 for hourly,
+        35 040 for 15-min).
 
     Returns
     -------
     dict[str, np.ndarray]
         Mapping of column name → extended price array (length =
-        ``target_years × HOURS_PER_YEAR``).
+        ``target_years × intervals_per_year``).
     """
     extended: dict[str, np.ndarray] = {}
     for col in required_columns:
         extended[col] = extend_price_timeseries(
             price_data.get_column(col),
             target_years=target_years,
-            hours_per_year=HOURS_PER_YEAR,
+            hours_per_year=intervals_per_year,
         )
     return extended
 
@@ -481,7 +501,9 @@ def run(args: argparse.Namespace) -> int:
     interest_rate_pct = float(finance.get("interest_rate_pct", DEFAULT_INTEREST_RATE_PCT))
     loan_tenor_years = int(finance.get("loan_tenor_years", DEFAULT_LOAN_TENOR_YEARS))
     discount_rate = float(scenario.project_settings.get("discount_rate", DEFAULT_DISCOUNT_RATE))
-    debt_uses_p90 = bool(finance.get("debt_uses_p90", False))
+    debt_sizing_downside_pct = float(
+        finance.get("debt_sizing_downside_pct", DEFAULT_DEBT_SIZING_DOWNSIDE_PCT)
+    )
 
     tax = finance.get("tax", {})
     afa_years_pv = int(tax.get("afa_years_pv", 20))
@@ -586,7 +608,7 @@ def run(args: argparse.Namespace) -> int:
             )
 
     # ------------------------------------------------------------------
-    # Step 2: Fetch PVGIS data (skipped for BESS-Only scenarios)
+    # Step 2: Parse scenarios and fetch weather-year PV data
     # ------------------------------------------------------------------
     location = scenario.project_settings.get("location", {})
     latitude = float(location.get("latitude", 51.0))
@@ -596,7 +618,77 @@ def run(args: argparse.Namespace) -> int:
     azimuth_deg = float(pv_design.get("azimuth_deg", 0))
     tilt_deg = float(pv_design.get("tilt_deg", 30))
 
-    if pv_peak_kwp > 0:
+    # Parse price-weather scenarios from the new schema
+    price_inputs = finance.get("price_inputs", {})
+    scenarios_list: list[PriceWeatherScenario] = parse_scenarios(scenario.raw)
+
+    # Determine resolution: use 15min if scenarios are defined
+    use_15min = len(scenarios_list) > 0
+    if use_15min:
+        ts_intervals_per_year = INTERVALS_PER_YEAR
+        ts_intervals_per_day = INTERVALS_PER_DAY
+        ts_timestep_hours = TIMESTEP_HOURS
+    else:
+        ts_intervals_per_year = HOURS_PER_YEAR
+        ts_intervals_per_day = HOURS_PER_DAY
+        ts_timestep_hours = 1.0
+
+    commissioning_year = scenario.commissioning_year
+
+    if pv_peak_kwp > 0 and scenarios_list:
+        # New flow: fetch unique weather years, align, convert to 15min
+        unique_weather_years = sorted({s.weather_year for s in scenarios_list})
+        logger.info(
+            "Fetching PVGIS data for %d unique weather year(s): %s",
+            len(unique_weather_years),
+            unique_weather_years,
+        )
+        client = PVGISClient()
+        weather_year_hourly: dict[int, np.ndarray] = {}
+        for wy in unique_weather_years:
+            try:
+                hourly_ts = client.fetch_single_year(
+                    year=wy,
+                    latitude=latitude,
+                    longitude=longitude,
+                    peak_power_kwp=pv_peak_kwp,
+                    mounting_type=mounting_type,
+                    azimuth_deg=azimuth_deg,
+                    tilt_deg=tilt_deg,
+                    pvgis_database=pvgis_database,
+                )
+            except Exception as exc:
+                logger.error("PVGIS fetch for year %d failed: %s", wy, exc)
+                return 1
+            weather_year_hourly[wy] = hourly_ts
+
+        # Align and convert to 15min per weather year
+        weather_year_15min: dict[int, np.ndarray] = {}
+        for wy, hourly_ts in weather_year_hourly.items():
+            aligned = align_weather_to_forecast_year(
+                hourly_ts, wy, commissioning_year
+            )
+            weather_year_15min[wy] = hourly_to_quarter_hourly(aligned)
+
+        # Assign PV timeseries to each scenario
+        for sc in scenarios_list:
+            sc.pv_timeseries_15min = weather_year_15min[sc.weather_year]
+
+        # Central scenario PV timeseries for grid search
+        central_scenarios = [s for s in scenarios_list if s.is_central]
+        if central_scenarios:
+            central_scenario = central_scenarios[0]
+            central_pv_timeseries = central_scenario.pv_timeseries_15min
+        else:
+            central_pv_timeseries = scenarios_list[0].pv_timeseries_15min
+
+        logger.info(
+            "PV timeseries (15min, central scenario): annual=%.0f kWh",
+            float(np.sum(central_pv_timeseries)),
+        )
+
+    elif pv_peak_kwp > 0:
+        # Legacy flow: fetch all years, compute P50/P90 (hourly)
         logger.info(
             "Fetching PVGIS data (lat=%.4f, lon=%.4f, %s)…",
             latitude,
@@ -619,25 +711,24 @@ def run(args: argparse.Namespace) -> int:
             logger.error("PVGIS fetch failed: %s", exc)
             return 1
 
-        # ------------------------------------------------------------------
-        # Step 3: Compute P50 and P90 timeseries
-        # ------------------------------------------------------------------
         p50_timeseries, p90_timeseries = compute_p50_p90(yearly_pvgis)
+        central_pv_timeseries = p50_timeseries
         logger.info(
             "PV timeseries: P50 annual=%.0f kWh, P90 annual=%.0f kWh",
             float(np.sum(p50_timeseries)),
             float(np.sum(p90_timeseries)),
         )
     else:
-        # BESS-Only: zero PV production for all hours
-        p50_timeseries = np.zeros(HOURS_PER_YEAR, dtype=float)
-        p90_timeseries = np.zeros(HOURS_PER_YEAR, dtype=float)
-        logger.info("BESS-Only: PV timeseries set to zero (8760 × 0 kWh).")
+        # BESS-Only: zero PV production
+        central_pv_timeseries = np.zeros(ts_intervals_per_year, dtype=float)
+        logger.info(
+            "BESS-Only: PV timeseries set to zero (%d × 0 kWh).",
+            ts_intervals_per_year,
+        )
 
     # ------------------------------------------------------------------
-    # Step 4: Load price CSV, extend to lifetime
+    # Step 4: Load price CSV(s), extend to lifetime
     # ------------------------------------------------------------------
-    price_inputs = finance.get("price_inputs", {})
     price_csv_path = price_inputs.get("day_ahead_csv", "")
     price_unit = price_inputs.get("price_unit", "eur_per_mwh")
     inflation_on_prices = bool(price_inputs.get("inflation_on_input_data", False))
@@ -646,52 +737,125 @@ def run(args: argparse.Namespace) -> int:
     price_csv_timestamp_column = price_inputs.get("csv_timestamp_column", CSV_TIMESTAMP_COLUMN)
     price_csv_timestamp_format = price_inputs.get("csv_timestamp_format", None)
 
-    # Collect required price columns
     mc_cfg = scenario.monte_carlo
     mc_enabled = scenario.mc_enabled and not args.no_mc
 
-    price_scenarios_cfg = mc_cfg.get("price_scenarios", {}) if mc_enabled else {}
-
-    if price_scenarios_cfg:
-        required_columns = [v["csv_column"] for v in price_scenarios_cfg.values()]
-    else:
-        # Default: use "MID" column, fall back to first available numeric column
-        required_columns = ["MID"]
-
     # Resolve relative CSV path against scenario file directory
     scenario_dir = scenario.path.parent if scenario.path else Path(".")
-    csv_path = Path(price_csv_path)
-    if not csv_path.is_absolute():
-        csv_path = scenario_dir / csv_path
-
-    logger.info("Loading price CSV: %s", csv_path)
-    try:
-        price_data = load_price_csv(
-            path=csv_path,
-            required_columns=required_columns,
-            price_unit=price_unit,
-            commissioning_year=scenario.commissioning_year,
-            delimiter=price_csv_delimiter,
-            decimal=price_csv_decimal,
-            timestamp_column=price_csv_timestamp_column,
-            timestamp_format=price_csv_timestamp_format,
-        )
-    except Exception as exc:
-        logger.error("Price CSV load failed: %s", exc)
-        return 1
 
     lifetime = scenario.lifetime_years
 
-    # Extend ALL required price columns to full project lifetime
-    mid_column = required_columns[0]
-    extended_prices = _extend_all_price_columns(price_data, required_columns, lifetime)
+    if scenarios_list:
+        # New flow: per-scenario price loading
+        # Collect unique CSV columns needed
+        required_columns = sorted({s.csv_column for s in scenarios_list})
 
-    spot_prices_yearly = _build_spot_prices_yearly(
-        extended_prices[mid_column], lifetime, inflation_rate, inflation_on_prices
-    )
+        # Use the first scenario's CSV path as default
+        default_csv = price_csv_path
+        default_csv_path = Path(default_csv)
+        if not default_csv_path.is_absolute():
+            default_csv_path = scenario_dir / default_csv_path
 
-    # P90 prices (same column unless specifically configured)
-    spot_prices_yearly_p90 = spot_prices_yearly  # conservative: same as P50
+        logger.info("Loading price CSV: %s (columns: %s)", default_csv_path, required_columns)
+        try:
+            price_data = load_price_csv(
+                path=default_csv_path,
+                required_columns=required_columns,
+                price_unit=price_unit,
+                commissioning_year=commissioning_year,
+                delimiter=price_csv_delimiter,
+                decimal=price_csv_decimal,
+                timestamp_column=price_csv_timestamp_column,
+                timestamp_format=price_csv_timestamp_format,
+            )
+        except Exception as exc:
+            logger.error("Price CSV load failed: %s", exc)
+            return 1
+
+        # Extend prices to lifetime (hourly first, then replicate to 15min)
+        extended_prices_hourly = _extend_all_price_columns(
+            price_data, required_columns, lifetime, HOURS_PER_YEAR
+        )
+
+        # Replicate hourly prices to 15min: each hour repeats 4x
+        # NOTE: prices are NOT divided by 4 (price per kWh stays the same)
+        extended_prices_15min: dict[str, np.ndarray] = {}
+        for col, arr in extended_prices_hourly.items():
+            extended_prices_15min[col] = np.repeat(arr, INTERVALS_PER_HOUR)
+
+        # Central scenario column for grid search
+        central_column = (
+            central_scenario.csv_column
+            if central_scenarios
+            else scenarios_list[0].csv_column
+        )
+        spot_prices_yearly = _build_spot_prices_yearly(
+            extended_prices_15min[central_column],
+            lifetime,
+            inflation_rate,
+            inflation_on_prices,
+            intervals_per_year=ts_intervals_per_year,
+        )
+
+        # Build per-scenario price timeseries for MC
+        scenario_prices_map: dict[str, list[np.ndarray]] = {}
+        scenario_pv_map: dict[str, np.ndarray] = {}
+        mc_price_scenarios_from_list: dict[str, dict] = {}
+        for sc in scenarios_list:
+            scenario_prices_map[sc.name] = _build_spot_prices_yearly(
+                extended_prices_15min[sc.csv_column],
+                lifetime,
+                inflation_rate,
+                inflation_on_prices,
+                intervals_per_year=ts_intervals_per_year,
+            )
+            if sc.pv_timeseries_15min is not None:
+                scenario_pv_map[sc.name] = sc.pv_timeseries_15min
+            mc_price_scenarios_from_list[sc.name] = {
+                "csv_column": sc.csv_column,
+                "weight": sc.weight,
+            }
+
+    else:
+        # Legacy flow: single CSV with optional MC price_scenarios
+        price_scenarios_cfg = mc_cfg.get("price_scenarios", {}) if mc_enabled else {}
+
+        if price_scenarios_cfg:
+            required_columns = [v["csv_column"] for v in price_scenarios_cfg.values()]
+        else:
+            required_columns = ["MID"]
+
+        csv_path = Path(price_csv_path)
+        if not csv_path.is_absolute():
+            csv_path = scenario_dir / csv_path
+
+        logger.info("Loading price CSV: %s", csv_path)
+        try:
+            price_data = load_price_csv(
+                path=csv_path,
+                required_columns=required_columns,
+                price_unit=price_unit,
+                commissioning_year=commissioning_year,
+                delimiter=price_csv_delimiter,
+                decimal=price_csv_decimal,
+                timestamp_column=price_csv_timestamp_column,
+                timestamp_format=price_csv_timestamp_format,
+            )
+        except Exception as exc:
+            logger.error("Price CSV load failed: %s", exc)
+            return 1
+
+        mid_column = required_columns[0]
+        extended_prices = _extend_all_price_columns(price_data, required_columns, lifetime)
+
+        spot_prices_yearly = _build_spot_prices_yearly(
+            extended_prices[mid_column], lifetime, inflation_rate, inflation_on_prices
+        )
+
+        # For MC: build scenario prices
+        scenario_prices_map = {}
+        scenario_pv_map = {}
+        mc_price_scenarios_from_list = {}
 
     # Fixed prices per year (EEG / PPA floor, WITHOUT GoO)
     fixed_prices_yearly = _build_fixed_prices_yearly(scenario, inflation_rate)
@@ -710,7 +874,7 @@ def run(args: argparse.Namespace) -> int:
         scale_pct_of_pv=scale_pct_list,
         e_to_p_ratio_hours=e_to_p_list,
         pv_peak_kwp=pv_peak_kwp,
-        pv_base_timeseries_p50=p50_timeseries,
+        pv_base_timeseries=central_pv_timeseries,
         pv_degradation_rate=pv_degradation_rate,
         pv_costs_capex=pv_capex_cfg,
         pv_costs_opex=pv_opex_cfg,
@@ -750,9 +914,10 @@ def run(args: argparse.Namespace) -> int:
         gewerbesteuer_hebesatz=gewerbesteuer_hebesatz,
         koerperschaftsteuer_pct=koerperschaftsteuer_pct,
         solidaritaetszuschlag_pct=solidaritaetszuschlag_pct,
-        debt_uses_p90=debt_uses_p90,
-        pv_base_timeseries_p90=p90_timeseries if debt_uses_p90 else None,
-        spot_prices_yearly_p90=spot_prices_yearly_p90 if debt_uses_p90 else None,
+        debt_sizing_downside_pct=debt_sizing_downside_pct,
+        timestep_hours=ts_timestep_hours,
+        intervals_per_day=ts_intervals_per_day,
+        intervals_per_year=ts_intervals_per_year,
         max_workers=1 if args.verbose else None,
         skip_baseline=skip_baseline,
         bess_absolute_power_kw=bess_absolute_power_kw,
@@ -809,13 +974,16 @@ def run(args: argparse.Namespace) -> int:
         replacement=replacement,
         lifetime_years=lifetime,
         bess_power_kw=opt.bess_power_kw,
+        timestep_hours=ts_timestep_hours,
+        intervals_per_day=ts_intervals_per_day,
+        intervals_per_year=ts_intervals_per_year,
     )
     offline_days = compute_deterministic_offline_days(bess_availability_pct)
     offline_days_yearly = [offline_days] * lifetime
 
     sim = run_simulation(
         config=engine_config,
-        pv_base_timeseries=p50_timeseries,
+        pv_base_timeseries=central_pv_timeseries,
         spot_prices_yearly=spot_prices_yearly,
         fixed_prices_yearly=fixed_prices_yearly,
         offline_days_yearly=offline_days_yearly,
@@ -909,22 +1077,30 @@ def run(args: argparse.Namespace) -> int:
         sigma_pv_avail = float(mc_cfg.get("sigma_pv_availability_pct", DEFAULT_MC_SIGMA_PV_AVAILABILITY_PCT)) / 100.0
         sigma_bess_avail = float(mc_cfg.get("sigma_bess_availability_pct", DEFAULT_MC_SIGMA_BESS_AVAILABILITY_PCT)) / 100.0
 
-        # Build scenario price mapping (using already-extended prices)
+        # Build scenario price mapping
         scenario_prices: dict[str, list[np.ndarray]] = {}
-        if price_scenarios_cfg:
-            for name, cfg in price_scenarios_cfg.items():
-                col = cfg["csv_column"]
-                scenario_prices[name] = _build_spot_prices_yearly(
-                    extended_prices[col], lifetime, inflation_rate, inflation_on_prices
-                )
-            mc_price_scenarios = {
-                k: {"csv_column": v["csv_column"], "weight": float(v["weight"])}
-                for k, v in price_scenarios_cfg.items()
-            }
+        mc_price_scenarios: dict[str, dict] = {}
+
+        if scenarios_list and scenario_prices_map:
+            # New flow: use per-scenario prices from parsed scenarios
+            scenario_prices = scenario_prices_map
+            mc_price_scenarios = mc_price_scenarios_from_list
         else:
-            # Single scenario
-            scenario_prices = {"mid": spot_prices_yearly}
-            mc_price_scenarios = {"mid": {"csv_column": mid_column, "weight": 1.0}}
+            # Legacy flow
+            price_scenarios_cfg = mc_cfg.get("price_scenarios", {})
+            if price_scenarios_cfg:
+                for name, cfg_item in price_scenarios_cfg.items():
+                    col = cfg_item["csv_column"]
+                    scenario_prices[name] = _build_spot_prices_yearly(
+                        extended_prices[col], lifetime, inflation_rate, inflation_on_prices
+                    )
+                mc_price_scenarios = {
+                    k: {"csv_column": v["csv_column"], "weight": float(v["weight"])}
+                    for k, v in price_scenarios_cfg.items()
+                }
+            else:
+                scenario_prices = {"mid": spot_prices_yearly}
+                mc_price_scenarios = {"mid": {"csv_column": "MID", "weight": 1.0}}
 
         mc_params = MCParams(
             iterations=mc_iterations,
@@ -945,6 +1121,7 @@ def run(args: argparse.Namespace) -> int:
             optimal=opt,
             mc_params=mc_params,
             scenario_prices=scenario_prices,
+            scenario_pv_timeseries=scenario_pv_map if scenario_pv_map else None,
         )
 
     # ------------------------------------------------------------------

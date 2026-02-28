@@ -18,6 +18,18 @@ DAYS_PER_YEAR: int = 365
 HOURS_PER_DAY: int = 24
 """Number of hourly timesteps per dispatch day."""
 
+INTERVALS_PER_HOUR: int = 4
+"""Number of sub-hourly intervals per hour (4 = quarter-hourly resolution)."""
+
+INTERVALS_PER_DAY: int = 96
+"""Number of quarter-hourly intervals per day (24 × 4)."""
+
+INTERVALS_PER_YEAR: int = 35040
+"""Number of quarter-hourly intervals per non-leap year (365 × 96)."""
+
+TIMESTEP_HOURS: float = 0.25
+"""Duration of one sub-hourly interval in hours (0.25 = 15 minutes)."""
+
 # ---------------------------------------------------------------------------
 # PVGIS API
 # ---------------------------------------------------------------------------
@@ -74,6 +86,10 @@ MC_WEIGHT_TOLERANCE: float = 1e-6
 # ---------------------------------------------------------------------------
 # BESS / dispatch defaults
 # ---------------------------------------------------------------------------
+
+DEFAULT_DEBT_SIZING_DOWNSIDE_PCT: float = 10.0
+"""Default downside percentage for debt sizing (replaces P90-based approach).
+Applied as a reduction factor to PV production for conservative DSCR calculation."""
 
 DEFAULT_BESS_AVAILABILITY_PCT: float = 100.0
 """Default BESS availability percentage (100 % = always online)."""

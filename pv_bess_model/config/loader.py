@@ -24,6 +24,7 @@ from pv_bess_model.config.defaults import (
     CSV_DELIMITER,
     CSV_INPUT_DECIMAL_SEPARATOR,
     CSV_TIMESTAMP_COLUMN,
+    DEFAULT_DEBT_SIZING_DOWNSIDE_PCT,
     KWH_TO_MWH,
     MIN_PRICE_TIMESERIES_HOURS,
     PRICE_UNIT_EUR_PER_KWH,
@@ -135,6 +136,13 @@ class ScenarioConfig:
         """Energy-to-power ratios (hours) for the grid search."""
         return [float(v) for v in self.bess["design_space"]["e_to_p_ratio_hours"]]
 
+    @property
+    def debt_sizing_downside_pct(self) -> float:
+        """Downside percentage for debt sizing (replaces debt_uses_p90)."""
+        return float(
+            self.finance.get("debt_sizing_downside_pct", DEFAULT_DEBT_SIZING_DOWNSIDE_PCT)
+        )
+
 
 @dataclass
 class PriceData:
@@ -170,6 +178,67 @@ class PriceData:
                 f"Price column '{name}' not found. Available columns: {available}"
             )
         return self.columns[name]
+
+
+@dataclass
+class PriceWeatherScenario:
+    """A single price-weather scenario mapping a price column to a weather year.
+
+    Each scenario combines a specific price timeseries (CSV column) with a
+    specific historical weather year.  The weight determines the sampling
+    probability in Monte Carlo.
+
+    Attributes
+    ----------
+    name:
+        Unique identifier for this scenario (e.g. ``"mid_2017"``).
+    label:
+        Human-readable label for output/display.
+    csv_column:
+        Column name in the price CSV file.
+    weather_year:
+        Historical calendar year for PVGIS weather data.
+    weight:
+        Sampling probability weight (all weights must sum to 1.0).
+    is_central:
+        Whether this is the central scenario used for grid search.
+    price_csv:
+        Path to the price CSV file (inherited from parent if not set).
+    price_unit:
+        Unit of prices in CSV (inherited from parent if not set).
+    inflation_on_input_data:
+        Whether to apply inflation to price data (inherited if not set).
+    csv_separator:
+        CSV delimiter (inherited from parent if not set).
+    csv_decimal:
+        CSV decimal separator (inherited from parent if not set).
+    csv_timestamp_column:
+        Timestamp column name (inherited from parent if not set).
+    csv_timestamp_format:
+        Timestamp format string (inherited from parent if not set).
+    pv_timeseries_15min:
+        Quarter-hourly PV production array (35 040 values), set after
+        PVGIS fetch + alignment + conversion.
+    price_timeseries_extended:
+        Extended price array covering the full project lifetime (€/kWh),
+        set after price CSV loading.
+    """
+
+    name: str
+    label: str
+    csv_column: str
+    weather_year: int
+    weight: float
+    is_central: bool = False
+    price_csv: str | None = None
+    price_unit: str | None = None
+    inflation_on_input_data: bool | None = None
+    csv_separator: str | None = None
+    csv_decimal: str | None = None
+    csv_timestamp_column: str | None = None
+    csv_timestamp_format: str | None = None
+    pv_timeseries_15min: np.ndarray | None = field(default=None, repr=False)
+    price_timeseries_extended: np.ndarray | None = field(default=None, repr=False)
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +344,74 @@ def load_scenario_dict(data: dict) -> ScenarioConfig:
         commissioning_year=int(ps["commissioning_year"]),
         path=None,
     )
+
+
+def parse_scenarios(scenario_config: ScenarioConfig) -> list[PriceWeatherScenario]:
+    """Parse the price-weather scenarios array from a validated scenario config.
+
+    Each scenario in the JSON ``price_inputs.scenarios`` array is parsed into a
+    :class:`PriceWeatherScenario` dataclass.  Fields not set at the scenario
+    level inherit defaults from the parent ``price_inputs`` block.
+
+    Parameters
+    ----------
+    scenario_config:
+        Validated scenario configuration.
+
+    Returns
+    -------
+    list[PriceWeatherScenario]
+        Parsed scenarios with inherited defaults.
+
+    Raises
+    ------
+    ValueError
+        When no scenarios are defined in the price_inputs block.
+    """
+    price_inputs = scenario_config.finance.get("price_inputs", {})
+    scenarios_raw = price_inputs.get("scenarios", [])
+
+    if not scenarios_raw:
+        raise ValueError(
+            "No scenarios defined in project_settings.finance.price_inputs.scenarios. "
+            "At least one scenario is required."
+        )
+
+    # Parent-level defaults
+    parent_csv = price_inputs.get("day_ahead_csv")
+    parent_unit = price_inputs.get("price_unit")
+    parent_inflation = price_inputs.get("inflation_on_input_data", False)
+    parent_sep = price_inputs.get("csv_separator")
+    parent_dec = price_inputs.get("csv_decimal")
+    parent_ts_col = price_inputs.get("csv_timestamp_column")
+    parent_ts_fmt = price_inputs.get("csv_timestamp_format")
+
+    result: list[PriceWeatherScenario] = []
+    for s in scenarios_raw:
+        result.append(
+            PriceWeatherScenario(
+                name=s["name"],
+                label=s.get("label", s["name"]),
+                csv_column=s["csv_column"],
+                weather_year=int(s["weather_year"]),
+                weight=float(s["weight"]),
+                is_central=bool(s.get("is_central", False)),
+                price_csv=s.get("price_csv", parent_csv),
+                price_unit=s.get("price_unit", parent_unit),
+                inflation_on_input_data=s.get("inflation_on_input_data", parent_inflation),
+                csv_separator=s.get("csv_separator", parent_sep),
+                csv_decimal=s.get("csv_decimal", parent_dec),
+                csv_timestamp_column=s.get("csv_timestamp_column", parent_ts_col),
+                csv_timestamp_format=s.get("csv_timestamp_format", parent_ts_fmt),
+            )
+        )
+
+    logger.info(
+        "Parsed %d price-weather scenario(s): %s",
+        len(result),
+        [s.name for s in result],
+    )
+    return result
 
 
 def load_price_csv(

@@ -6,7 +6,7 @@ Five output files are produced per scenario run:
 2. ``{name}_cashflows.csv``       – One row per project year.
 3. ``{name}_grid_search.csv``     – One row per (scale, E/P ratio) combination.
 4. ``{name}_monte_carlo.csv``     – One row per MC iteration (optional).
-5. ``{name}_dispatch_sample.csv`` – 8 760 hourly rows for year 1 (optional).
+5. ``{name}_dispatch_sample.csv`` – Dispatch rows for year 1 (8 760 hourly or 35 040 quarter-hourly, optional).
 
 All monetary values are in EUR, energy in kWh (or MWh where noted), prices in
 €/kWh.  None values are written as empty strings.
@@ -369,14 +369,18 @@ def write_dispatch_sample_csv(
     start_year: int = 2025,
     config: CsvConfig | None = None,
 ) -> None:
-    """Write the 8 760-row hourly dispatch sample for year 1.
+    """Write the dispatch sample for year 1.
+
+    The number of rows is determined dynamically from the sample array length
+    (8 760 for hourly or 35 040 for 15-min resolution).  The timestamp
+    frequency is inferred accordingly.
 
     Parameters
     ----------
     path:
         Destination file path.
     hourly_sample:
-        Hourly dispatch arrays from the simulation (year 1).
+        Dispatch arrays from the simulation (year 1).
     start_year:
         Calendar year for the timestamp column (default 2025).
     config:
@@ -385,14 +389,22 @@ def write_dispatch_sample_csv(
     cfg = config or CsvConfig()
     d = cfg.decimal
 
+    n_intervals = len(hourly_sample.pv_production)
+
+    # Determine timestamp frequency from array length
+    if n_intervals == HOURS_PER_YEAR:
+        freq = "h"
+    else:
+        freq = "15min"
+
     timestamps = pd.date_range(
         start=f"{start_year}-01-01 00:00:00",
-        periods=HOURS_PER_YEAR,
-        freq="h",
+        periods=n_intervals,
+        freq=freq,
     )
 
     rows = []
-    for h in range(HOURS_PER_YEAR):
+    for h in range(n_intervals):
         rows.append({
             cfg.timestamp_column: timestamps[h].strftime(cfg.timestamp_format),
             "pv_production_kwh": fmt_float(float(hourly_sample.pv_production[h]), decimal=d),
@@ -419,7 +431,7 @@ def write_dispatch_sample_csv(
         })
 
     _write_dicts(path, rows, delimiter=cfg.delimiter)
-    logger.info("Wrote dispatch sample CSV (%d rows): %s", HOURS_PER_YEAR, path)
+    logger.info("Wrote dispatch sample CSV (%d rows): %s", n_intervals, path)
 
 
 # ---------------------------------------------------------------------------

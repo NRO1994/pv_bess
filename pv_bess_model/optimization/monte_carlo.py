@@ -293,8 +293,14 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         else:
             pv_offline_days_yearly.append(set())
 
-    # --- PV timeseries (no yield factor, offline days handle availability) ---
-    pv_timeseries = base.pv_base_timeseries_p50
+    # --- PV timeseries: use scenario-specific timeseries if available ---
+    scenario_pv: dict[str, np.ndarray] | None = _MC_WORKER_STATE.get(
+        "scenario_pv_timeseries"
+    )
+    if scenario_pv is not None and scenario_name in scenario_pv:
+        pv_timeseries = scenario_pv[scenario_name]
+    else:
+        pv_timeseries = base.pv_base_timeseries
 
     # --- Scale CAPEX / OPEX per asset ---
     capex_pv = optimal.capex_pv * capex_factor_pv
@@ -340,6 +346,9 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         lifetime_years=base.lifetime_years,
         bess_power_kw=optimal.bess_power_kw,
         grid_loss_factor=base.grid_loss_factor,
+        timestep_hours=base.timestep_hours,
+        intervals_per_day=base.intervals_per_day,
+        intervals_per_year=base.intervals_per_year,
     )
 
     # --- Run dispatch simulation ---
@@ -519,6 +528,7 @@ def run_monte_carlo(
     optimal: GridPointResult,
     mc_params: MCParams,
     scenario_prices: dict[str, list[np.ndarray]],
+    scenario_pv_timeseries: dict[str, np.ndarray] | None = None,
 ) -> MCResult:
     """Run the Monte Carlo simulation on the optimal BESS configuration.
 
@@ -542,8 +552,14 @@ def run_monte_carlo(
         Monte Carlo hyper-parameters (iterations, σ values, price scenarios).
     scenario_prices:
         Mapping from scenario name (e.g. ``"mid"``) to a list of per-year
-        spot price arrays (each shape (8760,), in €/kWh).  Length of each
-        list must equal ``base_config.lifetime_years``.
+        spot price arrays (each shape ``(intervals_per_year,)``, in €/kWh).
+        Length of each list must equal ``base_config.lifetime_years``.
+    scenario_pv_timeseries:
+        Optional mapping from scenario name to the undegraded PV production
+        timeseries for that scenario.  Each array has shape
+        ``(intervals_per_year,)`` in kWh.  When provided, each MC iteration
+        uses the PV timeseries from the sampled scenario.  When ``None``,
+        all iterations use ``base_config.pv_base_timeseries``.
 
     Returns
     -------
@@ -570,12 +586,14 @@ def run_monte_carlo(
         mc_params.max_workers,
     )
 
-    shared_state = {
+    shared_state: dict = {
         "grid_config": base_config,
         "optimal": optimal,
         "scenario_prices": scenario_prices,
         "mc_params": mc_params,
     }
+    if scenario_pv_timeseries is not None:
+        shared_state["scenario_pv_timeseries"] = scenario_pv_timeseries
 
     iteration_indices = list(range(1, mc_params.iterations + 1))
     results: list[MCIterationResult] = []

@@ -33,7 +33,7 @@ auf früheren aufbauen.
 | S2-10 | Debt Service Split (Interest + Repayment) | Mittel | Keine | ERLEDIGT |
 | S2-11 | Grid Search Skip bei Einzel-Werten | Klein | Keine | ERLEDIGT |
 
-### Phase 4: Fixes Session 2 – Finanzmodell & Strukturelle Änderungen
+### Phase 4: Fixes Session 2 – Finanzmodell & Strukturelle Änderungen (ZU PRÜFEN!!!)
 
 | # | Item | Aufwand | Abhängigkeiten | Status     |
 |---|------|---------|----------------|------------|
@@ -42,11 +42,11 @@ auf früheren aufbauen.
 | S2-13 | BESS-Replacement fremdfinanzieren | Groß | S2-10, S2-15 | ERLEDIGT   |
 | S2-03 | BESS-Only Cases ermöglichen | Groß | Keine | ERLEDIGT   |
 
-### Phase 5: Großes Datenmodell-Refactoring
+### Phase 5: Großes Datenmodell-Refactoring (abgeschlossen)
 
-| # | Feature | Aufwand | Abhängigkeiten | Status |
-|---|---------|---------|----------------|--------|
-| 06 | [Preisszenario-Wetterjahr-Mapping](06_price_weather_scenario_mapping.md) | Groß (8-12h) | 02, 05, S2-17 | OFFEN |
+| # | Feature | Aufwand | Abhängigkeiten | Status   |
+|---|---------|---------|----------------|----------|
+| 06 | [Preisszenario-Wetterjahr-Mapping](06_price_weather_scenario_mapping.md) | Groß (8-12h) | 02, 05, S2-17 | ERLEDIGT |
 
 ### Phase 6: Neue Analysen
 

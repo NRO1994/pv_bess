@@ -30,6 +30,8 @@ from pv_bess_model.config.defaults import (
     DEFAULT_DISCOUNT_RATE,
     DAYS_PER_YEAR,
     GRID_SEARCH_SCALE_ZERO_PCT,
+    HOURS_PER_DAY,
+    HOURS_PER_YEAR,
 )
 from pv_bess_model.dispatch.engine import (
     DispatchEngineConfig,
@@ -68,8 +70,10 @@ class GridSearchConfig:
         Energy-to-power ratios in hours. Example: [1, 2, 4].
     pv_peak_kwp:
         PV installed peak power in kWp.
-    pv_base_timeseries_p50:
-        Undegraded P50 hourly PV production timeseries, shape (8760,) in kWh.
+    pv_base_timeseries:
+        Undegraded PV production timeseries (central scenario), shape
+        ``(intervals_per_year,)`` in kWh.  Typically 35 040 values at 15-min
+        resolution or 8 760 at hourly resolution.
     pv_degradation_rate:
         Annual PV production degradation rate as a fraction (e.g. 0.004).
     pv_costs_capex:
@@ -139,14 +143,15 @@ class GridSearchConfig:
         German trade tax Messzahl (e.g. 0.035).
     gewerbesteuer_hebesatz:
         German trade tax Hebesatz (e.g. 400).
-    debt_uses_p90:
-        If True and P90 timeseries is provided, compute DSCR from P90
-        production for conservative debt coverage analysis.
-    pv_base_timeseries_p90:
-        Undegraded P90 hourly PV production timeseries (kWh), or None.
-    spot_prices_yearly_p90:
-        Per-year spot prices for the P90 simulation. If None, the P50 prices
-        are reused.
+    debt_sizing_downside_pct:
+        Percentage by which PV production is reduced for conservative DSCR
+        calculation (e.g. 10.0 means 10 % downside).  0.0 disables.
+    timestep_hours:
+        Duration of one dispatch interval in hours (0.25 for 15-min).
+    intervals_per_day:
+        Number of dispatch intervals per day (96 for 15-min, 24 for hourly).
+    intervals_per_year:
+        Number of dispatch intervals per year (35 040 for 15-min, 8 760 for hourly).
     max_workers:
         Number of parallel worker processes. None = ``os.cpu_count()``.
     bess_absolute_power_kw:
@@ -165,7 +170,7 @@ class GridSearchConfig:
 
     # PV
     pv_peak_kwp: float
-    pv_base_timeseries_p50: np.ndarray
+    pv_base_timeseries: np.ndarray
     pv_degradation_rate: float
     pv_costs_capex: dict
     pv_costs_opex: dict
@@ -224,10 +229,13 @@ class GridSearchConfig:
     # Cap prices per year (PPA Collar; 0.0 = no cap / unbounded upside)
     cap_prices_yearly: list[float] = field(default_factory=list)
 
-    # P90 for conservative debt analysis (optional)
-    debt_uses_p90: bool = False
-    pv_base_timeseries_p90: np.ndarray | None = None
-    spot_prices_yearly_p90: list[np.ndarray] | None = None
+    # Conservative debt sizing (downside PV production)
+    debt_sizing_downside_pct: float = 0.0
+
+    # Timestep configuration
+    timestep_hours: float = 1.0
+    intervals_per_day: int = HOURS_PER_DAY
+    intervals_per_year: int = HOURS_PER_YEAR
 
     # Parallelism
     max_workers: int | None = None
@@ -276,9 +284,9 @@ class GridPointResult:
     npv:
         NPV at the configured discount rate in €.
     dscr_min:
-        Minimum DSCR over the loan tenor (P90 if ``debt_uses_p90``).
+        Minimum DSCR over the loan tenor (downside if ``debt_sizing_downside_pct > 0``).
     dscr_avg:
-        Average DSCR over the loan tenor (P90 if ``debt_uses_p90``).
+        Average DSCR over the loan tenor (downside if ``debt_sizing_downside_pct > 0``).
     is_optimal:
         True for the combination with the highest Equity IRR.
     """
@@ -397,9 +405,13 @@ class _GridPointArgs:
     # BESS optimization fee
     optimization_fee_pct: float = 0.0
 
-    # P90 (optional)
-    pv_base_timeseries_p90: np.ndarray | None = None
-    spot_prices_yearly_p90: list | None = None  # list[np.ndarray] | None
+    # Conservative debt sizing (downside PV production)
+    debt_sizing_downside_pct: float = 0.0
+
+    # Timestep configuration
+    timestep_hours: float = 1.0
+    intervals_per_day: int = 24
+    intervals_per_year: int = 8760
 
 
 def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
@@ -442,9 +454,12 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         lifetime_years=args.lifetime_years,
         bess_power_kw=args.bess_power_kw,
         grid_loss_factor=args.grid_loss_factor,
+        timestep_hours=args.timestep_hours,
+        intervals_per_day=args.intervals_per_day,
+        intervals_per_year=args.intervals_per_year,
     )
 
-    # P50 simulation – used for equity cashflows
+    # Central scenario simulation – used for equity cashflows
     sim_p50 = run_simulation(
         config=engine_config,
         pv_base_timeseries=args.pv_base_timeseries,
@@ -459,20 +474,24 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
     annual_bess_spot_revenues_p50 = [r.bess_spot_revenue for r in sim_p50.annual_results]
     total_production_kwh = sum(r.pv_production for r in sim_p50.annual_results)
 
-    # Optional P90 simulation – used for conservative DSCR calculation
-    annual_revenues_p90: list[float] | None = None
-    if args.pv_base_timeseries_p90 is not None:
-        p90_prices = args.spot_prices_yearly_p90 or args.spot_prices_yearly
-        sim_p90 = run_simulation(
+    # Optional downside simulation – used for conservative DSCR calculation
+    annual_revenues_downside: list[float] | None = None
+    if args.debt_sizing_downside_pct > 0.0:
+        pv_downside = args.pv_base_timeseries * (
+            1.0 - args.debt_sizing_downside_pct / 100.0
+        )
+        sim_downside = run_simulation(
             config=engine_config,
-            pv_base_timeseries=args.pv_base_timeseries_p90,
-            spot_prices_yearly=p90_prices,
+            pv_base_timeseries=pv_downside,
+            spot_prices_yearly=args.spot_prices_yearly,
             fixed_prices_yearly=args.fixed_prices_yearly,
             offline_days_yearly=args.offline_days_yearly,
             goo_prices_yearly=args.goo_prices_yearly,
             cap_prices_yearly=args.cap_prices_yearly,
         )
-        annual_revenues_p90 = [r.total_revenue for r in sim_p90.annual_results]
+        annual_revenues_downside = [
+            r.total_revenue for r in sim_downside.annual_results
+        ]
 
     # Debt schedule (always based on CAPEX × leverage)
     debt_schedule = build_annuity_schedule(
@@ -539,10 +558,10 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
     dscr_min = metrics.dscr_min
     dscr_avg = metrics.dscr_avg
 
-    # Override DSCR with P90 revenues for conservative debt coverage
-    if annual_revenues_p90 is not None:
+    # Override DSCR with downside revenues for conservative debt coverage
+    if annual_revenues_downside is not None:
         dscr_min, dscr_avg = calculate_dscr(
-            annual_revenues=annual_revenues_p90,
+            annual_revenues=annual_revenues_downside,
             annual_opex=annual_opex,
             annual_debt_service=annual_debt_service,
         )
@@ -689,7 +708,7 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     replacement_eur_per_kwh=config.replacement_eur_per_kwh,
                     replacement_capacity_factor_pct=config.replacement_capacity_factor_pct,
                     lifetime_years=config.lifetime_years,
-                    pv_base_timeseries=config.pv_base_timeseries_p50,
+                    pv_base_timeseries=config.pv_base_timeseries,
                     spot_prices_yearly=config.spot_prices_yearly,
                     fixed_prices_yearly=config.fixed_prices_yearly,
                     goo_prices_yearly=config.goo_prices_yearly if config.goo_prices_yearly else [0.0] * config.lifetime_years,
@@ -718,16 +737,10 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     koerperschaftsteuer_pct=config.koerperschaftsteuer_pct,
                     solidaritaetszuschlag_pct=config.solidaritaetszuschlag_pct,
                     optimization_fee_pct=config.optimization_fee_pct,
-                    pv_base_timeseries_p90=(
-                        config.pv_base_timeseries_p90
-                        if config.debt_uses_p90
-                        else None
-                    ),
-                    spot_prices_yearly_p90=(
-                        config.spot_prices_yearly_p90
-                        if config.debt_uses_p90
-                        else None
-                    ),
+                    debt_sizing_downside_pct=config.debt_sizing_downside_pct,
+                    timestep_hours=config.timestep_hours,
+                    intervals_per_day=config.intervals_per_day,
+                    intervals_per_year=config.intervals_per_year,
                 )
             )
 

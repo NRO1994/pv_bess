@@ -166,6 +166,86 @@ class PVGISClient:
         raw = self._get_with_cache(params)
         return self._parse_response(raw)
 
+    def fetch_single_year(
+        self,
+        year: int,
+        latitude: float,
+        longitude: float,
+        peak_power_kwp: float,
+        mounting_type: str,
+        azimuth_deg: float,
+        tilt_deg: float,
+        pvgis_database: str = "PVGIS-SARAH2",
+    ) -> np.ndarray:
+        """Fetch hourly PV production for a single historical year.
+
+        Uses ``startyear`` and ``endyear`` PVGIS parameters to request
+        exactly one calendar year.  System loss is always set to 0.0
+        (losses are handled externally).
+
+        The cache key automatically includes the year via the parameter hash.
+
+        Parameters
+        ----------
+        year:
+            Calendar year to fetch (e.g. 2017).
+        latitude:
+            Site latitude in decimal degrees.
+        longitude:
+            Site longitude in decimal degrees.
+        peak_power_kwp:
+            PV system peak power in kWp.
+        mounting_type:
+            ``"free"`` or ``"building"``.
+        azimuth_deg:
+            Panel azimuth in degrees (0 = south).
+        tilt_deg:
+            Panel tilt from horizontal in degrees.
+        pvgis_database:
+            PVGIS radiation database.
+
+        Returns
+        -------
+        numpy.ndarray
+            Hourly production array of exactly 8 760 elements (kWh).
+
+        Raises
+        ------
+        PVGISError
+            On API errors or exhausted retries.
+        ValueError
+            When *mounting_type* is not recognised.
+        """
+        params = self._build_params(
+            latitude=latitude,
+            longitude=longitude,
+            peak_power_kwp=peak_power_kwp,
+            system_loss_pct=0.0,
+            mounting_type=mounting_type,
+            azimuth_deg=azimuth_deg,
+            tilt_deg=tilt_deg,
+            pvgis_database=pvgis_database,
+        )
+        params["startyear"] = year
+        params["endyear"] = year
+
+        raw = self._get_with_cache(params)
+        yearly = self._parse_response(raw)
+
+        if year not in yearly:
+            available = sorted(yearly.keys())
+            raise PVGISError(
+                f"PVGIS response did not contain data for year {year}. "
+                f"Available years: {available}."
+            )
+
+        logger.info(
+            "Fetched single-year PVGIS data for %d: %.0f kWh total.",
+            year,
+            float(np.sum(yearly[year])),
+        )
+        return yearly[year]
+
     # ------------------------------------------------------------------
     # Parameter construction
     # ------------------------------------------------------------------

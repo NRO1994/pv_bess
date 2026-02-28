@@ -65,7 +65,7 @@ def _make_grid_config(
         scale_pct_of_pv=scales,
         e_to_p_ratio_hours=e_to_p,
         pv_peak_kwp=pv_peak_kwp,
-        pv_base_timeseries_p50=pv,
+        pv_base_timeseries=pv,
         pv_degradation_rate=0.0,
         pv_costs_capex={"eur_per_kw": 100.0} if pv_peak_kwp > 0 else {},
         pv_costs_opex={},
@@ -102,7 +102,7 @@ def _make_grid_config(
         gewerbesteuer_hebesatz=400,
         koerperschaftsteuer_pct=15.0,
         solidaritaetszuschlag_pct=5.5,
-        debt_uses_p90=False,
+
         max_workers=1,
         bess_absolute_power_kw=absolute_power_kw,
         bess_absolute_capacity_kwh=absolute_capacity_kwh,
@@ -429,4 +429,4 @@ class TestBessOnlyZeroPvTimeseries:
             absolute_capacity_kwh=1_000.0,
         )
         # Verify that PV timeseries is indeed all zeros
-        assert np.all(config.pv_base_timeseries_p50 == 0.0)
+        assert np.all(config.pv_base_timeseries == 0.0)

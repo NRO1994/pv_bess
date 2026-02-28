@@ -18,11 +18,17 @@ Typical usage::
 
 from __future__ import annotations
 
+import datetime
 import logging
 
 import numpy as np
 
-from pv_bess_model.config.defaults import HOURS_PER_YEAR
+from pv_bess_model.config.defaults import (
+    HOURS_PER_DAY,
+    HOURS_PER_YEAR,
+    INTERVALS_PER_HOUR,
+    INTERVALS_PER_YEAR,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,5 +109,93 @@ def _validate_arrays(
             f"values. The following years have incorrect lengths: {details}. "
             "Use pvgis_client._strip_leap_day() to normalise each year."
         )
+
+
+# ---------------------------------------------------------------------------
+# Weather-year alignment
+# ---------------------------------------------------------------------------
+
+
+def align_weather_to_forecast_year(
+    weather_ts: np.ndarray,
+    weather_year: int,
+    forecast_year: int,
+) -> np.ndarray:
+    """Align a historical weather-year timeseries to a forecast year.
+
+    The alignment shifts the hourly timeseries so that the weekday pattern
+    of the weather year matches the forecast year.  This is a circular shift
+    by ``(dow_forecast - dow_weather) % 7`` days worth of hours.
+
+    Parameters
+    ----------
+    weather_ts:
+        Hourly production array of length :data:`HOURS_PER_YEAR` (8 760).
+    weather_year:
+        Calendar year of the weather data (e.g. 2017).
+    forecast_year:
+        Target calendar year (e.g. 2030).
+
+    Returns
+    -------
+    numpy.ndarray
+        Shifted array of length 8 760.
+
+    Raises
+    ------
+    ValueError
+        When *weather_ts* does not have exactly 8 760 elements.
+    """
+    if len(weather_ts) != HOURS_PER_YEAR:
+        raise ValueError(
+            f"weather_ts must have exactly {HOURS_PER_YEAR} elements, "
+            f"got {len(weather_ts)}."
+        )
+
+    dow_weather = datetime.date(weather_year, 1, 1).weekday()
+    dow_forecast = datetime.date(forecast_year, 1, 1).weekday()
+    shift_days = (dow_forecast - dow_weather) % 7
+    shift_hours = shift_days * HOURS_PER_DAY
+
+    if shift_hours == 0:
+        return weather_ts.copy()
+
+    return np.concatenate([weather_ts[shift_hours:], weather_ts[:shift_hours]])
+
+
+# ---------------------------------------------------------------------------
+# Hourly → quarter-hourly conversion
+# ---------------------------------------------------------------------------
+
+
+def hourly_to_quarter_hourly(hourly_ts: np.ndarray) -> np.ndarray:
+    """Convert an hourly timeseries to quarter-hourly resolution.
+
+    Each hourly energy value is distributed equally across 4 quarter-hourly
+    intervals: ``value_15min = value_1h / 4``.  This preserves the total
+    energy sum: ``sum(result) == sum(hourly_ts)``.
+
+    Parameters
+    ----------
+    hourly_ts:
+        Hourly production array of length :data:`HOURS_PER_YEAR` (8 760).
+
+    Returns
+    -------
+    numpy.ndarray
+        Quarter-hourly array of length :data:`INTERVALS_PER_YEAR` (35 040).
+
+    Raises
+    ------
+    ValueError
+        When *hourly_ts* does not have exactly 8 760 elements.
+    """
+    if len(hourly_ts) != HOURS_PER_YEAR:
+        raise ValueError(
+            f"hourly_ts must have exactly {HOURS_PER_YEAR} elements, "
+            f"got {len(hourly_ts)}."
+        )
+
+    return np.repeat(hourly_ts / INTERVALS_PER_HOUR, INTERVALS_PER_HOUR)
 
 

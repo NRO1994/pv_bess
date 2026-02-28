@@ -129,6 +129,9 @@ class DispatchEngineConfig:
     lifetime_years: int
     bess_power_kw: float
     grid_loss_factor: float = 1.0
+    timestep_hours: float = 1.0
+    intervals_per_day: int = 24
+    intervals_per_year: int = 8760
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +279,7 @@ def _bess_params_for_capacity(
         round_trip_efficiency=config.bess_rte,
         soc_min_kwh=degraded_capacity_kwh * config.bess_min_soc_pct / 100.0,
         soc_max_kwh=degraded_capacity_kwh * config.bess_max_soc_pct / 100.0,
+        timestep_hours=config.timestep_hours,
     )
 
 
@@ -324,9 +328,9 @@ def _clip_soc_to_limits(
     return new_soc, new_green, new_grey
 
 
-def _empty_hourly_sample() -> HourlySample:
+def _empty_hourly_sample(intervals_per_year: int = HOURS_PER_YEAR) -> HourlySample:
     """Create an all-zeros hourly sample (fallback)."""
-    z = np.zeros(HOURS_PER_YEAR)
+    z = np.zeros(intervals_per_year)
     return HourlySample(
         pv_production=z.copy(),
         spot_prices=z.copy(),
@@ -495,18 +499,20 @@ def run_simulation(
         offline_days = offline_days_yearly[year_idx]
 
         # ---- 6. Prepare hourly sample arrays (year 1 only) ----
+        intervals_per_year = config.intervals_per_year
+        intervals_per_day = config.intervals_per_day
         is_sample_year = year == DISPATCH_SAMPLE_YEAR
         if is_sample_year:
-            h_charge_pv = np.zeros(HOURS_PER_YEAR)
-            h_charge_grid = np.zeros(HOURS_PER_YEAR)
-            h_discharge_green = np.zeros(HOURS_PER_YEAR)
-            h_discharge_grey = np.zeros(HOURS_PER_YEAR)
-            h_export_pv = np.zeros(HOURS_PER_YEAR)
-            h_curtail = np.zeros(HOURS_PER_YEAR)
-            h_soc = np.zeros(HOURS_PER_YEAR)
-            h_soc_green = np.zeros(HOURS_PER_YEAR)
-            h_soc_grey = np.zeros(HOURS_PER_YEAR)
-            h_revenue = np.zeros(HOURS_PER_YEAR)
+            h_charge_pv = np.zeros(intervals_per_year)
+            h_charge_grid = np.zeros(intervals_per_year)
+            h_discharge_green = np.zeros(intervals_per_year)
+            h_discharge_grey = np.zeros(intervals_per_year)
+            h_export_pv = np.zeros(intervals_per_year)
+            h_curtail = np.zeros(intervals_per_year)
+            h_soc = np.zeros(intervals_per_year)
+            h_soc_green = np.zeros(intervals_per_year)
+            h_soc_grey = np.zeros(intervals_per_year)
+            h_revenue = np.zeros(intervals_per_year)
 
         # ---- 7. Annual accumulators ----
         year_revenue_pv = 0.0
@@ -523,8 +529,8 @@ def run_simulation(
 
         # ---- 8. Day loop (365 days) ----
         for day in range(DAYS_PER_YEAR):
-            h_start = day * HOURS_PER_DAY
-            h_end = h_start + HOURS_PER_DAY
+            h_start = day * intervals_per_day
+            h_end = h_start + intervals_per_day
 
             pv_day = pv_year[h_start:h_end].copy()
             spot_day = spot_prices[h_start:h_end]
@@ -551,6 +557,7 @@ def run_simulation(
                     goo_premium_eur_per_kwh=goo_price,
                     price_cap_eur_per_kwh=cap_price,
                     grid_loss_factor=config.grid_loss_factor,
+                    timestep_hours=config.timestep_hours,
                 )
             else:
                 result = optimize_day(
@@ -692,7 +699,7 @@ def run_simulation(
 
     # Fallback if sample year was never reached
     if hourly_sample is None:
-        hourly_sample = _empty_hourly_sample()
+        hourly_sample = _empty_hourly_sample(config.intervals_per_year)
 
     return SimulationResult(
         annual_results=annual_results,

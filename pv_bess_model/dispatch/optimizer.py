@@ -123,6 +123,7 @@ class BessParams:
     round_trip_efficiency: float
     soc_min_kwh: float
     soc_max_kwh: float
+    timestep_hours: float = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +245,7 @@ def _build_green_lp(
     max_discharge_kw: float,
     grid_max_kw: float,
     grid_loss_factor: float = 1.0,
+    timestep_hours: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Construct the Green-Mode LP matrices.
 
@@ -295,26 +297,31 @@ def _build_green_lp(
         ub_rows.append(row2)
         ub_rhs.append(start_soc_kwh - soc_min_kwh)
 
+    # Energy limit per timestep = power (kW) × timestep_hours (h) → kWh
+    max_charge_energy = max_charge_kw * timestep_hours
+    max_discharge_energy = max_discharge_kw * timestep_hours
+    grid_max_energy = grid_max_kw * timestep_hours
+
     for t in range(T):
-        # Charge power limit: charge_pv[t] ≤ max_charge_kw
+        # Charge power limit: charge_pv[t] ≤ max_charge_energy
         row = np.zeros(n_vars)
         row[t] = 1.0
         ub_rows.append(row)
-        ub_rhs.append(max_charge_kw)
+        ub_rhs.append(max_charge_energy)
 
-        # Discharge power limit: discharge_green[t] ≤ max_discharge_kw
+        # Discharge power limit: discharge_green[t] ≤ max_discharge_energy
         row = np.zeros(n_vars)
         row[T + t] = 1.0
         ub_rows.append(row)
-        ub_rhs.append(max_discharge_kw)
+        ub_rhs.append(max_discharge_energy)
 
     for t in range(T):
-        # Grid connection limit: export_pv[t] × glf + discharge_green[t] × RTE ≤ grid_max
+        # Grid connection limit: export_pv[t] × glf + discharge_green[t] × RTE ≤ grid_max_energy
         row = np.zeros(n_vars)
         row[2 * T + t] = grid_loss_factor   # export_pv[t] × glf
         row[T + t] = rte                     # discharge_green[t] × RTE
         ub_rows.append(row)
-        ub_rhs.append(grid_max_kw)
+        ub_rhs.append(grid_max_energy)
 
     A_ub = np.array(ub_rows)
     b_ub = np.array(ub_rhs)
@@ -340,6 +347,7 @@ def _build_grey_lp(
     max_discharge_kw: float,
     grid_max_kw: float,
     grid_loss_factor: float = 1.0,
+    timestep_hours: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Construct the Grey-Mode LP matrices.
 
@@ -415,29 +423,34 @@ def _build_grey_lp(
         ub_rows.append(row)
         ub_rhs.append(start_total - soc_min_kwh)
 
+    # Energy limit per timestep = power (kW) × timestep_hours (h) → kWh
+    max_charge_energy = max_charge_kw * timestep_hours
+    max_discharge_energy = max_discharge_kw * timestep_hours
+    grid_max_energy = grid_max_kw * timestep_hours
+
     for t in range(T):
-        # Charge power: charge_pv[t] + charge_grid[t] ≤ max_charge_kw
+        # Charge power: charge_pv[t] + charge_grid[t] ≤ max_charge_energy
         row = np.zeros(n_vars)
         row[t] = 1.0
         row[4 * T + t] = 1.0
         ub_rows.append(row)
-        ub_rhs.append(max_charge_kw)
+        ub_rhs.append(max_charge_energy)
 
-        # Discharge power: discharge_green[t] + discharge_grey[t] ≤ max_discharge_kw
+        # Discharge power: discharge_green[t] + discharge_grey[t] ≤ max_discharge_energy
         row = np.zeros(n_vars)
         row[T + t] = 1.0
         row[5 * T + t] = 1.0
         ub_rows.append(row)
-        ub_rhs.append(max_discharge_kw)
+        ub_rhs.append(max_discharge_energy)
 
     for t in range(T):
-        # Grid connection: export_pv[t] × glf + (disch_green[t] + disch_grey[t]) × RTE ≤ grid_max
+        # Grid connection: export_pv[t] × glf + (disch_green[t] + disch_grey[t]) × RTE ≤ grid_max_energy
         row = np.zeros(n_vars)
         row[2 * T + t] = grid_loss_factor   # export_pv × glf
         row[T + t] = rte
         row[5 * T + t] = rte
         ub_rows.append(row)
-        ub_rhs.append(grid_max_kw)
+        ub_rhs.append(grid_max_energy)
 
     A_ub = np.array(ub_rows)
     b_ub = np.array(ub_rhs)
@@ -645,6 +658,7 @@ def optimize_day(
             max_discharge_kw=bess.max_discharge_kw,
             grid_max_kw=grid_max_kw,
             grid_loss_factor=grid_loss_factor,
+            timestep_hours=bess.timestep_hours,
         )
         n_vars = 4 * T
         soc_green_start = start_soc_kwh
@@ -669,6 +683,7 @@ def optimize_day(
             max_discharge_kw=bess.max_discharge_kw,
             grid_max_kw=grid_max_kw,
             grid_loss_factor=grid_loss_factor,
+            timestep_hours=bess.timestep_hours,
         )
         n_vars = 6 * T
     else:
@@ -704,6 +719,7 @@ def optimize_day(
             goo_premium_eur_per_kwh=goo_premium_eur_per_kwh,
             price_cap_eur_per_kwh=price_cap_eur_per_kwh,
             grid_loss_factor=grid_loss_factor,
+            timestep_hours=bess.timestep_hours,
         )
 
     x = result.x
@@ -733,6 +749,7 @@ def dispatch_offline_day(
     goo_premium_eur_per_kwh: float = 0.0,
     price_cap_eur_per_kwh: float = 0.0,
     grid_loss_factor: float = 1.0,
+    timestep_hours: float = 1.0,
 ) -> DailyDispatchResult:
     """Produce dispatch results for a BESS-offline day.
 
@@ -776,7 +793,8 @@ def dispatch_offline_day(
         start_soc_grey_kwh if start_soc_grey_kwh is not None else 0.0
     )
 
-    export_pv = np.minimum(pv_production_kwh, grid_max_kw)
+    grid_max_energy = grid_max_kw * timestep_hours
+    export_pv = np.minimum(pv_production_kwh, grid_max_energy)
     curtail = pv_production_kwh - export_pv
 
     # Effective price per kWh: clip(spot, fixed, cap) + goo

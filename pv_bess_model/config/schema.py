@@ -39,16 +39,6 @@ _CAPEX_BLOCK = {
     "additionalProperties": False,
 }
 
-_PRICE_SCENARIO_ENTRY = {
-    "type": "object",
-    "required": ["csv_column", "weight"],
-    "properties": {
-        "csv_column": {"type": "string", "minLength": 1},
-        "weight": {"type": "number", "minimum": 0, "maximum": 1},
-    },
-    "additionalProperties": False,
-}
-
 _MONTE_CARLO = {
     "type": "object",
     "required": ["enabled"],
@@ -63,8 +53,15 @@ _MONTE_CARLO = {
         "sigma_bess_availability_pct": {"type": "number", "minimum": 0},
         "price_scenarios": {
             "type": "object",
-            "minProperties": 1,
-            "additionalProperties": _PRICE_SCENARIO_ENTRY,
+            "additionalProperties": {
+                "type": "object",
+                "required": ["csv_column", "weight"],
+                "properties": {
+                    "csv_column": {"type": "string", "minLength": 1},
+                    "weight": {"type": "number", "minimum": 0, "maximum": 1},
+                },
+                "additionalProperties": False,
+            },
         },
     },
     "additionalProperties": False,
@@ -316,6 +313,31 @@ _REVENUE_STREAMS = {
     "additionalProperties": False,
 }
 
+_PRICE_WEATHER_SCENARIO = {
+    "type": "object",
+    "required": ["name", "csv_column", "weather_year", "weight"],
+    "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "label": {"type": "string"},
+        "csv_column": {"type": "string", "minLength": 1},
+        "weather_year": {"type": "integer", "minimum": 1900},
+        "weight": {"type": "number", "minimum": 0, "maximum": 1},
+        "is_central": {"type": "boolean"},
+        # Per-scenario overrides (inherited from parent block if absent)
+        "price_csv": {"type": "string", "minLength": 1},
+        "price_unit": {
+            "type": "string",
+            "enum": ["eur_per_mwh", "eur_per_kwh"],
+        },
+        "inflation_on_input_data": {"type": "boolean"},
+        "csv_separator": {"type": "string", "minLength": 1},
+        "csv_decimal": {"type": "string", "minLength": 1},
+        "csv_timestamp_column": {"type": "string", "minLength": 1},
+        "csv_timestamp_format": {"type": "string", "minLength": 1},
+    },
+    "additionalProperties": False,
+}
+
 _PRICE_INPUTS = {
     "type": "object",
     "required": ["day_ahead_csv", "price_unit"],
@@ -330,6 +352,11 @@ _PRICE_INPUTS = {
         "csv_decimal": {"type": "string", "minLength": 1},
         "csv_timestamp_column": {"type": "string", "minLength": 1},
         "csv_timestamp_format": {"type": "string", "minLength": 1},
+        "scenarios": {
+            "type": "array",
+            "items": _PRICE_WEATHER_SCENARIO,
+            "minItems": 1,
+        },
     },
     "additionalProperties": False,
 }
@@ -359,7 +386,6 @@ _FINANCE = {
         "leverage_pct",
         "interest_rate_pct",
         "loan_tenor_years",
-        "debt_uses_p90",
         "inflation_rate",
         "revenue_streams",
         "price_inputs",
@@ -371,6 +397,7 @@ _FINANCE = {
         "loan_tenor_years": {"type": "integer", "minimum": 1},
         "equity_irr_target": {"type": ["number", "null"]},
         "debt_uses_p90": {"type": "boolean"},
+        "debt_sizing_downside_pct": {"type": "number", "minimum": 0, "maximum": 100},
         "inflation_rate": {"type": "number", "minimum": 0},
         "revenue_streams": _REVENUE_STREAMS,
         "price_inputs": _PRICE_INPUTS,
@@ -485,28 +512,66 @@ def validate_scenario(data: dict) -> None:
     # ------------------------------------------------------------------
     # Cross-field semantic validation
     # ------------------------------------------------------------------
+    _validate_scenarios(data)
     _validate_mc_weights(data)
     _validate_soc_limits(data)
     _validate_baseload_ppa(data)
     _validate_bess_only(data)
 
 
+def _validate_scenarios(data: dict) -> None:
+    """Validate price-weather scenarios in price_inputs.scenarios.
+
+    Checks:
+    - Exactly one scenario has ``is_central: true``.
+    - Scenario weights sum to 1.0 (±tolerance).
+    """
+    from pv_bess_model.config.defaults import MC_WEIGHT_TOLERANCE
+
+    scenarios = (
+        data.get("project_settings", {})
+        .get("finance", {})
+        .get("price_inputs", {})
+        .get("scenarios", [])
+    )
+    if not scenarios:
+        return
+
+    # Check exactly one is_central
+    central_count = sum(1 for s in scenarios if s.get("is_central", False))
+    if central_count != 1:
+        raise ValueError(
+            f"Exactly one scenario must have 'is_central: true', "
+            f"but {central_count} scenario(s) are marked as central. "
+            f"Check project_settings.finance.price_inputs.scenarios."
+        )
+
+    # Check weights sum to 1.0
+    total_weight = sum(s.get("weight", 0.0) for s in scenarios)
+    if abs(total_weight - 1.0) > MC_WEIGHT_TOLERANCE:
+        raise ValueError(
+            f"Scenario weights must sum to 1.0, but they sum to "
+            f"{total_weight:.6f}. "
+            f"Adjust the 'weight' fields in "
+            f"project_settings.finance.price_inputs.scenarios."
+        )
+
+
 def _validate_mc_weights(data: dict) -> None:
-    """Check that Monte Carlo price scenario weights sum to 1.0 (±tolerance)."""
+    """Validate MC price_scenarios weights sum to 1.0 (legacy format)."""
     from pv_bess_model.config.defaults import MC_WEIGHT_TOLERANCE
 
     mc = data.get("scenario", {}).get("monte_carlo", {})
     if not mc.get("enabled", False):
         return
-    scenarios = mc.get("price_scenarios", {})
-    if not scenarios:
+    price_scenarios = mc.get("price_scenarios", {})
+    if not price_scenarios:
         return
-    total = sum(s.get("weight", 0.0) for s in scenarios.values())
-    if abs(total - 1.0) > MC_WEIGHT_TOLERANCE:
+
+    total_weight = sum(v.get("weight", 0.0) for v in price_scenarios.values())
+    if abs(total_weight - 1.0) > MC_WEIGHT_TOLERANCE:
         raise ValueError(
-            f"Monte Carlo price scenario weights must sum to 1.0, "
-            f"but they sum to {total:.6f}. "
-            f"Adjust the 'weight' fields in scenario.monte_carlo.price_scenarios."
+            f"MC price_scenarios weights must sum to 1.0, got {total_weight:.6f}."
         )
 
 
