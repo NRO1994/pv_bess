@@ -56,11 +56,11 @@ auf früheren aufbauen.
 
 ### Phase 7: Integration & Qualitätssicherung
 
-| # | Item | Aufwand | Abhängigkeiten | Status |
-|---|------|---------|----------------|--------|
-| 09 | [Integration Test Suite](09_integration_suite.md) | Groß (8-12h) | S2-03, S2-17 | OFFEN |
-| S2-01 | Cashflow Benchmark-Test | Mittel | S2-08, S2-10 | OFFEN |
-| S2-02 | Smoke Test | Mittel | Keine | OFFEN |
+| # | Item | Aufwand | Abhängigkeiten | Status   |
+|---|------|---------|----------------|----------|
+| 09 | [Integration Test Suite](09_integration_suite.md) | Groß (8-12h) | S2-03, S2-17 | ERLEDIGT |
+| S2-01 | Cashflow Benchmark-Test | Mittel | S2-08, S2-10 | OFFEN    |
+| S2-02 | Smoke Test | Mittel | Keine | OFFEN    |
 
 ### Phase 8: Reporting
 

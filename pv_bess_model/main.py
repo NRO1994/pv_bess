@@ -620,7 +620,10 @@ def run(args: argparse.Namespace) -> int:
 
     # Parse price-weather scenarios from the new schema
     price_inputs = finance.get("price_inputs", {})
-    scenarios_list: list[PriceWeatherScenario] = parse_scenarios(scenario.raw)
+    try:
+        scenarios_list: list[PriceWeatherScenario] = parse_scenarios(scenario)
+    except ValueError:
+        scenarios_list = []
 
     # Determine resolution: use 15min if scenarios are defined
     use_15min = len(scenarios_list) > 0
