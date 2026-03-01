@@ -96,14 +96,22 @@ from pv_bess_model.market.ppa import (
     pay_as_produced_price,
     ppa_config_from_dict,
 )
+from pv_bess_model.optimization.analyses import (
+    run_eeg_sensitivity,
+    run_ppa_baseload_analysis,
+    run_ppa_collar_analysis,
+)
 from pv_bess_model.optimization.grid_search import GridSearchConfig, run_grid_search
 from pv_bess_model.optimization.monte_carlo import MCParams, run_monte_carlo
 from pv_bess_model.output.csv_writer import (
     CsvConfig,
     write_cashflows_csv,
     write_dispatch_sample_csv,
+    write_eeg_sensitivity_csv,
     write_grid_search_csv,
     write_monte_carlo_csv,
+    write_ppa_baseload_csv,
+    write_ppa_collar_csv,
     write_summary_csv,
 )
 from pv_bess_model.pv.pvgis_client import PVGISClient
@@ -1068,10 +1076,21 @@ def run(args: argparse.Namespace) -> int:
     )
 
     # ------------------------------------------------------------------
-    # Step 6: Monte Carlo
+    # Step 6: Build MC parameters (needed for MC and/or analyses)
     # ------------------------------------------------------------------
+    analyses_cfg = scenario.raw.get("scenario", {}).get("analyses", {})
+    any_analysis_enabled = (
+        analyses_cfg.get("eeg_sensitivity", {}).get("enabled", False)
+        or analyses_cfg.get("ppa_collar", {}).get("enabled", False)
+        or analyses_cfg.get("ppa_baseload", {}).get("enabled", False)
+    )
+
+    need_mc_params = mc_enabled or any_analysis_enabled
     mc_result = None
-    if mc_enabled:
+    mc_params: MCParams | None = None
+    scenario_prices: dict[str, list[np.ndarray]] = {}
+
+    if need_mc_params:
         mc_iterations = int(mc_cfg.get("iterations", 1000))
         sigma_capex_pv = float(mc_cfg.get("sigma_capex_pv_pct", DEFAULT_MC_SIGMA_CAPEX_PV_PCT)) / 100.0
         sigma_capex_bess = float(mc_cfg.get("sigma_capex_bess_pct", DEFAULT_MC_SIGMA_CAPEX_BESS_PCT)) / 100.0
@@ -1080,16 +1099,12 @@ def run(args: argparse.Namespace) -> int:
         sigma_pv_avail = float(mc_cfg.get("sigma_pv_availability_pct", DEFAULT_MC_SIGMA_PV_AVAILABILITY_PCT)) / 100.0
         sigma_bess_avail = float(mc_cfg.get("sigma_bess_availability_pct", DEFAULT_MC_SIGMA_BESS_AVAILABILITY_PCT)) / 100.0
 
-        # Build scenario price mapping
-        scenario_prices: dict[str, list[np.ndarray]] = {}
         mc_price_scenarios: dict[str, dict] = {}
 
         if scenarios_list and scenario_prices_map:
-            # New flow: use per-scenario prices from parsed scenarios
             scenario_prices = scenario_prices_map
             mc_price_scenarios = mc_price_scenarios_from_list
         else:
-            # Legacy flow
             price_scenarios_cfg = mc_cfg.get("price_scenarios", {})
             if price_scenarios_cfg:
                 for name, cfg_item in price_scenarios_cfg.items():
@@ -1118,7 +1133,11 @@ def run(args: argparse.Namespace) -> int:
             max_workers=1 if args.verbose else None,
         )
 
-        logger.info("Starting Monte Carlo (%d iterations)…", mc_iterations)
+    # ------------------------------------------------------------------
+    # Step 6a: Monte Carlo (only if enabled)
+    # ------------------------------------------------------------------
+    if mc_enabled and mc_params is not None:
+        logger.info("Starting Monte Carlo (%d iterations)…", mc_params.iterations)
         mc_result = run_monte_carlo(
             base_config=grid_search_config,
             optimal=opt,
@@ -1126,6 +1145,84 @@ def run(args: argparse.Namespace) -> int:
             scenario_prices=scenario_prices,
             scenario_pv_timeseries=scenario_pv_map if scenario_pv_map else None,
         )
+
+    # ------------------------------------------------------------------
+    # Step 6b: Post-Grid-Search Analyses
+    # ------------------------------------------------------------------
+    eeg_sens_result = None
+    collar_result = None
+    baseload_result = None
+
+    if any_analysis_enabled and mc_params is not None:
+        marketing = scenario.finance.get("revenue_streams", {}).get("marketing", {})
+        eeg_inflation_flag = bool(marketing.get("eeg_inflation", False))
+        eeg_fixed_price_years = int(marketing.get("fixed_price_years", 20))
+        _sc_pv = scenario_pv_map if scenario_pv_map else None
+
+        if analyses_cfg.get("eeg_sensitivity", {}).get("enabled", False):
+            eeg_cfg = analyses_cfg["eeg_sensitivity"]
+            floor_prices = eeg_cfg["floor_prices_eur_per_kwh"]
+            logger.info(
+                "Running EEG sensitivity analysis (%d price points)…",
+                len(floor_prices),
+            )
+            eeg_sens_result = run_eeg_sensitivity(
+                base_config=grid_search_config,
+                optimal=opt,
+                mc_params=mc_params,
+                scenario_prices=scenario_prices,
+                floor_prices=floor_prices,
+                inflation_rate=inflation_rate,
+                eeg_inflation=eeg_inflation_flag,
+                fixed_price_years=eeg_fixed_price_years,
+                scenario_pv_timeseries=_sc_pv,
+            )
+
+        if analyses_cfg.get("ppa_collar", {}).get("enabled", False):
+            collar_cfg = analyses_cfg["ppa_collar"]
+            logger.info(
+                "Running PPA Collar analysis (%d × %d = %d combinations)…",
+                len(collar_cfg["floor_prices_eur_per_mwh"]),
+                len(collar_cfg["cap_spreads_eur_per_mwh"]),
+                len(collar_cfg["floor_prices_eur_per_mwh"])
+                * len(collar_cfg["cap_spreads_eur_per_mwh"]),
+            )
+            collar_result = run_ppa_collar_analysis(
+                base_config=grid_search_config,
+                optimal=opt,
+                mc_params=mc_params,
+                scenario_prices=scenario_prices,
+                floor_prices_eur_per_mwh=collar_cfg["floor_prices_eur_per_mwh"],
+                cap_spreads_eur_per_mwh=collar_cfg["cap_spreads_eur_per_mwh"],
+                duration_years=collar_cfg["duration_years"],
+                inflation_on_ppa=collar_cfg.get("inflation_on_ppa", False),
+                goo_premium_eur_per_kwh=collar_cfg["goo_premium_eur_per_kwh"],
+                inflation_rate=inflation_rate,
+                scenario_pv_timeseries=_sc_pv,
+            )
+
+        if analyses_cfg.get("ppa_baseload", {}).get("enabled", False):
+            bl_cfg = analyses_cfg["ppa_baseload"]
+            logger.info(
+                "Running PPA Baseload analysis (%d × %d = %d combinations)…",
+                len(bl_cfg["ppa_prices_eur_per_mwh"]),
+                len(bl_cfg["baseload_levels_mw"]),
+                len(bl_cfg["ppa_prices_eur_per_mwh"])
+                * len(bl_cfg["baseload_levels_mw"]),
+            )
+            baseload_result = run_ppa_baseload_analysis(
+                base_config=grid_search_config,
+                optimal=opt,
+                mc_params=mc_params,
+                scenario_prices=scenario_prices,
+                ppa_prices_eur_per_mwh=bl_cfg["ppa_prices_eur_per_mwh"],
+                baseload_levels_mw=bl_cfg["baseload_levels_mw"],
+                duration_years=bl_cfg["duration_years"],
+                inflation_on_ppa=bl_cfg.get("inflation_on_ppa", False),
+                goo_premium_eur_per_kwh=bl_cfg["goo_premium_eur_per_kwh"],
+                inflation_rate=inflation_rate,
+                scenario_pv_timeseries=_sc_pv,
+            )
 
     # ------------------------------------------------------------------
     # Step 7: Write output CSVs
@@ -1176,6 +1273,31 @@ def run(args: argparse.Namespace) -> int:
         write_monte_carlo_csv(
             path=output_dir / f"{scenario.name}_monte_carlo.csv",
             mc_result=mc_result,
+            config=csv_config,
+        )
+
+    if eeg_sens_result is not None:
+        write_eeg_sensitivity_csv(
+            path=output_dir / f"{scenario.name}_eeg_sensitivity.csv",
+            result=eeg_sens_result,
+            config=csv_config,
+        )
+
+    if collar_result is not None:
+        collar_cfg = analyses_cfg["ppa_collar"]
+        write_ppa_collar_csv(
+            path=output_dir / f"{scenario.name}_ppa_collar.csv",
+            result=collar_result,
+            duration_years=collar_cfg["duration_years"],
+            config=csv_config,
+        )
+
+    if baseload_result is not None:
+        bl_cfg = analyses_cfg["ppa_baseload"]
+        write_ppa_baseload_csv(
+            path=output_dir / f"{scenario.name}_ppa_baseload.csv",
+            result=baseload_result,
+            duration_years=bl_cfg["duration_years"],
             config=csv_config,
         )
 

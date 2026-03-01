@@ -48,11 +48,11 @@ auf früheren aufbauen.
 |---|---------|---------|----------------|----------|
 | 06 | [Preisszenario-Wetterjahr-Mapping](06_price_weather_scenario_mapping.md) | Groß (8-12h) | 02, 05, S2-17 | ERLEDIGT |
 
-### Phase 6: Neue Analysen
+### Phase 6: Neue Analysen (abgeschlossen)
 
-| # | Feature | Aufwand | Abhängigkeiten | Status |
-|---|---------|---------|----------------|--------|
-| 07 | [Post-Grid-Search Analysen](07_post_gridsearch_analyses.md) | Groß (8-12h) | 01, 06, S2-12, S2-13 | OFFEN |
+| # | Feature | Aufwand | Abhängigkeiten | Status   |
+|---|---------|---------|----------------|----------|
+| 07 | [Post-Grid-Search Analysen](07_post_gridsearch_analyses.md) | Groß (8-12h) | 01, 06, S2-12, S2-13 | ERLEDIGT |
 
 ### Phase 7: Integration & Qualitätssicherung
 

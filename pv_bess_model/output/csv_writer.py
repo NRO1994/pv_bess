@@ -435,6 +435,172 @@ def write_dispatch_sample_csv(
 
 
 # ---------------------------------------------------------------------------
+# Sensitivity analysis CSVs
+# ---------------------------------------------------------------------------
+
+
+def write_eeg_sensitivity_csv(
+    path: Path | str,
+    result: "SensitivityResult",
+    config: CsvConfig | None = None,
+) -> None:
+    """Write EEG floor price sensitivity analysis results.
+
+    One row per floor price point with MC summary statistics.
+
+    Parameters
+    ----------
+    path:
+        Destination file path.
+    result:
+        Complete EEG sensitivity result.
+    config:
+        CSV formatting settings. Uses defaults when None.
+    """
+    from pv_bess_model.optimization.analyses import SensitivityResult  # noqa: F811
+
+    cfg = config or CsvConfig()
+    d = cfg.decimal
+
+    rows = []
+    for pt in result.points:
+        stats = pt.mc_result.overall_stats
+        eq = stats.get("equity_irr")
+        proj = stats.get("project_irr")
+        npv_s = stats.get("npv")
+        dscr_s = stats.get("dscr_min")
+
+        rows.append({
+            "floor_price_eur_per_kwh": fmt_float(
+                pt.params.get("floor_price_eur_per_kwh"), precision=6, decimal=d
+            ),
+            "mc_iterations": str(len(pt.mc_result.iterations)),
+            "equity_irr_mean": fmt_pct(eq.mean if eq else None, decimal=d),
+            "equity_irr_std": fmt_pct(eq.std if eq else None, decimal=d),
+            "equity_irr_p10": fmt_pct(eq.p10 if eq else None, decimal=d),
+            "equity_irr_p50": fmt_pct(eq.p50 if eq else None, decimal=d),
+            "equity_irr_p90": fmt_pct(eq.p90 if eq else None, decimal=d),
+            "project_irr_mean": fmt_pct(proj.mean if proj else None, decimal=d),
+            "npv_mean": fmt_currency(npv_s.mean if npv_s else 0.0, decimal=d),
+            "dscr_min_mean": fmt_float(dscr_s.mean if dscr_s else None, decimal=d),
+        })
+
+    _write_dicts(path, rows, delimiter=cfg.delimiter)
+    logger.info("Wrote EEG sensitivity CSV (%d rows): %s", len(rows), path)
+
+
+def write_ppa_collar_csv(
+    path: Path | str,
+    result: "SensitivityResult",
+    duration_years: int,
+    config: CsvConfig | None = None,
+) -> None:
+    """Write PPA Collar sensitivity analysis results.
+
+    One row per (floor, cap_spread) combination with MC summary statistics.
+
+    Parameters
+    ----------
+    path:
+        Destination file path.
+    result:
+        Complete PPA Collar sensitivity result.
+    duration_years:
+        PPA duration in years (written to each row for context).
+    config:
+        CSV formatting settings. Uses defaults when None.
+    """
+    from pv_bess_model.optimization.analyses import SensitivityResult  # noqa: F811
+
+    cfg = config or CsvConfig()
+    d = cfg.decimal
+
+    rows = []
+    for pt in result.points:
+        stats = pt.mc_result.overall_stats
+        eq = stats.get("equity_irr")
+        proj = stats.get("project_irr")
+        npv_s = stats.get("npv")
+
+        rows.append({
+            "floor_price_eur_per_mwh": fmt_float(
+                pt.params.get("floor_price_eur_per_mwh"), decimal=d
+            ),
+            "cap_spread_eur_per_mwh": fmt_float(
+                pt.params.get("cap_spread_eur_per_mwh"), decimal=d
+            ),
+            "cap_price_eur_per_mwh": fmt_float(
+                pt.params.get("cap_price_eur_per_mwh"), decimal=d
+            ),
+            "duration_years": str(duration_years),
+            "equity_irr_mean": fmt_pct(eq.mean if eq else None, decimal=d),
+            "equity_irr_std": fmt_pct(eq.std if eq else None, decimal=d),
+            "equity_irr_p10": fmt_pct(eq.p10 if eq else None, decimal=d),
+            "equity_irr_p50": fmt_pct(eq.p50 if eq else None, decimal=d),
+            "equity_irr_p90": fmt_pct(eq.p90 if eq else None, decimal=d),
+            "project_irr_mean": fmt_pct(proj.mean if proj else None, decimal=d),
+            "npv_mean": fmt_currency(npv_s.mean if npv_s else 0.0, decimal=d),
+        })
+
+    _write_dicts(path, rows, delimiter=cfg.delimiter)
+    logger.info("Wrote PPA Collar CSV (%d rows): %s", len(rows), path)
+
+
+def write_ppa_baseload_csv(
+    path: Path | str,
+    result: "SensitivityResult",
+    duration_years: int,
+    config: CsvConfig | None = None,
+) -> None:
+    """Write PPA Baseload sensitivity analysis results.
+
+    One row per (ppa_price, baseload_mw) combination with MC summary statistics.
+
+    Parameters
+    ----------
+    path:
+        Destination file path.
+    result:
+        Complete PPA Baseload sensitivity result.
+    duration_years:
+        PPA duration in years (written to each row for context).
+    config:
+        CSV formatting settings. Uses defaults when None.
+    """
+    from pv_bess_model.optimization.analyses import SensitivityResult  # noqa: F811
+
+    cfg = config or CsvConfig()
+    d = cfg.decimal
+
+    rows = []
+    for pt in result.points:
+        stats = pt.mc_result.overall_stats
+        eq = stats.get("equity_irr")
+        proj = stats.get("project_irr")
+        npv_s = stats.get("npv")
+
+        rows.append({
+            "ppa_price_eur_per_mwh": fmt_float(
+                pt.params.get("ppa_price_eur_per_mwh"), decimal=d
+            ),
+            "baseload_mw": fmt_float(
+                pt.params.get("baseload_mw"), decimal=d
+            ),
+            "duration_years": str(duration_years),
+            "equity_irr_mean": fmt_pct(eq.mean if eq else None, decimal=d),
+            "equity_irr_std": fmt_pct(eq.std if eq else None, decimal=d),
+            "equity_irr_p10": fmt_pct(eq.p10 if eq else None, decimal=d),
+            "equity_irr_p50": fmt_pct(eq.p50 if eq else None, decimal=d),
+            "equity_irr_p90": fmt_pct(eq.p90 if eq else None, decimal=d),
+            "project_irr_mean": fmt_pct(proj.mean if proj else None, decimal=d),
+            "npv_mean": fmt_currency(npv_s.mean if npv_s else 0.0, decimal=d),
+        })
+
+    _write_dicts(path, rows, delimiter=cfg.delimiter)
+    logger.info("Wrote PPA Baseload CSV (%d rows): %s", len(rows), path)
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 

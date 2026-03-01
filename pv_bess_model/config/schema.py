@@ -81,6 +81,86 @@ _OUTPUT = {
     "additionalProperties": False,
 }
 
+_EEG_SENSITIVITY = {
+    "type": "object",
+    "required": ["enabled", "floor_prices_eur_per_kwh"],
+    "properties": {
+        "enabled": {"type": "boolean"},
+        "floor_prices_eur_per_kwh": {
+            "type": "array",
+            "items": {"type": "number", "minimum": 0},
+            "minItems": 1,
+        },
+    },
+    "additionalProperties": False,
+}
+
+_PPA_COLLAR = {
+    "type": "object",
+    "required": [
+        "enabled",
+        "floor_prices_eur_per_mwh",
+        "cap_spreads_eur_per_mwh",
+        "duration_years",
+        "goo_premium_eur_per_kwh",
+    ],
+    "properties": {
+        "enabled": {"type": "boolean"},
+        "floor_prices_eur_per_mwh": {
+            "type": "array",
+            "items": {"type": "number", "minimum": 0},
+            "minItems": 1,
+        },
+        "cap_spreads_eur_per_mwh": {
+            "type": "array",
+            "items": {"type": "number", "minimum": 0},
+            "minItems": 1,
+        },
+        "duration_years": {"type": "integer", "minimum": 1},
+        "inflation_on_ppa": {"type": "boolean"},
+        "goo_premium_eur_per_kwh": {"type": "number", "minimum": 0},
+    },
+    "additionalProperties": False,
+}
+
+_PPA_BASELOAD = {
+    "type": "object",
+    "required": [
+        "enabled",
+        "ppa_prices_eur_per_mwh",
+        "baseload_levels_mw",
+        "duration_years",
+        "goo_premium_eur_per_kwh",
+    ],
+    "properties": {
+        "enabled": {"type": "boolean"},
+        "ppa_prices_eur_per_mwh": {
+            "type": "array",
+            "items": {"type": "number", "minimum": 0},
+            "minItems": 1,
+        },
+        "baseload_levels_mw": {
+            "type": "array",
+            "items": {"type": "number", "minimum": 0},
+            "minItems": 1,
+        },
+        "duration_years": {"type": "integer", "minimum": 1},
+        "inflation_on_ppa": {"type": "boolean"},
+        "goo_premium_eur_per_kwh": {"type": "number", "minimum": 0},
+    },
+    "additionalProperties": False,
+}
+
+_ANALYSES = {
+    "type": "object",
+    "properties": {
+        "eeg_sensitivity": _EEG_SENSITIVITY,
+        "ppa_collar": _PPA_COLLAR,
+        "ppa_baseload": _PPA_BASELOAD,
+    },
+    "additionalProperties": False,
+}
+
 _SCENARIO_BLOCK = {
     "type": "object",
     "required": ["name"],
@@ -89,6 +169,7 @@ _SCENARIO_BLOCK = {
         "monte_carlo": _MONTE_CARLO,
         "output": _OUTPUT,
         "skip_baseline": {"type": "boolean"},
+        "analyses": _ANALYSES,
     },
     "additionalProperties": False,
 }
