@@ -298,3 +298,44 @@ DEFAULT_PV_DEGRADATION_RATE_PCT: float = 0.4
 
 DEFAULT_SYSTEM_LOSS_PCT: float = 14.0
 """Default system loss in percent."""
+
+# ---------------------------------------------------------------------------
+# Report defaults
+# ---------------------------------------------------------------------------
+
+REPORT_CORPORATE_COLORS: list[str] = [
+    "#FF8200",
+    "#F73E5E",
+    "#A51BA7",
+    "#00467A",
+    "#006EB2",
+    "#00BDDC",
+]
+"""Six-color corporate palette used for charts and report styling."""
+
+REPORT_CHART_DPI: int = 150
+"""Resolution (dots per inch) for exported chart PNG files."""
+
+REPORT_CHART_WIDTH_INCHES: float = 10.0
+"""Width of chart figures in inches."""
+
+REPORT_CHART_HEIGHT_INCHES: float = 5.5
+"""Height of chart figures in inches."""
+
+REPORT_CHARTS_SUBDIR: str = "charts"
+"""Sub-directory within the output directory for chart PNG files."""
+
+REPORT_LLM_MAX_TOKENS: int = 500
+"""Maximum output tokens per LLM text generation call."""
+
+REPORT_LLM_DEFAULT_MODEL: str = "claude-haiku-4-5-20251001"
+"""Default Anthropic model ID for report text generation."""
+
+REPORT_LLM_CACHE_FILENAME: str = "llm_cache.json"
+"""Filename for caching LLM-generated texts in the output directory."""
+
+REPORT_PDF_FILENAME_SUFFIX: str = "_report.pdf"
+"""Suffix appended to the scenario name for the PDF report file."""
+
+REPORT_MODEL_VERSION: str = "0.1.0"
+"""Version string displayed on the report cover page."""

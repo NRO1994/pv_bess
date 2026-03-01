@@ -67,6 +67,18 @@ _MONTE_CARLO = {
     "additionalProperties": False,
 }
 
+_REPORT = {
+    "type": "object",
+    "properties": {
+        "enabled": {"type": "boolean"},
+        "company_name": {"type": "string"},
+        "logo_path": {"type": "string"},
+        "llm_api_key_env": {"type": "string"},
+        "llm_model": {"type": "string"},
+    },
+    "additionalProperties": False,
+}
+
 _OUTPUT = {
     "type": "object",
     "required": ["directory"],
@@ -77,6 +89,7 @@ _OUTPUT = {
         "csv_decimal": {"type": "string", "minLength": 1},
         "csv_timestamp_column": {"type": "string", "minLength": 1},
         "csv_timestamp_format": {"type": "string", "minLength": 1},
+        "report": _REPORT,
     },
     "additionalProperties": False,
 }

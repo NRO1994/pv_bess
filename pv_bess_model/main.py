@@ -180,6 +180,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Validate JSON and inputs, then exit without running simulation.",
     )
+    p.add_argument(
+        "--no-llm",
+        action="store_true",
+        default=False,
+        help="Generate report without LLM-generated texts (placeholders only).",
+    )
+    p.add_argument(
+        "--no-report",
+        action="store_true",
+        default=False,
+        help="Skip PDF report generation entirely.",
+    )
     return p
 
 
@@ -646,6 +658,9 @@ def run(args: argparse.Namespace) -> int:
 
     commissioning_year = scenario.commissioning_year
 
+    # Weather data for report charts (populated in PV flows below)
+    weather_data_for_report: dict[int, np.ndarray] | None = None
+
     if pv_peak_kwp > 0 and scenarios_list:
         # New flow: fetch unique weather years, align, convert to 15min
         unique_weather_years = sorted({s.weather_year for s in scenarios_list})
@@ -672,6 +687,8 @@ def run(args: argparse.Namespace) -> int:
                 logger.error("PVGIS fetch for year %d failed: %s", wy, exc)
                 return 1
             weather_year_hourly[wy] = hourly_ts
+
+        weather_data_for_report = weather_year_hourly
 
         # Align and convert to 15min per weather year
         weather_year_15min: dict[int, np.ndarray] = {}
@@ -723,6 +740,7 @@ def run(args: argparse.Namespace) -> int:
             return 1
 
         p50_timeseries, p90_timeseries = compute_p50_p90(yearly_pvgis)
+        weather_data_for_report = yearly_pvgis
         central_pv_timeseries = p50_timeseries
         logger.info(
             "PV timeseries: P50 annual=%.0f kWh, P90 annual=%.0f kWh",
@@ -1312,11 +1330,319 @@ def run(args: argparse.Namespace) -> int:
         )
 
     # ------------------------------------------------------------------
+    # Step 7b: PDF Report generation
+    # ------------------------------------------------------------------
+    _generate_report(
+        scenario=scenario,
+        output_dir=output_dir,
+        _out_block=_out_block,
+        args=args,
+        grid_result=grid_result,
+        opt=opt,
+        metrics=metrics,
+        mc_result=mc_result,
+        weather_data_for_report=weather_data_for_report,
+        scenario_prices=scenario_prices,
+        scenarios_list=scenarios_list,
+        commissioning_year=commissioning_year,
+        eeg_sens_result=eeg_sens_result,
+        collar_result=collar_result,
+        baseload_result=baseload_result,
+    )
+
+    # ------------------------------------------------------------------
     # Step 8: Print summary
     # ------------------------------------------------------------------
     _print_summary(scenario.name, opt, metrics, mc_result)
 
     return 0
+
+
+def _summarize_sensitivity(result) -> str:
+    """Build a short text summary of a sensitivity analysis result for LLM input.
+
+    Parameters
+    ----------
+    result:
+        ``SensitivityResult`` instance.
+
+    Returns
+    -------
+    str
+        Formatted key findings string.
+    """
+    lines: list[str] = []
+    for pt in result.points:
+        params_str = ", ".join(f"{k}={v}" for k, v in pt.params.items())
+        eq_stats = pt.mc_result.overall_stats.get("equity_irr")
+        if eq_stats is not None:
+            lines.append(f"- {params_str}: IRR mean={eq_stats.mean * 100:.2f}%, std={eq_stats.std * 100:.2f}%")
+    return "\n".join(lines) if lines else "Keine Ergebnisse verfügbar."
+
+
+def _build_results_summary(opt, metrics, mc_result) -> str:
+    """Build a comprehensive results summary for the LLM conclusion.
+
+    Parameters
+    ----------
+    opt:
+        ``GridPointResult`` optimal configuration.
+    metrics:
+        Computed financial metrics.
+    mc_result:
+        Monte Carlo result or None.
+
+    Returns
+    -------
+    str
+        Formatted summary string.
+    """
+    parts: list[str] = [
+        f"Optimale BESS-Skalierung: {opt.scale_pct:.0f}% der PV-Leistung",
+        f"E/P-Verhältnis: {opt.e_to_p_ratio:.1f}h",
+        f"BESS: {opt.bess_power_kw:.0f} kW / {opt.bess_capacity_kwh:.0f} kWh",
+        f"CAPEX: {opt.capex_total:,.0f} EUR",
+        f"Equity IRR: {(opt.equity_irr or 0.0) * 100:.2f}%",
+        f"Project IRR: {(metrics.project_irr or 0.0) * 100:.2f}%",
+        f"NPV: {metrics.npv:,.0f} EUR",
+    ]
+    if metrics.dscr_min is not None:
+        parts.append(f"Min DSCR: {metrics.dscr_min:.2f}")
+    if metrics.lcoe is not None:
+        parts.append(f"LCOE: {metrics.lcoe * 100:.3f} ct/kWh")
+
+    if mc_result is not None:
+        eq_stats = mc_result.overall_stats.get("equity_irr")
+        if eq_stats is not None:
+            import math
+            if not math.isnan(eq_stats.median):
+                parts.append(f"MC Equity IRR: median={eq_stats.median * 100:.2f}%, "
+                             f"P10={eq_stats.p10 * 100:.2f}%, P90={eq_stats.p90 * 100:.2f}%")
+
+    return "\n".join(f"- {p}" for p in parts)
+
+
+def _generate_report(
+    scenario,
+    output_dir: Path,
+    _out_block: dict,
+    args: argparse.Namespace,
+    grid_result,
+    opt,
+    metrics,
+    mc_result,
+    weather_data_for_report: dict[int, np.ndarray] | None,
+    scenario_prices: dict,
+    scenarios_list: list,
+    commissioning_year: int,
+    eeg_sens_result,
+    collar_result,
+    baseload_result,
+) -> None:
+    """Generate the PDF report (Step 7b).
+
+    This function handles chart creation, optional LLM text generation,
+    and PDF rendering. All errors are caught and logged without
+    interrupting the main flow.
+
+    Parameters
+    ----------
+    scenario:
+        Validated scenario configuration.
+    output_dir:
+        Output directory for the report.
+    _out_block:
+        Raw output block from scenario JSON.
+    args:
+        Parsed CLI arguments.
+    grid_result:
+        Grid search result.
+    opt:
+        Optimal grid point.
+    metrics:
+        Financial metrics.
+    mc_result:
+        Monte Carlo result or None.
+    weather_data_for_report:
+        Weather year PV data or None.
+    scenario_prices:
+        Price scenario data.
+    scenarios_list:
+        List of PriceWeatherScenario instances.
+    commissioning_year:
+        Project commissioning year.
+    eeg_sens_result:
+        EEG sensitivity result or None.
+    collar_result:
+        PPA Collar result or None.
+    baseload_result:
+        PPA Baseload result or None.
+    """
+    import os
+
+    report_cfg = _out_block.get("report", {})
+    report_enabled = report_cfg.get("enabled", False)
+
+    if not report_enabled or args.no_report:
+        return
+
+    # Import report modules with graceful degradation
+    try:
+        from pv_bess_model.output.report.charts import create_all_charts
+    except ImportError:
+        logger.warning("matplotlib not available. Skipping report generation.")
+        return
+
+    from pv_bess_model.output.report.pdf_builder import ReportConfig, build_report
+
+    config = ReportConfig(
+        enabled=True,
+        company_name=report_cfg.get("company_name", ""),
+        logo_path=report_cfg.get("logo_path"),
+    )
+
+    # Build scenario labels from scenarios_list
+    scenario_labels: dict[str, str] | None = None
+    if scenarios_list:
+        scenario_labels = {}
+        for sc in scenarios_list:
+            label = getattr(sc, "label", None) or sc.name
+            scenario_labels[sc.name] = label
+
+    # Create charts (always, even without LLM)
+    logger.info("Generating report charts…")
+    try:
+        chart_paths = create_all_charts(
+            output_dir=output_dir,
+            grid_result=grid_result,
+            weather_timeseries=weather_data_for_report,
+            scenario_prices=scenario_prices if scenario_prices else None,
+            scenario_labels=scenario_labels,
+            commissioning_year=commissioning_year,
+            eeg_result=eeg_sens_result,
+            collar_result=collar_result,
+            baseload_result=baseload_result,
+        )
+    except Exception:
+        logger.error("Chart generation failed. Skipping report.", exc_info=True)
+        return
+
+    # Generate LLM texts
+    texts: dict[str, str] = {}
+
+    if not args.no_llm:
+        api_key_env = report_cfg.get("llm_api_key_env", "ANTHROPIC_API_KEY")
+        api_key = os.environ.get(api_key_env, "")
+
+        if api_key:
+            try:
+                from pv_bess_model.output.report.llm_client import (
+                    LLMClient,
+                    generate_conclusion,
+                    generate_grid_search_text,
+                    generate_input_summary,
+                    generate_model_description,
+                    generate_price_scenario_text,
+                    generate_pv_yield_text,
+                    generate_sensitivity_text,
+                )
+
+                llm_model = report_cfg.get("llm_model", None)
+                client_kwargs: dict = {
+                    "api_key": api_key,
+                    "cache_dir": output_dir,
+                }
+                if llm_model:
+                    client_kwargs["model"] = llm_model
+
+                client = LLMClient(**client_kwargs)
+
+                # Page 0: Model description
+                claude_md_path = Path(__file__).parent.parent / "CLAUDE.md"
+                claude_md_excerpt = ""
+                if claude_md_path.exists():
+                    claude_md_excerpt = claude_md_path.read_text(encoding="utf-8")[:2000]
+                texts["text_model_description"] = generate_model_description(client, claude_md_excerpt)
+
+                # Page 1: Input summary
+                input_params = {
+                    "PV-Leistung": f"{scenario.pv['design']['peak_power_kwp']:,.0f} kWp",
+                    "Projektlaufzeit": f"{scenario.lifetime_years} Jahre",
+                    "Betriebsmodus": scenario.operating_mode,
+                    "Fremdkapitalquote": f"{scenario.finance.get('leverage_pct', 0)}%",
+                    "Inflationsrate": f"{scenario.finance.get('inflation_rate', 0) * 100:.1f}%",
+                }
+                texts["text_input_summary"] = generate_input_summary(client, input_params)
+
+                # Page 2: PV yield
+                if weather_data_for_report:
+                    annual_kwh = {y: float(np.sum(ts)) for y, ts in weather_data_for_report.items()}
+                    texts["text_pv_yield"] = generate_pv_yield_text(client, annual_kwh)
+
+                # Page 3: Price scenarios
+                if scenario_prices and len(scenario_prices) > 1:
+                    scenario_means = {}
+                    for name, yearly in scenario_prices.items():
+                        all_vals = np.concatenate(yearly) if yearly else np.array([0.0])
+                        scenario_means[name] = float(np.mean(all_vals)) * 1000.0  # EUR/MWh
+                    texts["text_price_scenarios"] = generate_price_scenario_text(client, scenario_means)
+
+                # Page 4: Grid search
+                pv_only_irr = None
+                for pt in grid_result.points:
+                    if pt.scale_pct == 0.0 and pt.equity_irr is not None:
+                        pv_only_irr = pt.equity_irr * 100.0
+                        break
+                texts["text_grid_search"] = generate_grid_search_text(
+                    client,
+                    optimal_scale=opt.scale_pct,
+                    optimal_ep=opt.e_to_p_ratio,
+                    optimal_irr=(opt.equity_irr or 0.0) * 100.0,
+                    pv_only_irr=pv_only_irr,
+                )
+
+                # Pages 5-7: Sensitivity analyses
+                if eeg_sens_result is not None:
+                    texts["text_eeg_sensitivity"] = generate_sensitivity_text(
+                        client, "EEG-Sensitivität", _summarize_sensitivity(eeg_sens_result)
+                    )
+                if collar_result is not None:
+                    texts["text_ppa_collar"] = generate_sensitivity_text(
+                        client, "PPA Collar-Analyse", _summarize_sensitivity(collar_result)
+                    )
+                if baseload_result is not None:
+                    texts["text_ppa_baseload"] = generate_sensitivity_text(
+                        client, "PPA Baseload-Analyse", _summarize_sensitivity(baseload_result)
+                    )
+
+                # Page 8: Conclusion
+                texts["text_conclusion"] = generate_conclusion(
+                    client, _build_results_summary(opt, metrics, mc_result)
+                )
+
+                logger.info("LLM text generation complete.")
+            except ImportError:
+                logger.warning("anthropic package not available. Report will use placeholder texts.")
+            except Exception:
+                logger.warning("LLM text generation failed.", exc_info=True)
+        else:
+            logger.warning(
+                "No API key found in env var '%s'. Report will use placeholder texts.",
+                api_key_env,
+            )
+
+    # Build and render PDF
+    logger.info("Assembling PDF report…")
+    pdf_path = build_report(
+        scenario_name=scenario.name,
+        output_dir=output_dir,
+        chart_paths=chart_paths,
+        texts=texts,
+        config=config,
+        scenario=scenario,
+    )
+    if pdf_path is not None:
+        print(f"  Report: {pdf_path}")
 
 
 def _print_summary(
