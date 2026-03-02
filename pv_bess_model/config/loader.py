@@ -219,7 +219,7 @@ class PriceWeatherScenario:
     pv_timeseries_15min:
         Quarter-hourly PV production array (35 040 values), set after
         PVGIS fetch + alignment + conversion.
-    price_timeseries_extended:
+    price_per_year:
         Extended price array covering the full project lifetime (€/kWh),
         set after price CSV loading.
     """
@@ -238,7 +238,7 @@ class PriceWeatherScenario:
     csv_timestamp_column: str | None = None
     csv_timestamp_format: str | None = None
     pv_timeseries_15min: np.ndarray | None = field(default=None, repr=False)
-    price_timeseries_extended: np.ndarray | None = field(default=None, repr=False)
+    price_per_year: np.ndarray | None = field(default=None, repr=False)
 
 
 # ---------------------------------------------------------------------------

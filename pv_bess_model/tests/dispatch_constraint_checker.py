@@ -28,7 +28,7 @@ class ConstraintViolation:
     ----------
     constraint:
         Name of the violated constraint category.
-    hour:
+    timestep:
         Zero-based interval index where the violation occurred.
     expected:
         Human-readable description of the expected condition.
@@ -39,7 +39,7 @@ class ConstraintViolation:
     """
 
     constraint: str
-    hour: int
+    timestep: int
     expected: str
     actual: float
     severity: str
@@ -120,12 +120,12 @@ def check_dispatch_constraints(
 
     # 1. Energy balance PV: export_pv + charge_pv + curtail ≈ pv_production
     for t in range(n):
-        balance = export_pv[t] + charge_pv[t] + curtail[t]
+        balance = (export_pv[t] + charge_pv[t] + curtail[t]) / grid_loss_factor
         diff = abs(balance - pv_prod[t])
         if diff > tolerance:
             violations.append(ConstraintViolation(
                 constraint="energy_balance_pv",
-                hour=t,
+                timestep=t,
                 expected=f"export_pv + charge_pv + curtail = pv_production ({pv_prod[t]:.4f})",
                 actual=balance,
                 severity="error",
@@ -137,7 +137,7 @@ def check_dispatch_constraints(
             if soc[t] < soc_min_kwh - tolerance:
                 violations.append(ConstraintViolation(
                     constraint="soc_limits",
-                    hour=t,
+                    timestep=t,
                     expected=f"soc >= {soc_min_kwh:.2f}",
                     actual=soc[t],
                     severity="error",
@@ -145,7 +145,7 @@ def check_dispatch_constraints(
             if soc[t] > soc_max_kwh + tolerance:
                 violations.append(ConstraintViolation(
                     constraint="soc_limits",
-                    hour=t,
+                    timestep=t,
                     expected=f"soc <= {soc_max_kwh:.2f}",
                     actual=soc[t],
                     severity="error",
@@ -158,7 +158,7 @@ def check_dispatch_constraints(
             if total_charge > max_charge + tolerance:
                 violations.append(ConstraintViolation(
                     constraint="charge_power_limit",
-                    hour=t,
+                    timestep=t,
                     expected=f"charge_pv + charge_grid <= {max_charge:.2f}",
                     actual=total_charge,
                     severity="error",
@@ -171,7 +171,7 @@ def check_dispatch_constraints(
             if total_discharge > max_discharge + tolerance:
                 violations.append(ConstraintViolation(
                     constraint="discharge_power_limit",
-                    hour=t,
+                    timestep=t,
                     expected=f"discharge_green + discharge_grey <= {max_discharge:.2f}",
                     actual=total_discharge,
                     severity="error",
@@ -187,7 +187,7 @@ def check_dispatch_constraints(
         if total_export > grid_max_energy + tolerance:
             violations.append(ConstraintViolation(
                 constraint="grid_connection_limit",
-                hour=t,
+                timestep=t,
                 expected=f"total grid export <= {grid_max_energy:.2f}",
                 actual=total_export,
                 severity="error",
@@ -207,7 +207,7 @@ def check_dispatch_constraints(
             if arr[t] < -tolerance:
                 violations.append(ConstraintViolation(
                     constraint="non_negativity",
-                    hour=t,
+                    timestep=t,
                     expected=f"{var_name} >= 0",
                     actual=arr[t],
                     severity="error",
@@ -219,7 +219,7 @@ def check_dispatch_constraints(
             if charge_grid[t] > tolerance:
                 violations.append(ConstraintViolation(
                     constraint="green_mode_no_grid_charge",
-                    hour=t,
+                    timestep=t,
                     expected="charge_grid = 0 in green mode",
                     actual=charge_grid[t],
                     severity="error",
@@ -227,7 +227,7 @@ def check_dispatch_constraints(
             if discharge_grey[t] > tolerance:
                 violations.append(ConstraintViolation(
                     constraint="green_mode_no_grey_discharge",
-                    hour=t,
+                    timestep=t,
                     expected="discharge_grey = 0 in green mode",
                     actual=discharge_grey[t],
                     severity="error",
@@ -263,7 +263,7 @@ def check_dispatch_constraints(
                 if soc_spread > tolerance:
                     violations.append(ConstraintViolation(
                         constraint="bess_offline_soc_constant",
-                        hour=start,
+                        timestep=start,
                         expected="SoC constant on offline day",
                         actual=soc_spread,
                         severity="warning",
@@ -343,3 +343,23 @@ def check_availability(
                 bess_offline_days += 1
 
     return pv_offline_days, bess_offline_days
+
+def check_price_dependencies(
+        dispatch_df: pd.DataFrame,
+) -> list[ConstraintViolation]:
+    violations: list[ConstraintViolation] = []
+    pv_prod = dispatch_df["grid_export_kwh"].values.astype(float)
+    eff_price = dispatch_df["price_effective_eur_per_kwh"].values.astype(float)
+
+    mask = (pv_prod > 0) & (eff_price < 0)
+
+    for idx in np.where(mask)[0]:
+        violations.append(ConstraintViolation(
+            constraint="no_pv_at_neg_price",
+            timestep=idx,
+            expected="0",
+            actual=float(pv_prod[idx]),
+            severity="error",
+        ))
+
+    return violations

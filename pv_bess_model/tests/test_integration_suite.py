@@ -26,17 +26,18 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from pv_bess_model.config.defaults import (
     CSV_DECIMAL_SEPARATOR,
-    CSV_DELIMITER,
+    CSV_DELIMITER, DAYS_PER_YEAR,
 )
 from pv_bess_model.tests.dispatch_constraint_checker import (
     ConstraintViolation,
     check_availability,
-    check_dispatch_constraints,
+    check_dispatch_constraints, check_price_dependencies,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,31 +67,24 @@ MASTER_SCENARIO: dict = {
         "name": "PLACEHOLDER",
         "skip_baseline": True,
         "monte_carlo": {
-            "enabled": False,
-            "iterations": 100,
-            "sigma_capex_pv_pct": 5.0,
-            "sigma_capex_bess_pct": 10.0,
-            "sigma_opex_pv_pct": 3.0,
-            "sigma_opex_bess_pct": 8.0,
-            "sigma_pv_availability_pct": 2.0,
-            "sigma_bess_availability_pct": 2.0,
-            "price_scenarios": {
-                "mid": {"csv_column": "MID", "weight": 1.0},
-            },
+            "enabled": False
         },
         "output": {
-            "directory": "PLACEHOLDER",
+            "directory": ".data/test/integration_tests/",
             "export_dispatch_sample": True,
+            "report": {
+                "enabled": False,
+            }
         },
     },
     "project_settings": {
         "lifetime_years": _LIFETIME_YEARS,
         "commissioning_year": 2027,
         "discount_rate": 0.06,
-        "operating_mode": "green",
+        "operating_mode": "PLACEHOLDER",
         "location": {
-            "latitude": 53.55,
-            "longitude": 9.99,
+            "latitude": 53.848808,
+            "longitude": 10.674255,
             "pvgis_database": "PVGIS-SARAH3",
         },
         "technology": {
@@ -99,74 +93,81 @@ MASTER_SCENARIO: dict = {
                     "peak_power_kwp": _PV_PEAK_KWP,
                     "mounting_type": "free",
                     "azimuth_deg": 0,
-                    "tilt_deg": 30,
+                    "tilt_deg": 18,
                 },
                 "performance": {
-                    "degradation_rate_pct_per_year": 0.4,
+                    "degradation_rate_pct_per_year": 0.3,
+                    "pv_availability_pct": 99.5
                 },
                 "costs": {
                     "capex": {
                         "fixed_eur": 10_000.0,
-                        "eur_per_kw": 800.0,
+                        "eur_per_kw": 400.0,
                     },
                     "opex": {
                         "fixed_eur": 1_000.0,
                         "eur_per_kw": 12.0,
-                        "pct_of_capex": 0.003,
                     },
                 },
             },
             "bess": {
                 "design_space": {
-                    "scale_pct_of_pv": [50],
+                    "scale_pct_of_pv": [100],
                     "e_to_p_ratio_hours": [2],
                 },
                 "performance": {
-                    "round_trip_efficiency_pct": 88.0,
-                    "min_soc_pct": 10.0,
-                    "max_soc_pct": 90.0,
-                    "degradation_rate_pct_per_year": 2.0,
-                    "bess_availability_pct": 97.0,
+                    "round_trip_efficiency_pct": 98.0,
+                    "min_soc_pct": 5.0,
+                    "max_soc_pct": 95.0,
+                    "degradation_rate_pct_per_year": 2.5,
+                    "bess_availability_pct": 99.0,
                 },
                 "costs": {
                     "capex": {
-                        "fixed_eur": 10_000.0,
-                        "eur_per_kw": 100.0,
-                        "eur_per_kwh": 250.0,
+                        "fixed_eur": 1_000.0,
+                        "eur_per_kw": 200.0,
+                        "eur_per_kwh": 100.0,
                     },
                     "opex": {
                         "fixed_eur": 5_000.0,
                         "pct_of_capex": 0.015,
                     },
+                    "optimization_fee_pct": 3.0,
                     "replacement": {
-                        "enabled": False,
+                        "enabled": True,
+                        "year": 12,
+                        "fixed_eur": 0,
+                        "eur_per_kw": 200,
+                        "eur_per_kwh": 50,
+                        "capacity_factor_pct": 120.0
                     },
                 },
             },
             "grid_connection": {
                 "max_export_kw": _GRID_MAX_KW,
+                "system_loss_pct": 10,
                 "costs": {
                     "capex": {
-                        "fixed_eur": 10_000.0,
-                        "eur_per_kw": 100.0,
+                        "fixed_eur": 500.0,
+                        "eur_per_kw": 10.0,
                     },
                     "opex": {
-                        "fixed_eur": 5_000.0,
-                        "pct_of_capex": 0.015,
+                        "fixed_eur": 50.0,
                     },
                 },
             },
         },
         "finance": {
-            "leverage_pct": 70.0,
-            "interest_rate_pct": 4.5,
+            "leverage_pct": 80.0,
+            "interest_rate_pct": 3.5,
             "loan_tenor_years": 15,
-            "equity_irr_target": None,
+            "equity_irr_target": 0.081,
             "debt_uses_p90": True,
             "inflation_rate": 0.02,
             "revenue_streams": {
                 "marketing": {
                     "type": "market",
+                    "eeg_inflation": False,
                 },
                 "ppa": {
                     "type": "none",
@@ -178,7 +179,53 @@ MASTER_SCENARIO: dict = {
             "price_inputs": {
                 "day_ahead_csv": "PLACEHOLDER",
                 "price_unit": "eur_per_mwh",
-                "inflation_on_input_data": False,
+                "scenarios": [
+                    {
+                        "name": "Low",
+                        "label": "Low testing case",
+                        "csv_column": "LOW",
+                        "weather_year": 2018,
+                        "weight": 0.33,
+                        "is_central": False,
+                        "price_csv": "PLACEHOLDER",
+                        "price_unit": "eur_per_mwh",
+                        "inflation_on_input_data": False,
+                        "csv_separator": ";",
+                        "csv_decimal": ",",
+                        "csv_timestamp_column": "timestamp",
+                        "csv_timestamp_format": "%Y-%m-%dT%H:%M:%S"
+                    },
+                    {
+                        "name": "High",
+                        "label": "High testing case",
+                        "csv_column": "HIGH",
+                        "weather_year": 2015,
+                        "weight": 0.34,
+                        "is_central": False,
+                        "price_csv": "PLACEHOLDER",
+                        "price_unit": "eur_per_mwh",
+                        "inflation_on_input_data": False,
+                        "csv_separator": ";",
+                        "csv_decimal": ",",
+                        "csv_timestamp_column": "timestamp",
+                        "csv_timestamp_format": "%Y-%m-%dT%H:%M:%S"
+                    },
+                    {
+                        "name": "Mid",
+                        "label": "Mid central testing case",
+                        "csv_column": "MID",
+                        "weather_year": 2016,
+                        "weight": 0.33,
+                        "is_central": True,
+                        "price_csv": "PLACEHOLDER",
+                        "price_unit": "eur_per_mwh",
+                        "inflation_on_input_data": False,
+                        "csv_separator": ";",
+                        "csv_decimal": ",",
+                        "csv_timestamp_column": "timestamp",
+                        "csv_timestamp_format": "%Y-%m-%dT%H:%M:%S"
+                    }
+                ]
             },
             "tax": {
                 "afa_years_pv": 20,
@@ -212,6 +259,7 @@ class ScenarioResult:
     dispatch_violations: list[ConstraintViolation] = field(default_factory=list)
     pv_offline_days: int = 0
     bess_offline_days: int = 0
+    price_violations: list[ConstraintViolation] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -220,10 +268,10 @@ class ScenarioResult:
 
 
 def build_scenario(
-    master: dict,
-    tech_setup: str,
-    operating_mode: str,
-    marketing: str,
+        master: dict,
+        tech_setup: str,
+        operating_mode: str,
+        marketing: str,
 ) -> dict:
     """Build a concrete scenario dict from the master template.
 
@@ -271,7 +319,8 @@ def build_scenario(
     # --- Marketing strategy ---
     if marketing == "market":
         rev["marketing"] = {"type": "market"}
-        rev["ppa"] = {"type": "none", "duration_years": 15, "inflation_on_ppa": False, "guarantee_of_origin_eur_per_kwh": 0.003}
+        rev["ppa"] = {"type": "none", "duration_years": 15, "inflation_on_ppa": False,
+                      "guarantee_of_origin_eur_per_kwh": 0.003}
     elif marketing == "eeg":
         rev["marketing"] = {
             "type": "eeg",
@@ -279,7 +328,8 @@ def build_scenario(
             "fixed_price_years": 20,
             "eeg_inflation": False,
         }
-        rev["ppa"] = {"type": "none", "duration_years": 15, "inflation_on_ppa": False, "guarantee_of_origin_eur_per_kwh": 0.003}
+        rev["ppa"] = {"type": "none", "duration_years": 15, "inflation_on_ppa": False,
+                      "guarantee_of_origin_eur_per_kwh": 0.003}
     elif marketing == "ppa_pap":
         rev["marketing"] = {"type": "ppa"}
         rev["ppa"] = {
@@ -335,8 +385,8 @@ def _parse_german_float(value: str) -> float:
 
 
 def parse_results_from_csvs(
-    output_dir: Path,
-    scenario_name: str,
+        output_dir: Path,
+        scenario_name: str,
 ) -> dict:
     """Read summary and grid search CSVs and extract KPIs.
 
@@ -443,8 +493,8 @@ def extract_constraint_params(scenario_dict: dict) -> dict:
 
 
 def run_scenario_programmatic(
-    scenario_dict: dict,
-    output_dir: Path,
+        scenario_dict: dict,
+        output_dir: Path,
 ) -> ScenarioResult:
     """Run a single scenario via ``pv_bess_model.main.run()``.
 
@@ -492,6 +542,7 @@ def run_scenario_programmatic(
     # Load dispatch sample for constraint checking
     dispatch_path = output_dir / name / f"{name}_dispatch_sample.csv"
     dispatch_violations: list[ConstraintViolation] = []
+    price_violations: list[ConstraintViolation] = []
     pv_offline = 0
     bess_offline = 0
 
@@ -525,6 +576,10 @@ def run_scenario_programmatic(
             intervals_per_day=ipd,
         )
 
+        price_violations = check_price_dependencies(
+            dispatch_df=dispatch_df,
+        )
+
     return ScenarioResult(
         name=name,
         equity_irr=kpis["equity_irr"],
@@ -536,6 +591,7 @@ def run_scenario_programmatic(
         dispatch_violations=dispatch_violations,
         pv_offline_days=pv_offline,
         bess_offline_days=bess_offline,
+        price_violations=price_violations
     )
 
 
@@ -560,7 +616,6 @@ def all_results(price_csv_path: Path, tmp_path_factory) -> dict[str, ScenarioRes
     shared across all test methods.
     """
     results: dict[str, ScenarioResult] = {}
-    output_base = tmp_path_factory.mktemp("integration_suite")
 
     for tech in TECH_SETUPS:
         for mode in OPERATING_MODES:
@@ -568,13 +623,12 @@ def all_results(price_csv_path: Path, tmp_path_factory) -> dict[str, ScenarioRes
                 name = f"{tech}_{mode}_{mkt}"
                 scenario = build_scenario(MASTER_SCENARIO, tech, mode, mkt)
                 # Set price CSV path (absolute)
-                scenario["project_settings"]["finance"]["price_inputs"]["day_ahead_csv"] = str(price_csv_path)
-                # Set output directory
-                scenario["scenario"]["output"]["directory"] = str(output_base)
+                for scenario_att in scenario["project_settings"]["finance"]["price_inputs"]["scenarios"]:
+                    scenario_att["price_csv"] = str(price_csv_path)
 
                 logger.info("Running integration scenario: %s", name)
                 try:
-                    result = run_scenario_programmatic(scenario, output_base)
+                    result = run_scenario_programmatic(scenario, Path(scenario["scenario"]["output"]["directory"]))
                     results[name] = result
                 except Exception as exc:
                     logger.error("Scenario %s failed: %s", name, exc)
@@ -590,9 +644,9 @@ def all_results(price_csv_path: Path, tmp_path_factory) -> dict[str, ScenarioRes
                         dispatch_violations=[
                             ConstraintViolation(
                                 constraint="execution_error",
-                                hour=0,
+                                timestep=0,
                                 expected="exit_code == 0",
-                                actual=0.0,
+                                actual=exc.args[0],
                                 severity="error",
                             )
                         ],
@@ -637,7 +691,7 @@ class TestScenarioExecution:
         if errors:
             msg_lines = [f"Scenario {scenario_id} has {len(errors)} constraint errors:"]
             for v in errors[:10]:
-                msg_lines.append(f"  [{v.constraint}] hour={v.hour}: {v.expected}, actual={v.actual:.4f}")
+                msg_lines.append(f"  [{v.constraint}] timestep={v.timestep}: {v.expected}, actual={v.actual:.4f}")
             assert False, "\n".join(msg_lines)
 
 
@@ -648,7 +702,7 @@ class TestAvailability:
     @pytest.mark.parametrize("tech", ["pv_bess", "pv_only"])
     @pytest.mark.parametrize("mode", OPERATING_MODES)
     def test_bess_offline_days_pv_scenarios(
-        self, all_results: dict[str, ScenarioResult], tech: str, mode: str
+            self, all_results: dict[str, ScenarioResult], tech: str, mode: str
     ):
         """BESS offline days are plausible for PV scenarios (97% availability)."""
         # For pv_only there is no BESS, so offline days should be 365 (no activity)
@@ -664,23 +718,41 @@ class TestAvailability:
                 f"got {result.bess_offline_days}"
             )
 
+    @pytest.mark.parametrize("tech", ["pv_bess", "pv_only"])
     @pytest.mark.parametrize("mode", OPERATING_MODES)
     def test_pv_offline_days_zero_without_mc(
-        self, all_results: dict[str, ScenarioResult], mode: str
+            self, all_results: dict[str, ScenarioResult], mode: str, tech: str
     ):
         """Without MC, PV production should never have zero-production days
         (aside from natural zero-sun days in winter)."""
-        result = all_results[f"pv_bess_{mode}_market"]
-        # With real PVGIS data, some very short winter days may have near-zero
-        # production. We just check there aren't too many.
-        assert result.pv_offline_days <= 30, (
+        result = all_results[f"{tech}_{mode}_market"]
+        path = Path(
+            __file__).parent.parent.parent / ".data" / "test" / "integration_tests" / f"{tech}_{mode}_market.json"
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        defined_offline_days = np.ceil((1 - data["project_settings"]["technology"]["pv"]["performance"][
+            "pv_availability_pct"] / 100) * DAYS_PER_YEAR)
+        assert abs(defined_offline_days - result.bess_offline_days) <= 9, (
+        # 9 Days in sample data with no production anyway
             f"pv_bess_{mode}: too many PV offline days ({result.pv_offline_days})"
         )
+
+    @pytest.mark.parametrize("scenario_id", _ALL_SCENARIO_IDS)
+    def test_pv_no_production_at_negative_prices(
+            self, all_results: dict[str, ScenarioResult], scenario_id: str
+    ):
+        result = all_results[scenario_id]
+        errors = [v for v in result.price_violations if v.severity == "error"]
+        if errors:
+            msg_lines = [f"Scenario {scenario_id} has {len(errors)} constraint errors:"]
+            for v in errors[:10]:
+                msg_lines.append(f"  [{v.constraint}] timestep={v.timestep}: {v.expected}, actual={v.actual:.4f}")
+            assert False, "\n".join(msg_lines)
 
     @pytest.mark.parametrize("mode", OPERATING_MODES)
     @pytest.mark.parametrize("mkt", MARKETING_STRATEGIES)
     def test_bess_only_no_pv_production(
-        self, all_results: dict[str, ScenarioResult], mode: str, mkt: str
+            self, all_results: dict[str, ScenarioResult], mode: str, mkt: str
     ):
         """BESS-only scenarios should have 365 PV offline days."""
         result = all_results[f"bess_only_{mode}_{mkt}"]
@@ -711,7 +783,7 @@ class TestKPIRanking:
     @pytest.mark.parametrize("tech", ["pv_only", "pv_bess"])
     @pytest.mark.parametrize("mode", OPERATING_MODES)
     def test_marketing_ranking(
-        self, all_results: dict[str, ScenarioResult], tech: str, mode: str
+            self, all_results: dict[str, ScenarioResult], tech: str, mode: str
     ):
         """EEG >= PPA-Floor >= PPA-Collar >= PPA-PaP >= Market (by NPV).
 
@@ -746,7 +818,7 @@ class TestKPIRanking:
     @pytest.mark.parametrize("tech", ["pv_only", "pv_bess"])
     @pytest.mark.parametrize("mode", OPERATING_MODES)
     def test_baseload_plausibility(
-        self, all_results: dict[str, ScenarioResult], tech: str, mode: str
+            self, all_results: dict[str, ScenarioResult], tech: str, mode: str
     ):
         """Baseload PPA NPV is between Market and EEG."""
         tol = 1.0
@@ -763,7 +835,7 @@ class TestKPIRanking:
 
     @pytest.mark.parametrize("mkt", MARKETING_STRATEGIES)
     def test_pv_only_green_equals_grey(
-        self, all_results: dict[str, ScenarioResult], mkt: str
+            self, all_results: dict[str, ScenarioResult], mkt: str
     ):
         """PV-only: Green and Grey mode should yield identical NPV."""
         tol = 1.0
@@ -775,7 +847,7 @@ class TestKPIRanking:
 
     @pytest.mark.parametrize("mkt", MARKETING_STRATEGIES)
     def test_grey_geq_green_pv_bess(
-        self, all_results: dict[str, ScenarioResult], mkt: str
+            self, all_results: dict[str, ScenarioResult], mkt: str
     ):
         """PV+BESS: Grey mode NPV >= Green mode NPV (grey has more flexibility)."""
         tol = 1.0
@@ -787,7 +859,7 @@ class TestKPIRanking:
 
     @pytest.mark.parametrize("mkt", MARKETING_STRATEGIES)
     def test_bess_only_green_negative(
-        self, all_results: dict[str, ScenarioResult], mkt: str
+            self, all_results: dict[str, ScenarioResult], mkt: str
     ):
         """BESS-only in green mode has NPV < 0 (no PV to charge from)."""
         npv = self._npv(all_results, f"bess_only_green_{mkt}")
@@ -835,7 +907,7 @@ class TestKPIRanking:
     @pytest.mark.parametrize("mode", OPERATING_MODES)
     @pytest.mark.parametrize("mkt", MARKETING_STRATEGIES)
     def test_pv_bess_geq_pv_only(
-        self, all_results: dict[str, ScenarioResult], mode: str, mkt: str
+            self, all_results: dict[str, ScenarioResult], mode: str, mkt: str
     ):
         """PV+BESS NPV >= PV-only NPV (BESS should add value or at worst break even).
 
@@ -866,7 +938,7 @@ class TestOutputCompleteness:
 
     @pytest.mark.parametrize("scenario_id", _ALL_SCENARIO_IDS)
     def test_output_files_exist(
-        self, all_results: dict[str, ScenarioResult], tmp_path_factory, scenario_id: str
+            self, all_results: dict[str, ScenarioResult], tmp_path_factory, scenario_id: str
     ):
         """Summary, cashflows, and dispatch sample CSVs exist."""
         # We need the output dir. Since all_results uses a module-scoped tmpdir,

@@ -27,7 +27,7 @@ from pv_bess_model.config.defaults import (
     HOURS_PER_DAY,
     HOURS_PER_YEAR,
     INTERVALS_PER_HOUR,
-    INTERVALS_PER_YEAR,
+    INTERVALS_PER_YEAR, INTERVALS_PER_DAY,
 )
 
 logger = logging.getLogger(__name__)
@@ -130,7 +130,7 @@ def align_weather_to_forecast_year(
     Parameters
     ----------
     weather_ts:
-        Hourly production array of length :data:`HOURS_PER_YEAR` (8 760).
+        Hourly production array of length :data:`INTERVALS_PER_YEAR` (35_040).
     weather_year:
         Calendar year of the weather data (e.g. 2017).
     forecast_year:
@@ -146,16 +146,16 @@ def align_weather_to_forecast_year(
     ValueError
         When *weather_ts* does not have exactly 8 760 elements.
     """
-    if len(weather_ts) != HOURS_PER_YEAR:
+    if len(weather_ts) != INTERVALS_PER_YEAR:
         raise ValueError(
-            f"weather_ts must have exactly {HOURS_PER_YEAR} elements, "
+            f"weather_ts must have exactly {INTERVALS_PER_YEAR} elements, "
             f"got {len(weather_ts)}."
         )
 
     dow_weather = datetime.date(weather_year, 1, 1).weekday()
     dow_forecast = datetime.date(forecast_year, 1, 1).weekday()
     shift_days = (dow_forecast - dow_weather) % 7
-    shift_hours = shift_days * HOURS_PER_DAY
+    shift_hours = shift_days * INTERVALS_PER_DAY
 
     if shift_hours == 0:
         return weather_ts.copy()

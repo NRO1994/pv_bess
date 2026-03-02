@@ -171,9 +171,11 @@ class GridSearchConfig:
     # PV
     pv_peak_kwp: float
     pv_base_timeseries: np.ndarray
+    pv_base_timeseries_year: int
     pv_degradation_rate: float
     pv_costs_capex: dict
     pv_costs_opex: dict
+    pv_availability_pct: float
 
     # BESS performance
     bess_rte: float
@@ -208,6 +210,7 @@ class GridSearchConfig:
 
     # Finance
     lifetime_years: int
+    commissioning_year: int
     leverage_pct: float
     interest_rate_pct: float
     loan_tenor_years: int
@@ -365,16 +368,19 @@ class _GridPointArgs:
     replacement_eur_per_kwh: float
     replacement_capacity_factor_pct: float
     lifetime_years: int
+    commissioning_year: int
 
     # PV
     pv_base_timeseries: np.ndarray  # shape (8760,)
+    pv_base_timeseries_year: int
 
     # Prices per year
     spot_prices_yearly: list  # list[np.ndarray]
     fixed_prices_yearly: list  # list[float]
     goo_prices_yearly: list  # list[float]
     cap_prices_yearly: list  # list[float]
-    offline_days_yearly: list  # list[set[int]]
+    offline_days_bess_yearly: list  # list[set[int]]
+    offline_days_pv_yearly: list  # list[set[int]]
 
     # Pre-computed costs
     capex_pv: float
@@ -452,6 +458,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         pv_degradation_rate=args.pv_degradation_rate,
         replacement=replacement,
         lifetime_years=args.lifetime_years,
+        commissioning_year=args.commissioning_year,
         bess_power_kw=args.bess_power_kw,
         grid_loss_factor=args.grid_loss_factor,
         timestep_hours=args.timestep_hours,
@@ -463,9 +470,11 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
     sim_p50 = run_simulation(
         config=engine_config,
         pv_base_timeseries=args.pv_base_timeseries,
+        pv_base_timeseries_year=args.pv_base_timeseries_year,
         spot_prices_yearly=args.spot_prices_yearly,
         fixed_prices_yearly=args.fixed_prices_yearly,
-        offline_days_yearly=args.offline_days_yearly,
+        offline_days_yearly=args.offline_days_bess_yearly,
+        pv_offline_days_yearly=args.offline_days_pv_yearly,
         goo_prices_yearly=args.goo_prices_yearly,
         cap_prices_yearly=args.cap_prices_yearly,
     )
@@ -483,9 +492,11 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         sim_downside = run_simulation(
             config=engine_config,
             pv_base_timeseries=pv_downside,
+            pv_base_timeseries_year=args.pv_base_timeseries_year,
             spot_prices_yearly=args.spot_prices_yearly,
             fixed_prices_yearly=args.fixed_prices_yearly,
-            offline_days_yearly=args.offline_days_yearly,
+            offline_days_yearly=args.offline_days_bess_yearly,
+            pv_offline_days_yearly=args.offline_days_pv_yearly,
             goo_prices_yearly=args.goo_prices_yearly,
             cap_prices_yearly=args.cap_prices_yearly,
         )
@@ -630,11 +641,17 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
         logger.info("Added scale=0 %% (PV-only baseline) to grid search.")
 
     # Deterministic offline days – same for every grid point
-    offline_days: set[int] = compute_deterministic_offline_days(
+    offline_days_bess: set[int] = compute_deterministic_offline_days(
         config.bess_availability_pct
     )
-    offline_days_yearly: list[set[int]] = [
-        offline_days for _ in range(config.lifetime_years)
+    offline_days_bess_yearly: list[set[int]] = [
+        offline_days_bess for _ in range(config.lifetime_years)
+    ]
+    offline_days_pv: set[int] = compute_deterministic_offline_days(
+        config.pv_availability_pct, offset=28
+    )
+    offline_days_pv_yearly: list[set[int]] = [
+        offline_days_pv for _ in range(config.lifetime_years)
     ]
 
     # Build worker args for every (scale, E/P) combination
@@ -708,12 +725,15 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     replacement_eur_per_kwh=config.replacement_eur_per_kwh,
                     replacement_capacity_factor_pct=config.replacement_capacity_factor_pct,
                     lifetime_years=config.lifetime_years,
+                    commissioning_year=config.commissioning_year,
                     pv_base_timeseries=config.pv_base_timeseries,
+                    pv_base_timeseries_year=config.pv_base_timeseries_year,
                     spot_prices_yearly=config.spot_prices_yearly,
                     fixed_prices_yearly=config.fixed_prices_yearly,
                     goo_prices_yearly=config.goo_prices_yearly if config.goo_prices_yearly else [0.0] * config.lifetime_years,
                     cap_prices_yearly=config.cap_prices_yearly if config.cap_prices_yearly else [0.0] * config.lifetime_years,
-                    offline_days_yearly=offline_days_yearly,
+                    offline_days_bess_yearly=offline_days_bess_yearly,
+                    offline_days_pv_yearly=offline_days_pv_yearly,
                     capex_pv=costs.capex_pv,
                     capex_bess=costs.capex_bess,
                     capex_grid=costs.capex_grid,

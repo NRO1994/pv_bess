@@ -21,13 +21,13 @@ HOURS_PER_DAY: int = 24
 INTERVALS_PER_HOUR: int = 4
 """Number of sub-hourly intervals per hour (4 = quarter-hourly resolution)."""
 
-INTERVALS_PER_DAY: int = 96
+INTERVALS_PER_DAY: int = HOURS_PER_DAY * INTERVALS_PER_HOUR
 """Number of quarter-hourly intervals per day (24 × 4)."""
 
-INTERVALS_PER_YEAR: int = 35040
+INTERVALS_PER_YEAR: int = HOURS_PER_YEAR * INTERVALS_PER_HOUR
 """Number of quarter-hourly intervals per non-leap year (365 × 96)."""
 
-TIMESTEP_HOURS: float = 0.25
+TIMESTEP_HOURS: float = 1 / INTERVALS_PER_HOUR
 """Duration of one sub-hourly interval in hours (0.25 = 15 minutes)."""
 
 # ---------------------------------------------------------------------------
@@ -298,6 +298,9 @@ DEFAULT_PV_DEGRADATION_RATE_PCT: float = 0.4
 
 DEFAULT_SYSTEM_LOSS_PCT: float = 14.0
 """Default system loss in percent."""
+
+DEFAULT_PV_AVAILABILITY_PCT: float = 99.0
+"""Default availability of PV asset"""
 
 # ---------------------------------------------------------------------------
 # Report defaults

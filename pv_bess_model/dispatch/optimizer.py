@@ -498,8 +498,8 @@ def _extract_green_result(
 
     return DailyDispatchResult(
         charge_pv=charge_pv,
-        discharge_green=discharge_green,
-        export_pv=export_pv,
+        discharge_green=discharge_green * rte,
+        export_pv=export_pv * grid_loss_factor,
         curtail=curtail,
         charge_grid=np.zeros(T),
         discharge_grey=np.zeros(T),
@@ -555,8 +555,8 @@ def _extract_grey_result(
 
     return DailyDispatchResult(
         charge_pv=charge_pv,
-        discharge_green=discharge_green,
-        export_pv=export_pv,
+        discharge_green=discharge_green * rte,
+        export_pv=export_pv * grid_loss_factor,
         curtail=curtail,
         charge_grid=charge_grid,
         discharge_grey=discharge_grey,
@@ -794,15 +794,25 @@ def dispatch_offline_day(
     )
 
     grid_max_energy = grid_max_kw * timestep_hours
-    export_pv = np.minimum(pv_production_kwh, grid_max_energy)
-    curtail = pv_production_kwh - export_pv
+    export_pv = np.minimum(pv_production_kwh * grid_loss_factor, grid_max_energy)
+    grid_curtail = np.maximum(pv_production_kwh * grid_loss_factor - grid_max_energy, 0)
 
     # Effective price per kWh: clip(spot, fixed, cap) + goo
     eff = _effective_green_price(
         spot_prices_eur_per_kwh, price_fixed_eur_per_kwh,
         goo_premium_eur_per_kwh, price_cap_eur_per_kwh,
     )
-    revenue = export_pv * grid_loss_factor * eff
+
+    # Consider negative prices as curtailment
+    price_curtail = np.zeros(len(pv_production_kwh))
+    negative_price_mask = eff < 0
+    price_curtail[negative_price_mask] = export_pv[negative_price_mask]
+    export_pv[negative_price_mask] = 0
+    grid_curtail[negative_price_mask] = 0
+
+    curtail = grid_curtail + price_curtail
+
+    revenue = export_pv * eff
 
     return DailyDispatchResult(
         charge_pv=np.zeros(T),

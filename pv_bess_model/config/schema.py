@@ -205,13 +205,14 @@ _PV_DESIGN = {
 
 _PV_PERFORMANCE = {
     "type": "object",
-    "required": ["degradation_rate_pct_per_year"],
+    "required": ["degradation_rate_pct_per_year", "pv_availability_pct"],
     "properties": {
         "degradation_rate_pct_per_year": {
             "type": "number",
             "minimum": 0,
             "maximum": 100,
         },
+        "pv_availability_pct": {"type": "number", "minimum": 0, "maximum": 100},
     },
     "additionalProperties": False,
 }
