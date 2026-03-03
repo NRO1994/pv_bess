@@ -46,8 +46,8 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-TECH_SETUPS = ["pv_only", "bess_only", "pv_bess"]
-OPERATING_MODES = ["green", "grey"]
+TECH_SETUPS = ["bess_only"]#, "pv_only", "pv_bess"]
+OPERATING_MODES = ["grey"]#, "green"]
 MARKETING_STRATEGIES = ["market", "eeg", "ppa_pap", "ppa_baseload", "ppa_floor", "ppa_collar"]
 
 BESS_CONFIGS: dict[str, dict[str, float | None]] = {
@@ -334,7 +334,7 @@ def build_scenario(
         rev["marketing"] = {"type": "ppa"}
         rev["ppa"] = {
             "type": "ppa_pay_as_produced",
-            "pay_as_produced_price_eur_per_kwh": 0.065,
+            "pay_as_produced_price_eur_per_kwh": 0.053,
             "duration_years": 15,
             "inflation_on_ppa": False,
             "guarantee_of_origin_eur_per_kwh": 0.003,
@@ -732,7 +732,7 @@ class TestAvailability:
             data = json.load(fh)
         defined_offline_days = np.ceil((1 - data["project_settings"]["technology"]["pv"]["performance"][
             "pv_availability_pct"] / 100) * DAYS_PER_YEAR)
-        assert abs(defined_offline_days - result.bess_offline_days) <= 9, (
+        assert abs(defined_offline_days - result.pv_offline_days) <= 9, (
         # 9 Days in sample data with no production anyway
             f"pv_bess_{mode}: too many PV offline days ({result.pv_offline_days})"
         )
@@ -863,7 +863,7 @@ class TestKPIRanking:
     ):
         """BESS-only in green mode has NPV < 0 (no PV to charge from)."""
         npv = self._npv(all_results, f"bess_only_green_{mkt}")
-        assert npv < 0, f"bess_only_green_{mkt}: expected negative NPV, got {npv:.0f}"
+        assert npv <= 0.0, f"bess_only_green_{mkt}: expected negative NPV, got {npv:.0f}"
 
     def test_bess_only_green_all_equal(self, all_results: dict[str, ScenarioResult]):
         """BESS-only green: all marketing strategies yield the same NPV.

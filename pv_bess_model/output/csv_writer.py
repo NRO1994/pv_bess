@@ -425,7 +425,10 @@ def write_dispatch_sample_csv(
             "bess_discharge_grey_kwh": fmt_float(
                 float(hourly_sample.discharge_grey[h]), decimal=d
             ),
-            "grid_export_kwh": fmt_float(float(hourly_sample.export_pv[h]), decimal=d),
+            "pv_grid_export_kwh": fmt_float(float(hourly_sample.export_pv[h]), decimal=d),
+            "grid_export_kwh": fmt_float(float(
+                hourly_sample.export_pv[h] + hourly_sample.discharge_green[h] + hourly_sample.discharge_grey[h]
+            ), decimal=d),
             "curtailed_kwh": fmt_float(float(hourly_sample.curtail[h]), decimal=d),
             "revenue_eur": fmt_float(float(hourly_sample.revenue[h]), decimal=d),
         })

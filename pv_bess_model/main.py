@@ -74,7 +74,7 @@ from pv_bess_model.config.defaults import (
     PPA_TYPE_FLOOR,
     PPA_TYPE_NONE,
     PPA_TYPE_PAY_AS_PRODUCED,
-    TIMESTEP_HOURS,
+    TIMESTEP_HOURS, PPA_TYPE_BASELOAD,
 )
 from pv_bess_model.config.loader import (
     PriceData,
@@ -261,7 +261,7 @@ def _build_fixed_prices_yearly(
                 # _build_goo_prices_yearly() and added after the clip operation.
                 # Cap price is handled via _build_cap_prices_yearly().
 
-        elif ppa_type == PPA_TYPE_PAY_AS_PRODUCED:
+        elif ppa_type in (PPA_TYPE_PAY_AS_PRODUCED, PPA_TYPE_BASELOAD):
             ppa_cfg = ppa_config_from_dict(ppa_dict)
             price = pay_as_produced_price(ppa_cfg, year, inflation_rate)
             if year <= ppa_cfg.duration_years:
@@ -294,16 +294,16 @@ def _build_goo_prices_yearly(
         Index 0 = year 1.  0.0 for years outside the PPA period.
     """
     lifetime = scenario.lifetime_years
-    ppa_dict = scenario.finance.get("revenue_streams", {}).get("ppa", {})
-    ppa_type = ppa_dict.get("type", PPA_TYPE_NONE)
+    ppa_cfg = ppa_config_from_dict(scenario.finance.get("revenue_streams", {}).get("ppa", {}))
+    goo_prices = [ppa_cfg.goo_premium_eur_per_kwh] * lifetime
+    eeg_dict = scenario.finance.get("revenue_streams", {}).get("marketing", {})
+    eeg_type = eeg_dict.get("type", PPA_TYPE_NONE)
 
-    if ppa_type in (PPA_TYPE_FLOOR, PPA_TYPE_COLLAR):
-        ppa_cfg = ppa_config_from_dict(ppa_dict)
-        goo = ppa_cfg.goo_premium_eur_per_kwh
-        duration = ppa_cfg.duration_years
-        return [goo if year <= duration else 0.0 for year in range(1, lifetime + 1)]
+    if eeg_type is MARKETING_TYPE_EEG: # Years under EEG does not have any GoO - only during direct marketing
+        duration = eeg_dict.get("fixed_price_years", lifetime)
+        goo_prices[:duration] = [0.0] * (lifetime - duration)
 
-    return [0.0] * lifetime
+    return goo_prices
 
 
 def _build_cap_prices_yearly(
@@ -332,14 +332,22 @@ def _build_cap_prices_yearly(
     ppa_dict = scenario.finance.get("revenue_streams", {}).get("ppa", {})
     ppa_type = ppa_dict.get("type", PPA_TYPE_NONE)
 
-    if ppa_type != PPA_TYPE_COLLAR:
+    if ppa_type not in (PPA_TYPE_COLLAR, PPA_TYPE_PAY_AS_PRODUCED, PPA_TYPE_BASELOAD):
         return [0.0] * lifetime
 
     ppa_cfg = ppa_config_from_dict(ppa_dict)
+    if ppa_type == PPA_TYPE_COLLAR:
+        base = ppa_cfg.cap_price_eur_per_kwh or 0.0
+    elif ppa_type == PPA_TYPE_PAY_AS_PRODUCED:
+        base = ppa_cfg.pay_as_produced_price_eur_per_kwh
+    elif ppa_type == PPA_TYPE_BASELOAD:
+        base = ppa_cfg.pay_as_produced_price_eur_per_kwh
+    else:
+        base = 0.0
+
     cap_prices: list[float] = []
     for year in range(1, lifetime + 1):
         if year <= ppa_cfg.duration_years:
-            base = ppa_cfg.cap_price_eur_per_kwh or 0.0
             if ppa_cfg.inflation_enabled:
                 price = inflate_value(base, inflation_rate, year)
             else:
@@ -687,7 +695,7 @@ def run(args: argparse.Namespace) -> int:
 
         weather_data_for_report = weather_year_hourly
 
-        # Align and convert to 15min per weather year
+        # Convert to 15min per weather year
         weather_year_15min: dict[int, np.ndarray] = {}
         for wy, hourly_ts in weather_year_hourly.items():
             weather_year_15min[wy] = hourly_to_quarter_hourly(hourly_ts)
@@ -714,6 +722,7 @@ def run(args: argparse.Namespace) -> int:
     else:
         # BESS-Only: zero PV production
         central_pv_timeseries = np.zeros(ts_intervals_per_year, dtype=float)
+        central_pv_timeseries_year = scenarios_list[0].weather_year
         logger.info(
             "BESS-Only: PV timeseries set to zero (%d × 0 kWh).",
             ts_intervals_per_year,

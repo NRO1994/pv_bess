@@ -330,17 +330,16 @@ def check_availability(
                 pv_offline_days += 1
 
         # BESS offline: no charge and no discharge for the entire day
-        if has_bess:
-            day_charge = (
-                np.sum(charge_pv[start:end])
-                + np.sum(charge_grid[start:end])
-            )
-            day_discharge = (
-                np.sum(discharge_green[start:end])
-                + np.sum(discharge_grey[start:end])
-            )
-            if day_charge < tolerance and day_discharge < tolerance:
-                bess_offline_days += 1
+        day_charge = (
+            np.sum(charge_pv[start:end])
+            + np.sum(charge_grid[start:end])
+        )
+        day_discharge = (
+            np.sum(discharge_green[start:end])
+            + np.sum(discharge_grey[start:end])
+        )
+        if day_charge < tolerance and day_discharge < tolerance:
+            bess_offline_days += 1
 
     return pv_offline_days, bess_offline_days
 
