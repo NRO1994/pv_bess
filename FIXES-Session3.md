@@ -4,19 +4,30 @@
 
 - [ ] price_loader wird nur in tests verwendet, aber nicht in produktiven Code. Entweder entferne die Klasse, oder
   stelle sicher, dass sie korrekt im produktiven Code genutzt wird.
+- [ ] Ich habe manuell viele kleinere Fehler behoben, passt die Unit tests so an, dass sie alle wieder erfolgreich sind.
+  Verändere nicht die Logik! Diese läuft nun korrekt
 
 ## Logik
 
 - [ ] Die MC Parameter für die Preisszenarien soll direkt aus project_settings.finance.price_input.scenario stammen. Es
   bedarf keines extra Inputs in scenario.monte_carlo.price_scenario mehr
+- [ ] es soll in dem daily optimization der solver from ortools.linear_solver import pywraplp
+  ,pywraplp.Solver.CreateSolver('SAT') verwendet werden
+- [ ] der BESS darf in einem Zeitpunkt nur entweder laden, oder entladen werden - aber nicht beides gleichzeitig. Dies
+  triff nur auf, sofern der Preis negativ ist. Das heißt, es könnte auch die Nebenbedingung gelten, dass bei negativen
+  strompreisen das "discharging" ausgeschlossen werden soll
+- [ ] GoO sollen nur bei PV Cases berücksichtigt werden, nicht bei BESS only
 
 ## Kosmetik
 
 - [ ] BESS.costs.optimization_fee_pct soll in BESS.costs.opex.optimization_fee_pct verschoben werden
 - [ ] entferne die csv relevanten json attribute in project_settings.finance.price_inputs, da diese nun in den
   jeweiligen Szenarien direkt berücksichtigt werden
-- [ ] implementiere Unit tests für _effective_green_price, der alle Market Szenarien (Market, EEG, PPA floor, PPA Collar, PPA baseload, PPA pay-as-produced) abdeckt
-- [ ] Ich habe manuell viele kleinere Fehler behoben, passt die Unit tests so an, dass sie alle wieder erfolgreich sind. Verändere nicht die Logik! Diese läuft nun korrekt
+- [ ] implementiere Unit tests für _effective_green_price, der alle Market Szenarien (Market, EEG, PPA floor, PPA
+  Collar, PPA baseload, PPA pay-as-produced) abdeckt
+- Refactoring: Entferne allen Code, der nicht durch die Integration Tests abgedeckt ist, bzw. der Analyse und Output
+  Generierung entspricht.
+- Prüfe die Code Coverage durch die Unit tests, und schlage weitere Unit tests vor, die diese verbessern
 - MonteCarlo Simulation auf PriceWeatherScenario anpassen
 - Analyse Module auf PriceWeatherScenario anpassen
-- Wo kommt der Einkauf für PPA-Baseload in das FM?
+- Wo kommt der Einkauf für PPA-Baseload in das FM? -> Check ob richtig implementiert
