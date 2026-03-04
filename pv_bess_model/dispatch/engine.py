@@ -160,6 +160,8 @@ class AnnualResult:
     """Revenue from grey BESS discharge (discharge_grey x RTE x spot).  0.0 in green mode."""
     grid_import_cost: float
     """Cost of grid imports for BESS charging (charge_grid x spot).  0.0 in green mode."""
+    missing_baseload_cost: float
+    """Cost of fulfilling baseload criteria in ppa-baseload mode."""
     total_revenue: float
     """Net revenue = pv_export + bess_green + bess_grey - grid_import_cost."""
 
@@ -365,6 +367,7 @@ def run_simulation(
         spot_prices_yearly: list[np.ndarray],
         fixed_prices_yearly: list[float],
         offline_days_yearly: list[set[int]],
+        baseload_kw: float = 0.0,
         goo_prices_yearly: list[float] | None = None,
         cap_prices_yearly: list[float] | None = None,
         pv_offline_days_yearly: list[set[int]] | None = None,
@@ -463,7 +466,7 @@ def run_simulation(
                 upgrade = config.replacement.capacity_factor_pct / 100.0
                 effective_nameplate_kwh = config.bess_nameplate_kwh * upgrade
                 bess_cap = effective_nameplate_kwh
-                bess_age = 0
+                bess_age = 1
                 replacement_cost = config.replacement.replacement_cost(
                     config.bess_power_kw,
                     config.bess_nameplate_kwh,
@@ -539,6 +542,7 @@ def run_simulation(
         year_discharge_green = 0.0
         year_discharge_grey = 0.0
         year_bess_spot_revenue = 0.0
+        year_missing_baseload = 0.0
 
         # ---- 8. Day loop (365 days) ----
         for day in range(DAYS_PER_YEAR):
@@ -581,8 +585,8 @@ def run_simulation(
                     grid_max_kw=config.grid_max_kw,
                     mode=config.mode,
                     start_soc_kwh=current_soc,
-                    start_soc_green_kwh=current_soc_green if config.mode == "green" else None,
-                    start_soc_grey_kwh=current_soc_grey if config.mode == "grey" else None,
+                    start_soc_green_kwh=current_soc_green,
+                    start_soc_grey_kwh=current_soc_grey,
                     goo_premium_eur_per_kwh=goo_price,
                     price_cap_eur_per_kwh=cap_price,
                     grid_loss_factor=config.grid_loss_factor,
@@ -600,16 +604,19 @@ def run_simulation(
             day_rev_grey = float(np.sum(result["discharge_grey"] * spot_day))
             day_import = float(np.sum(result["charge_grid"] * spot_day))
 
-            day_bess_spot_rev = float(
-                np.sum(result["discharge_green"] * spot_day)
-                + np.sum(result["discharge_grey"] * spot_day)
-            )
+            day_bess_spot_rev = day_rev_grey
+
+            # Baseload additional purchase, if necessary
+            total_feed_in = result["export_pv"] + result["discharge_green"] + result["discharge_grey"]
+            missed_baseload = np.maximum([baseload_kw/4 - total_feed_in],0)
+            day_purchase_missing_baseload = float(np.sum(missed_baseload * spot_day))
 
             year_revenue_pv += day_rev_pv
             year_revenue_green += day_rev_green
             year_revenue_grey += day_rev_grey
             year_import_cost += day_import
             year_bess_spot_revenue += day_bess_spot_rev
+            year_missing_baseload += day_purchase_missing_baseload
             year_pv_export += float(np.sum(result["export_pv"]))
             year_pv_curtailed += float(np.sum(result["curtail"]))
             year_charge_pv += float(np.sum(result["charge_pv"]))
@@ -635,7 +642,7 @@ def run_simulation(
         # ---- 9. Compute annual aggregates ----
         total_pv = float(np.sum(pv_year))
         total_revenue = (
-                year_revenue_pv + year_revenue_green + year_revenue_grey - year_import_cost
+                year_revenue_pv + year_revenue_green + year_revenue_grey - year_import_cost - year_missing_baseload
         )
         bess_throughput = (
                 year_charge_pv + year_charge_grid + year_discharge_green + year_discharge_grey
@@ -660,6 +667,7 @@ def run_simulation(
                 bess_capacity_kwh=bess_cap,
                 replacement_cost=replacement_cost,
                 bess_spot_revenue=year_bess_spot_revenue,
+                missing_baseload_cost=year_missing_baseload,
             )
         )
 

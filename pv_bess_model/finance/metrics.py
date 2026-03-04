@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import numpy_financial as npf
@@ -19,8 +20,7 @@ from pv_bess_model.config.defaults import (
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass(frozen=True)
+@dataclass()
 class FinancialMetrics:
     """Container for all computed financial metrics.
 
@@ -30,6 +30,7 @@ class FinancialMetrics:
         npv: Net present value at the given discount rate.
         dscr_min: Minimum DSCR across the loan tenor.
         dscr_avg: Average DSCR across the loan tenor.
+        annual_dscr: list of floats, for each year of the lifetime the dscr value
         lcoe: Levelized cost of energy in €/kWh.
         payback_year: First year where cumulative equity CF turns positive, or None.
     """
@@ -41,6 +42,7 @@ class FinancialMetrics:
     dscr_avg: float | None
     lcoe: float | None
     payback_year: int | None
+    annual_dscr: list[float]
 
 
 def safe_irr(cashflows: np.ndarray) -> float | None:
@@ -81,7 +83,7 @@ def calculate_dscr(
     annual_revenues: list[float],
     annual_opex: list[float],
     annual_debt_service: list[float],
-) -> tuple[float | None, float | None]:
+) -> tuple[None, None, np.ndarray[tuple[int], np.dtype[float]]] | tuple[float, float, list[float]]:
     """Calculate minimum and average DSCR over the loan tenor.
 
     DSCR = (Revenue - OPEX) / Debt Service for each year.
@@ -93,7 +95,7 @@ def calculate_dscr(
         annual_debt_service: Debt service per year during loan tenor.
 
     Returns:
-        Tuple of (min_dscr, avg_dscr), or (None, None) if no debt service years.
+        Tuple of (min_dscr, avg_dscr, annual_dsct), or (None, None, np.zeros(lifetime)) if no debt service years.
     """
     dscr_values: list[float] = []
     for rev, opex, ds in zip(annual_revenues, annual_opex, annual_debt_service):
@@ -102,7 +104,7 @@ def calculate_dscr(
             dscr_values.append(dscr)
 
     if not dscr_values:
-        return None, None
+        return None, None, np.zeros(len(annual_revenues))
 
     min_dscr = min(dscr_values)
     avg_dscr = sum(dscr_values) / len(dscr_values)
@@ -114,7 +116,7 @@ def calculate_dscr(
             DSCR_MINIMUM_THRESHOLD,
         )
 
-    return min_dscr, avg_dscr
+    return min_dscr, avg_dscr, dscr_values
 
 
 def calculate_lcoe(
@@ -182,7 +184,7 @@ def compute_all_metrics(
     equity_irr = safe_irr(equity_cashflows)
     project_irr = safe_irr(project_cashflows)
     npv = calculate_npv(equity_cashflows, discount_rate)
-    dscr_min, dscr_avg = calculate_dscr(
+    dscr_min, dscr_avg, annual_dscr = calculate_dscr(
         annual_revenues, annual_opex, annual_debt_service,
     )
     lcoe = calculate_lcoe(total_capex + total_opex_lifetime, total_production_kwh)
@@ -196,4 +198,5 @@ def compute_all_metrics(
         dscr_avg=dscr_avg,
         lcoe=lcoe,
         payback_year=payback,
+        annual_dscr=annual_dscr
     )

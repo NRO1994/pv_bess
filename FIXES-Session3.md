@@ -17,9 +17,6 @@
   jeweiligen Szenarien direkt berücksichtigt werden
 - [ ] implementiere Unit tests für _effective_green_price, der alle Market Szenarien (Market, EEG, PPA floor, PPA Collar, PPA baseload, PPA pay-as-produced) abdeckt
 - [ ] Ich habe manuell viele kleinere Fehler behoben, passt die Unit tests so an, dass sie alle wieder erfolgreich sind. Verändere nicht die Logik! Diese läuft nun korrekt
-- BESS: green discharge funktioniert bei Übertrag zwischen Tagen nicht.
-  - Green --> Null
-  - Grey --> Profitabel
-  - EEG/PPA
-    - Einkauf: Spot
-    - Verkauf: Fixed
+- MonteCarlo Simulation auf PriceWeatherScenario anpassen
+- Analyse Module auf PriceWeatherScenario anpassen
+- Wo kommt der Einkauf für PPA-Baseload in das FM?

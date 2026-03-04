@@ -27,8 +27,6 @@ import numpy as np
 
 from pv_bess_model.bess.replacement import ReplacementConfig
 from pv_bess_model.config.defaults import (
-    DEFAULT_DISCOUNT_RATE,
-    DAYS_PER_YEAR,
     GRID_SEARCH_SCALE_ZERO_PCT,
     HOURS_PER_DAY,
     HOURS_PER_YEAR,
@@ -36,13 +34,13 @@ from pv_bess_model.config.defaults import (
 from pv_bess_model.dispatch.engine import (
     DispatchEngineConfig,
     compute_deterministic_offline_days,
-    run_simulation,
+    run_simulation, SimulationResult,
 )
-from pv_bess_model.finance.cashflow import build_cashflow_projection
+from pv_bess_model.finance.cashflow import build_cashflow_projection, CashflowProjection
 from pv_bess_model.finance.costs import calculate_total_costs
 from pv_bess_model.finance.debt import build_annuity_schedule
 from pv_bess_model.finance.inflation import inflate_value
-from pv_bess_model.finance.metrics import calculate_dscr, compute_all_metrics
+from pv_bess_model.finance.metrics import calculate_dscr, compute_all_metrics, FinancialMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +121,8 @@ class GridSearchConfig:
     fixed_prices_yearly:
         Per-year EEG/PPA floor prices (€/kWh). 0.0 after the fixed-price
         period. Length must equal ``lifetime_years``.
+    baseload_kw:
+        in PPA agreed baseload level
     lifetime_years:
         Project lifetime in years.
     leverage_pct:
@@ -207,6 +207,7 @@ class GridSearchConfig:
     # Pre-computed per-year prices (€/kWh)
     spot_prices_yearly: list[np.ndarray]
     fixed_prices_yearly: list[float]
+    baseload_kw: float
 
     # Finance
     lifetime_years: int
@@ -280,18 +281,14 @@ class GridPointResult:
         Base-year total OPEX (before inflation) in €/year.
     revenue_year1:
         Total revenue in the first project year in €.
-    equity_irr:
-        Post-leverage, post-tax Equity IRR, or None if not computable.
-    project_irr:
-        Pre-leverage Project IRR, or None if not computable.
-    npv:
-        NPV at the configured discount rate in €.
-    dscr_min:
-        Minimum DSCR over the loan tenor (downside if ``debt_sizing_downside_pct > 0``).
-    dscr_avg:
-        Average DSCR over the loan tenor (downside if ``debt_sizing_downside_pct > 0``).
     is_optimal:
         True for the combination with the highest Equity IRR.
+    run_result:
+        All relevant information of the P50 simulation run.
+    metrics:
+        All metrics from the financial perspective
+    cashflow:
+        Cashflow calculation based on all data above
     """
 
     scale_pct: float
@@ -309,12 +306,10 @@ class GridPointResult:
     opex_grid: float
     opex_other: float
     revenue_year1: float
-    equity_irr: float | None
-    project_irr: float | None
-    npv: float
-    dscr_min: float | None = None
-    dscr_avg: float | None = None
     is_optimal: bool = False
+    cashflow: CashflowProjection | None = None
+    metrics: FinancialMetrics | None = None
+    run_result: SimulationResult | None = None
 
 
 @dataclass
@@ -381,6 +376,7 @@ class _GridPointArgs:
     cap_prices_yearly: list  # list[float]
     offline_days_bess_yearly: list  # list[set[int]]
     offline_days_pv_yearly: list  # list[set[int]]
+    baseload_kw: float  # Baseload level defined for ppa
 
     # Pre-computed costs
     capex_pv: float
@@ -473,6 +469,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         pv_base_timeseries_year=args.pv_base_timeseries_year,
         spot_prices_yearly=args.spot_prices_yearly,
         fixed_prices_yearly=args.fixed_prices_yearly,
+        baseload_kw=args.baseload_kw,
         offline_days_yearly=args.offline_days_bess_yearly,
         pv_offline_days_yearly=args.offline_days_pv_yearly,
         goo_prices_yearly=args.goo_prices_yearly,
@@ -483,26 +480,10 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
     annual_bess_spot_revenues_p50 = [r.bess_spot_revenue for r in sim_p50.annual_results]
     total_production_kwh = sum(r.pv_production for r in sim_p50.annual_results)
 
-    # Optional downside simulation – used for conservative DSCR calculation
-    annual_revenues_downside: list[float] | None = None
-    if args.debt_sizing_downside_pct > 0.0:
-        pv_downside = args.pv_base_timeseries * (
-            1.0 - args.debt_sizing_downside_pct / 100.0
-        )
-        sim_downside = run_simulation(
-            config=engine_config,
-            pv_base_timeseries=pv_downside,
-            pv_base_timeseries_year=args.pv_base_timeseries_year,
-            spot_prices_yearly=args.spot_prices_yearly,
-            fixed_prices_yearly=args.fixed_prices_yearly,
-            offline_days_yearly=args.offline_days_bess_yearly,
-            pv_offline_days_yearly=args.offline_days_pv_yearly,
-            goo_prices_yearly=args.goo_prices_yearly,
-            cap_prices_yearly=args.cap_prices_yearly,
-        )
-        annual_revenues_downside = [
-            r.total_revenue for r in sim_downside.annual_results
-        ]
+    # Optional downside simulation – used for conservative DSCR calculation, P90 only on PV revenue
+    annual_revenues_downside = [
+        (r.revenue_pv_export * args.debt_sizing_downside_pct / 100) +
+        r.bess_spot_revenue - r.grid_import_cost for r in sim_p50.annual_results]
 
     # Debt schedule (always based on CAPEX × leverage)
     debt_schedule = build_annuity_schedule(
@@ -541,43 +522,32 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         annual_bess_spot_revenues=annual_bess_spot_revenues_p50,
     )
 
-    # Per-year OPEX list (inflation-adjusted + optimization fee) for DSCR computation
-    annual_opex = []
-    for y in range(1, args.lifetime_years + 1):
-        opex_y = inflate_value(args.opex_base, args.inflation_rate, y)
-        if args.optimization_fee_pct > 0.0:
-            opex_y += annual_bess_spot_revenues_p50[y - 1] * args.optimization_fee_pct / 100.0
-        annual_opex.append(opex_y)
-    annual_debt_service = [
-        cf.years[y - 1].debt_service for y in range(1, args.lifetime_years + 1)
-    ]
-    total_opex_lifetime = sum(annual_opex)
-
     # Primary metrics (P50 revenues)
     metrics = compute_all_metrics(
         equity_cashflows=cf.equity_cashflows,
         project_cashflows=cf.project_cashflows,
         annual_revenues=annual_revenues_p50,
-        annual_opex=annual_opex,
-        annual_debt_service=annual_debt_service,
+        annual_opex=[y.opex for y in cf.years],
+        annual_debt_service=[cf.years[y - 1].debt_service for y in range(1, args.lifetime_years + 1)],
         total_capex=args.capex_total,
-        total_opex_lifetime=total_opex_lifetime,
+        total_opex_lifetime=sum([y.opex for y in cf.years]),
         total_production_kwh=total_production_kwh,
         discount_rate=args.discount_rate,
     )
 
-    dscr_min = metrics.dscr_min
-    dscr_avg = metrics.dscr_avg
-
     # Override DSCR with downside revenues for conservative debt coverage
     if annual_revenues_downside is not None:
-        dscr_min, dscr_avg = calculate_dscr(
+        metrics.dscr_min, metrics.dscr_avg, _ = calculate_dscr(
             annual_revenues=annual_revenues_downside,
-            annual_opex=annual_opex,
-            annual_debt_service=annual_debt_service,
+            annual_opex=[y.opex for y in cf.years],
+            annual_debt_service=[cf.years[y - 1].debt_service for y in range(1, args.lifetime_years + 1)],
         )
 
     revenue_year1 = annual_revenues_p50[0] if annual_revenues_p50 else 0.0
+
+    for y in range(args.lifetime_years + 1):
+        cf.years[y].grid_import_costs = sim_p50.annual_results[y].grid_import_cost
+        cf.years[y].baseload_matching_costs = sim_p50.annual_results[y].missing_baseload_cost
 
     return GridPointResult(
         scale_pct=args.scale_pct,
@@ -595,12 +565,10 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         opex_grid=args.opex_grid,
         opex_other=args.opex_other,
         revenue_year1=revenue_year1,
-        equity_irr=metrics.equity_irr,
-        project_irr=metrics.project_irr,
-        npv=metrics.npv,
-        dscr_min=dscr_min,
-        dscr_avg=dscr_avg,
         is_optimal=False,
+        metrics=metrics,
+        run_result=sim_p50,
+        cashflow=cf,
     )
 
 
@@ -698,10 +666,10 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
             # Replacement cost: eur_per_kwh applies to the NEW (upgraded) capacity
             _upgrade = config.replacement_capacity_factor_pct / 100.0
             replacement_cost = (
-                config.replacement_fixed_eur
-                + config.replacement_eur_per_kw * bess_power_kw
-                + config.replacement_eur_per_kwh * bess_capacity_kwh * _upgrade
-                + config.replacement_pct_of_capex * costs.capex_bess
+                    config.replacement_fixed_eur
+                    + config.replacement_eur_per_kw * bess_power_kw
+                    + config.replacement_eur_per_kwh * bess_capacity_kwh * _upgrade
+                    + config.replacement_pct_of_capex * costs.capex_bess
             )
 
             worker_args.append(
@@ -730,6 +698,7 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     pv_base_timeseries_year=config.pv_base_timeseries_year,
                     spot_prices_yearly=config.spot_prices_yearly,
                     fixed_prices_yearly=config.fixed_prices_yearly,
+                    baseload_kw=100,
                     goo_prices_yearly=config.goo_prices_yearly if config.goo_prices_yearly else [0.0] * config.lifetime_years,
                     cap_prices_yearly=config.cap_prices_yearly if config.cap_prices_yearly else [0.0] * config.lifetime_years,
                     offline_days_bess_yearly=offline_days_bess_yearly,
@@ -792,11 +761,11 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                 n_combinations,
                 a.scale_pct,
                 a.e_to_p_ratio,
-                f"{(result.equity_irr or 0.0) * 100:.2f} %" if result.equity_irr is not None else "N/A",
+                f"{(result.metrics.equity_irr or 0.0) * 100:.2f} %" if result.metrics.equity_irr is not None else "N/A",
             )
     else:
         with concurrent.futures.ProcessPoolExecutor(
-            max_workers=config.max_workers
+                max_workers=config.max_workers
         ) as executor:
             futures = {
                 executor.submit(_evaluate_grid_point, a): a for a in worker_args
@@ -821,7 +790,7 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
     optimal: GridPointResult | None = None
     best_irr: float = float("-inf")
     for r in results:
-        irr = r.equity_irr if r.equity_irr is not None else float("-inf")
+        irr = r.metrics.equity_irr if r.metrics.equity_irr is not None else float("-inf")
         if irr > best_irr:
             best_irr = irr
             optimal = r
@@ -832,7 +801,7 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
             "Grid search optimum: scale=%.0f %%, E/P=%.1f h, Equity IRR=%.2f %%.",
             optimal.scale_pct,
             optimal.e_to_p_ratio,
-            (optimal.equity_irr or 0.0) * 100,
+            (optimal.metrics.equity_irr or 0.0) * 100,
         )
     else:
         logger.warning("Grid search: no valid Equity IRR found in any combination.")

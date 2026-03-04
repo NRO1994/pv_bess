@@ -371,7 +371,7 @@ def _build_grey_lp(
     c = np.zeros(n_vars)
     for t in range(T):
         c[2 * T + t] = -(grid_loss_factor * eff_prices[t])  # export_pv × glf × eff
-        c[T + t] = -(rte * grid_loss_factor * spot_prices_eur_per_kwh[t])  # discharge_green × RTE × glf × spot
+        c[T + t] = -(rte * grid_loss_factor * eff_prices[t])  # discharge_green × RTE × glf × spot
         c[5 * T + t] = -(rte * spot_prices_eur_per_kwh[t])  # discharge_grey revenue (no glf)
         c[4 * T + t] = spot_prices_eur_per_kwh[t]  # charge_grid cost
 
@@ -523,11 +523,11 @@ def _extract_grey_result(
 ) -> DailyDispatchResult:
     """Parse the LP solution vector into a :class:`DailyDispatchResult` (Grey)."""
     charge_pv = x[0: T]
-    discharge_green = x[T: 2 * T] * grid_loss_factor * rte
-    export_pv = x[2 * T: 3 * T] * grid_loss_factor
+    discharge_green = x[T: 2 * T]
+    export_pv = x[2 * T: 3 * T]
     curtail = x[3 * T: 4 * T]
     charge_grid = x[4 * T: 5 * T]
-    discharge_grey = x[5 * T: 6 * T] * rte
+    discharge_grey = x[5 * T: 6 * T]
 
     # Reconstruct SoC trajectories
     soc_green = np.empty(T)

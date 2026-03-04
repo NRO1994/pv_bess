@@ -31,7 +31,6 @@ import numpy as np
 from pv_bess_model.config.defaults import (
     CSV_DECIMAL_SEPARATOR,
     CSV_DELIMITER,
-    CSV_INPUT_DECIMAL_SEPARATOR,
     CSV_TIMESTAMP_COLUMN,
     CSV_TIMESTAMP_FORMAT,
     DEFAULT_AFA_YEARS_BESS,
@@ -49,10 +48,7 @@ from pv_bess_model.config.defaults import (
     DEFAULT_KOERPERSCHAFTSTEUER_PCT,
     DEFAULT_INFLATION_RATE,
     DEFAULT_INTEREST_RATE_PCT,
-    DEFAULT_LEVERAGE_PCT,
-    DEFAULT_LIFETIME_YEARS,
     DEFAULT_LOAN_TENOR_YEARS,
-    DEFAULT_MC_ITERATIONS,
     DEFAULT_MC_SIGMA_BESS_AVAILABILITY_PCT,
     DEFAULT_MC_SIGMA_CAPEX_BESS_PCT,
     DEFAULT_MC_SIGMA_CAPEX_PV_PCT,
@@ -64,7 +60,6 @@ from pv_bess_model.config.defaults import (
     DEFAULT_PV_AVAILABILITY_PCT,
     DEFAULT_SKIP_BASELINE,
     DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
-    HOURS_PER_DAY,
     HOURS_PER_YEAR,
     INTERVALS_PER_DAY,
     INTERVALS_PER_HOUR,
@@ -74,7 +69,7 @@ from pv_bess_model.config.defaults import (
     PPA_TYPE_FLOOR,
     PPA_TYPE_NONE,
     PPA_TYPE_PAY_AS_PRODUCED,
-    TIMESTEP_HOURS, PPA_TYPE_BASELOAD,
+    TIMESTEP_HOURS, PPA_TYPE_BASELOAD, MWH_TO_KWH,
 )
 from pv_bess_model.config.loader import (
     PriceData,
@@ -85,15 +80,9 @@ from pv_bess_model.config.loader import (
     load_scenario,
     parse_scenarios,
 )
-from pv_bess_model.dispatch.engine import run_simulation
-from pv_bess_model.finance.cashflow import build_cashflow_projection
-from pv_bess_model.finance.costs import calculate_total_costs
-from pv_bess_model.finance.debt import build_annuity_schedule
 from pv_bess_model.finance.inflation import inflate_value
-from pv_bess_model.finance.metrics import compute_all_metrics
-from pv_bess_model.market.eeg import EegConfig, eeg_config_from_dict, effective_eeg_price
+from pv_bess_model.market.eeg import eeg_config_from_dict, effective_eeg_price
 from pv_bess_model.market.ppa import (
-    PpaConfig,
     pay_as_produced_price,
     ppa_config_from_dict,
 )
@@ -117,8 +106,6 @@ from pv_bess_model.output.csv_writer import (
 )
 from pv_bess_model.pv.pvgis_client import PVGISClient
 from pv_bess_model.pv.timeseries import (
-    align_weather_to_forecast_year,
-    compute_p50_p90,
     hourly_to_quarter_hourly,
 )
 
@@ -821,6 +808,7 @@ def run(args: argparse.Namespace) -> int:
         operating_mode=scenario.operating_mode,
         spot_prices_yearly=[sc.price_per_year for sc in scenarios_list if sc.is_central is True][0],
         fixed_prices_yearly=fixed_prices_yearly,
+        baseload_kw=scenario.finance.get("revenue_streams",{}).get("ppa", {}).get("baseload_mw", 0) / MWH_TO_KWH,
         goo_prices_yearly=goo_prices_yearly,
         cap_prices_yearly=cap_prices_yearly,
         lifetime_years=lifetime,
@@ -853,141 +841,17 @@ def run(args: argparse.Namespace) -> int:
         logger.error("Grid search found no valid optimum (all IRRs are None).")
         return 1
 
-    opt = grid_result.optimal
+    optimal_setup = grid_result.optimal
     logger.info(
         "Optimal: scale=%.0f %%, E/P=%.1f h, power=%.0f kW, capacity=%.0f kWh, "
         "Equity IRR=%.2f %%",
-        opt.scale_pct,
-        opt.e_to_p_ratio,
-        opt.bess_power_kw,
-        opt.bess_capacity_kwh,
-        (opt.equity_irr or 0.0) * 100.0,
+        optimal_setup.scale_pct,
+        optimal_setup.e_to_p_ratio,
+        optimal_setup.bess_power_kw,
+        optimal_setup.bess_capacity_kwh,
+        (optimal_setup.metrics.equity_irr or 0.0) * 100.0,
     )
 
-    # ------------------------------------------------------------------
-    # Re-run P50 simulation for optimal configuration (needed for CSVs)
-    # ------------------------------------------------------------------
-    from pv_bess_model.bess.replacement import ReplacementConfig
-    from pv_bess_model.dispatch.engine import (
-        DispatchEngineConfig,
-        compute_deterministic_offline_days,
-    )
-
-    replacement = ReplacementConfig(
-        enabled=replacement_enabled,
-        year=replacement_year,
-        fixed_eur=replacement_fixed_eur,
-        eur_per_kw=replacement_eur_per_kw,
-        eur_per_kwh=replacement_eur_per_kwh,
-        capacity_factor_pct=replacement_capacity_factor_pct,
-    )
-    engine_config = DispatchEngineConfig(
-        mode=scenario.operating_mode,
-        grid_max_kw=grid_max_kw,
-        bess_nameplate_kwh=opt.bess_capacity_kwh,
-        bess_max_charge_kw=opt.bess_power_kw,
-        bess_max_discharge_kw=opt.bess_power_kw,
-        bess_rte=bess_rte,
-        grid_loss_factor=grid_loss_factor,
-        bess_min_soc_pct=bess_min_soc_pct,
-        bess_max_soc_pct=bess_max_soc_pct,
-        bess_degradation_rate=bess_degradation_rate,
-        pv_degradation_rate=pv_degradation_rate,
-        replacement=replacement,
-        lifetime_years=lifetime,
-        commissioning_year=commissioning_year,
-        bess_power_kw=opt.bess_power_kw,
-        timestep_hours=ts_timestep_hours,
-        intervals_per_day=ts_intervals_per_day,
-        intervals_per_year=ts_intervals_per_year,
-    )
-    offline_days = compute_deterministic_offline_days(bess_availability_pct)
-    offline_days_yearly = [offline_days] * lifetime
-
-    sim = run_simulation(
-        config=engine_config,
-        pv_base_timeseries=central_pv_timeseries,
-        pv_base_timeseries_year=central_pv_timeseries_year,
-        spot_prices_yearly=spot_prices_yearly,
-        fixed_prices_yearly=fixed_prices_yearly,
-        offline_days_yearly=offline_days_yearly,
-        pv_offline_days_yearly=[{val + 28 for val in s} for s in offline_days_yearly],  # Shift BESS offline days by 4 weeks
-        goo_prices_yearly=goo_prices_yearly,
-        cap_prices_yearly=cap_prices_yearly,
-    )
-
-    annual_revenues = [r.total_revenue for r in sim.annual_results]
-    annual_pv_kwh = [r.pv_export for r in sim.annual_results]
-    annual_bess_throughput = [r.bess_throughput for r in sim.annual_results]
-    annual_bess_spot_revenues = [r.bess_spot_revenue for r in sim.annual_results]
-    total_production_kwh = sum(annual_pv_kwh)
-
-    # Build cashflow
-    debt_schedule = build_annuity_schedule(
-        total_capex=opt.capex_total,
-        leverage_pct=leverage_pct,
-        annual_interest_rate=interest_rate_pct / 100.0,
-        tenor_years=loan_tenor_years,
-    )
-    _upgrade = replacement_capacity_factor_pct / 100.0
-    replacement_cost = (
-        replacement_fixed_eur
-        + replacement_eur_per_kw * opt.bess_power_kw
-        + replacement_eur_per_kwh * opt.bess_capacity_kwh * _upgrade
-        + replacement_pct_of_capex * opt.capex_bess
-    )
-    cashflow = build_cashflow_projection(
-        lifetime_years=lifetime,
-        annual_revenues=annual_revenues,
-        base_opex=opt.opex_base,
-        inflation_rate=inflation_rate,
-        capex_total=opt.capex_total,
-        capex_pv=opt.capex_pv,
-        capex_bess=opt.capex_bess,
-        debt_schedule=debt_schedule,
-        afa_years_pv=afa_years_pv,
-        afa_years_bess=afa_years_bess,
-        gewerbesteuer_messzahl=gewerbesteuer_messzahl,
-        gewerbesteuer_hebesatz=gewerbesteuer_hebesatz,
-        koerperschaftsteuer_pct=koerperschaftsteuer_pct,
-        solidaritaetszuschlag_pct=solidaritaetszuschlag_pct,
-        replacement_cost=replacement_cost if replacement_enabled else 0.0,
-        replacement_year=replacement_year if replacement_enabled else None,
-        replacement_leverage_pct=leverage_pct,
-        replacement_interest_rate=interest_rate_pct / 100.0,
-        replacement_loan_tenor_years=loan_tenor_years,
-        optimization_fee_pct=optimization_fee_pct,
-        annual_bess_spot_revenues=annual_bess_spot_revenues,
-    )
-
-    annual_opex = []
-    for y in range(1, lifetime + 1):
-        opex_y = inflate_value(opt.opex_base, inflation_rate, y)
-        if optimization_fee_pct > 0.0:
-            opex_y += annual_bess_spot_revenues[y - 1] * optimization_fee_pct / 100.0
-        annual_opex.append(opex_y)
-    annual_debt_service = [cashflow.years[y - 1].debt_service for y in range(1, lifetime + 1)]
-    annual_dscr: list[float | None] = []
-    for y in range(lifetime):
-        ds = annual_debt_service[y]
-        ebitda = annual_revenues[y] - annual_opex[y]
-        if ds > 0.0:
-            annual_dscr.append(ebitda / ds)
-        else:
-            annual_dscr.append(None)
-
-    total_opex_lifetime = sum(annual_opex)
-    metrics = compute_all_metrics(
-        equity_cashflows=cashflow.equity_cashflows,
-        project_cashflows=cashflow.project_cashflows,
-        annual_revenues=annual_revenues,
-        annual_opex=annual_opex,
-        annual_debt_service=annual_debt_service,
-        total_capex=opt.capex_total,
-        total_opex_lifetime=total_opex_lifetime,
-        total_production_kwh=total_production_kwh,
-        discount_rate=discount_rate,
-    )
 
     # ------------------------------------------------------------------
     # Step 6: Build MC parameters (needed for MC and/or analyses)
@@ -1002,7 +866,6 @@ def run(args: argparse.Namespace) -> int:
     need_mc_params = mc_enabled or any_analysis_enabled
     mc_result = None
     mc_params: MCParams | None = None
-    scenario_prices: dict[str, list[np.ndarray]] = {}
 
     if need_mc_params:
         mc_iterations = int(mc_cfg.get("iterations", 1000))
@@ -1013,27 +876,6 @@ def run(args: argparse.Namespace) -> int:
         sigma_pv_avail = float(mc_cfg.get("sigma_pv_availability_pct", DEFAULT_MC_SIGMA_PV_AVAILABILITY_PCT)) / 100.0
         sigma_bess_avail = float(mc_cfg.get("sigma_bess_availability_pct", DEFAULT_MC_SIGMA_BESS_AVAILABILITY_PCT)) / 100.0
 
-        mc_price_scenarios: dict[str, dict] = {}
-
-        if scenarios_list and scenario_prices_map:
-            scenario_prices = scenario_prices_map
-            mc_price_scenarios = mc_price_scenarios_from_list
-        else:
-            price_scenarios_cfg = mc_cfg.get("price_scenarios", {})
-            if price_scenarios_cfg:
-                for name, cfg_item in price_scenarios_cfg.items():
-                    col = cfg_item["csv_column"]
-                    scenario_prices[name] = _build_spot_prices_yearly(
-                        extended_prices[col], lifetime, inflation_rate, inflation_on_prices
-                    )
-                mc_price_scenarios = {
-                    k: {"csv_column": v["csv_column"], "weight": float(v["weight"])}
-                    for k, v in price_scenarios_cfg.items()
-                }
-            else:
-                scenario_prices = {"mid": spot_prices_yearly}
-                mc_price_scenarios = {"mid": {"csv_column": "MID", "weight": 1.0}}
-
         mc_params = MCParams(
             iterations=mc_iterations,
             sigma_capex_pv=sigma_capex_pv,
@@ -1043,7 +885,7 @@ def run(args: argparse.Namespace) -> int:
             sigma_pv_availability=sigma_pv_avail,
             mu_bess_availability=bess_availability_pct / 100.0,
             sigma_bess_availability=sigma_bess_avail,
-            price_scenarios=mc_price_scenarios,
+            price_scenarios=scenarios_list,
             max_workers=1 if args.verbose else None,
         )
 
@@ -1054,10 +896,9 @@ def run(args: argparse.Namespace) -> int:
         logger.info("Starting Monte Carlo (%d iterations)…", mc_params.iterations)
         mc_result = run_monte_carlo(
             base_config=grid_search_config,
-            optimal=opt,
+            optimal=optimal_setup,
             mc_params=mc_params,
-            scenario_prices=scenario_prices,
-            scenario_pv_timeseries=scenario_pv_map if scenario_pv_map else None,
+            scenario_prices=scenarios_list,
         )
 
     # ------------------------------------------------------------------
@@ -1071,7 +912,6 @@ def run(args: argparse.Namespace) -> int:
         marketing = scenario.finance.get("revenue_streams", {}).get("marketing", {})
         eeg_inflation_flag = bool(marketing.get("eeg_inflation", False))
         eeg_fixed_price_years = int(marketing.get("fixed_price_years", 20))
-        _sc_pv = scenario_pv_map if scenario_pv_map else None
 
         if analyses_cfg.get("eeg_sensitivity", {}).get("enabled", False):
             eeg_cfg = analyses_cfg["eeg_sensitivity"]
@@ -1082,14 +922,13 @@ def run(args: argparse.Namespace) -> int:
             )
             eeg_sens_result = run_eeg_sensitivity(
                 base_config=grid_search_config,
-                optimal=opt,
+                optimal=optimal_setup,
                 mc_params=mc_params,
-                scenario_prices=scenario_prices,
+                scenario_prices=scenarios_list,
                 floor_prices=floor_prices,
                 inflation_rate=inflation_rate,
                 eeg_inflation=eeg_inflation_flag,
                 fixed_price_years=eeg_fixed_price_years,
-                scenario_pv_timeseries=_sc_pv,
             )
 
         if analyses_cfg.get("ppa_collar", {}).get("enabled", False):
@@ -1103,16 +942,15 @@ def run(args: argparse.Namespace) -> int:
             )
             collar_result = run_ppa_collar_analysis(
                 base_config=grid_search_config,
-                optimal=opt,
+                optimal=optimal_setup,
                 mc_params=mc_params,
-                scenario_prices=scenario_prices,
+                scenario_prices=scenarios_list,
                 floor_prices_eur_per_mwh=collar_cfg["floor_prices_eur_per_mwh"],
                 cap_spreads_eur_per_mwh=collar_cfg["cap_spreads_eur_per_mwh"],
                 duration_years=collar_cfg["duration_years"],
                 inflation_on_ppa=collar_cfg.get("inflation_on_ppa", False),
                 goo_premium_eur_per_kwh=collar_cfg["goo_premium_eur_per_kwh"],
                 inflation_rate=inflation_rate,
-                scenario_pv_timeseries=_sc_pv,
             )
 
         if analyses_cfg.get("ppa_baseload", {}).get("enabled", False):
@@ -1126,16 +964,15 @@ def run(args: argparse.Namespace) -> int:
             )
             baseload_result = run_ppa_baseload_analysis(
                 base_config=grid_search_config,
-                optimal=opt,
+                optimal=optimal_setup,
                 mc_params=mc_params,
-                scenario_prices=scenario_prices,
+                scenario_prices=scenarios_list,
                 ppa_prices_eur_per_mwh=bl_cfg["ppa_prices_eur_per_mwh"],
                 baseload_levels_mw=bl_cfg["baseload_levels_mw"],
                 duration_years=bl_cfg["duration_years"],
                 inflation_on_ppa=bl_cfg.get("inflation_on_ppa", False),
                 goo_premium_eur_per_kwh=bl_cfg["goo_premium_eur_per_kwh"],
                 inflation_rate=inflation_rate,
-                scenario_pv_timeseries=_sc_pv,
             )
 
     # ------------------------------------------------------------------
@@ -1155,24 +992,24 @@ def run(args: argparse.Namespace) -> int:
         marketing_type=marketing_type,
         lifetime_years=lifetime,
         grid_result=grid_result,
-        cashflow=cashflow,
-        equity_irr=metrics.equity_irr,
-        project_irr=metrics.project_irr,
-        npv=metrics.npv,
-        dscr_min=metrics.dscr_min,
-        dscr_avg=metrics.dscr_avg,
-        lcoe=metrics.lcoe,
-        payback_year=metrics.payback_year,
-        total_production_kwh=total_production_kwh,
+        cashflow=optimal_setup.cashflow,
+        equity_irr=optimal_setup.metrics.equity_irr,
+        project_irr=optimal_setup.metrics.project_irr,
+        npv=optimal_setup.metrics.npv,
+        dscr_min=optimal_setup.metrics.dscr_min,
+        dscr_avg=optimal_setup.metrics.dscr_avg,
+        lcoe=optimal_setup.metrics.lcoe,
+        payback_year=optimal_setup.metrics.payback_year,
+        total_production_kwh=np.sum([r.pv_production for r in optimal_setup.run_result.annual_results]),
         config=csv_config,
     )
 
     write_cashflows_csv(
         path=output_dir / f"{scenario.name}_cashflows.csv",
-        cashflow=cashflow,
-        annual_pv_production_kwh=annual_pv_kwh,
-        annual_bess_throughput_kwh=annual_bess_throughput,
-        annual_dscr=annual_dscr,
+        cashflow=optimal_setup.cashflow,
+        annual_pv_production_kwh=[r.pv_production for r in optimal_setup.run_result.annual_results],
+        annual_bess_throughput_kwh=[r.bess_throughput for r in optimal_setup.run_result.annual_results],
+        annual_dscr=optimal_setup.metrics.annual_dscr,
         commissioning_year=scenario.commissioning_year,
         config=csv_config,
     )
@@ -1220,7 +1057,7 @@ def run(args: argparse.Namespace) -> int:
     if export_dispatch:
         write_dispatch_sample_csv(
             path=output_dir / f"{scenario.name}_dispatch_sample.csv",
-            hourly_sample=sim.hourly_sample,
+            hourly_sample=optimal_setup.run_result.hourly_sample,
             start_year=scenario.commissioning_year,
             config=csv_config,
         )
@@ -1228,28 +1065,28 @@ def run(args: argparse.Namespace) -> int:
     # ------------------------------------------------------------------
     # Step 7b: PDF Report generation
     # ------------------------------------------------------------------
-    _generate_report(
-        scenario=scenario,
-        output_dir=output_dir,
-        _out_block=_out_block,
-        args=args,
-        grid_result=grid_result,
-        opt=opt,
-        metrics=metrics,
-        mc_result=mc_result,
-        weather_data_for_report=weather_data_for_report,
-        scenario_prices=scenario_prices,
-        scenarios_list=scenarios_list,
-        commissioning_year=commissioning_year,
-        eeg_sens_result=eeg_sens_result,
-        collar_result=collar_result,
-        baseload_result=baseload_result,
-    )
+    if scenario.raw.get("scenario", {}).get("output", {}).get("report", {}).get("enabled", False):
+        _generate_report(
+            scenario=scenario,
+            output_dir=output_dir,
+            _out_block=_out_block,
+            args=args,
+            grid_result=grid_result,
+            opt=optimal_setup,
+            metrics=optimal_setup.metrics,
+            mc_result=mc_result,
+            weather_data_for_report=weather_data_for_report,
+            scenarios_list=scenarios_list,
+            commissioning_year=commissioning_year,
+            eeg_sens_result=eeg_sens_result,
+            collar_result=collar_result,
+            baseload_result=baseload_result,
+        )
 
-    # ------------------------------------------------------------------
-    # Step 8: Print summary
-    # ------------------------------------------------------------------
-    _print_summary(scenario.name, opt, metrics, mc_result)
+        # ------------------------------------------------------------------
+        # Step 8: Print summary
+        # ------------------------------------------------------------------
+        _print_summary(scenario.name, optimal_setup, optimal_setup.metrics, mc_result)
 
     return 0
 
@@ -1328,8 +1165,7 @@ def _generate_report(
     metrics,
     mc_result,
     weather_data_for_report: dict[int, np.ndarray] | None,
-    scenario_prices: dict,
-    scenarios_list: list,
+    scenario_prices: list[PriceWeatherScenario],
     commissioning_year: int,
     eeg_sens_result,
     collar_result,
@@ -1362,8 +1198,6 @@ def _generate_report(
     weather_data_for_report:
         Weather year PV data or None.
     scenario_prices:
-        Price scenario data.
-    scenarios_list:
         List of PriceWeatherScenario instances.
     commissioning_year:
         Project commissioning year.
@@ -1399,9 +1233,9 @@ def _generate_report(
 
     # Build scenario labels from scenarios_list
     scenario_labels: dict[str, str] | None = None
-    if scenarios_list:
+    if scenario_prices:
         scenario_labels = {}
-        for sc in scenarios_list:
+        for sc in scenario_prices:
             label = getattr(sc, "label", None) or sc.name
             scenario_labels[sc.name] = label
 

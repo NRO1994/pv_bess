@@ -29,6 +29,7 @@ from pv_bess_model.config.defaults import (
     DEFAULT_MC_ITERATIONS,
     MC_WEIGHT_TOLERANCE,
 )
+from pv_bess_model.config.loader import PriceWeatherScenario
 from pv_bess_model.dispatch.engine import DispatchEngineConfig, run_simulation
 from pv_bess_model.finance.cashflow import build_cashflow_projection
 from pv_bess_model.finance.debt import build_annuity_schedule
@@ -86,15 +87,13 @@ class MCParams:
     sigma_pv_availability: float = 0.02
     mu_bess_availability: float = 0.97
     sigma_bess_availability: float = 0.02
-    price_scenarios: dict[str, dict] = field(default_factory=dict)
+    price_scenarios: list[PriceWeatherScenario] = field(default_factory=dict)
     seed: int = 0
     max_workers: int | None = None
 
     def __post_init__(self) -> None:
         """Set default price scenarios and validate weights."""
-        if not self.price_scenarios:
-            self.price_scenarios = {"mid": {"csv_column": "MID", "weight": 1.0}}
-        weights = sum(v["weight"] for v in self.price_scenarios.values())
+        weights = sum(version.weight for version in self.price_scenarios)
         if abs(weights - 1.0) > MC_WEIGHT_TOLERANCE:
             raise ValueError(
                 f"MC price scenario weights must sum to 1.0, got {weights:.6f}."
@@ -527,8 +526,7 @@ def run_monte_carlo(
     base_config: GridSearchConfig,
     optimal: GridPointResult,
     mc_params: MCParams,
-    scenario_prices: dict[str, list[np.ndarray]],
-    scenario_pv_timeseries: dict[str, np.ndarray] | None = None,
+    scenario_prices: list[PriceWeatherScenario],
 ) -> MCResult:
     """Run the Monte Carlo simulation on the optimal BESS configuration.
 

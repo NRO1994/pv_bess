@@ -34,6 +34,8 @@ class AnnualCashflow:
 
     year: int
     revenue: float
+    grid_import_costs: float
+    baseload_matching_costs: float
     opex: float
     capex: float
     debt_service: float
@@ -221,6 +223,8 @@ def build_cashflow_projection(
                 total_tax=tax_result.total_tax,
                 project_cf=proj_cf,
                 equity_cf=eq_cf,
+                grid_import_costs=0.0,
+                baseload_matching_costs=0.0
             )
         )
 

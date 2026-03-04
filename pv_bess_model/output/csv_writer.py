@@ -41,6 +41,7 @@ from pv_bess_model.config.defaults import (
 )
 from pv_bess_model.dispatch.engine import HourlySample
 from pv_bess_model.finance.cashflow import CashflowProjection
+from pv_bess_model.optimization.analyses import SensitivityResult
 from pv_bess_model.optimization.grid_search import GridSearchResult
 from pv_bess_model.optimization.monte_carlo import MCResult
 from pv_bess_model.output.formatting import fmt_currency, fmt_float, fmt_optional, fmt_pct
@@ -242,6 +243,8 @@ def write_cashflows_csv(
             "pv_production_mwh": fmt_float(pv_mwh, decimal=d),
             "bess_throughput_mwh": fmt_float(bess_mwh, decimal=d),
             "revenue_eur": fmt_currency(y.revenue, decimal=d),
+            "grid_import_costs": fmt_currency(y.grid_import_costs, decimal=d),
+            "baseload_matching_costs": fmt_currency(y.baseload_matching_costs, decimal=d),
             "opex_eur": fmt_currency(y.opex, decimal=d),
             "debt_interest_eur": fmt_currency(y.debt_interest, decimal=d),
             "debt_repayment_eur": fmt_currency(y.debt_repayment, decimal=d),
@@ -299,11 +302,11 @@ def write_grid_search_csv(
             "capex_bess_eur": fmt_currency(pt.capex_bess, decimal=d),
             "opex_base_eur": fmt_currency(pt.opex_base, decimal=d),
             "revenue_year1_eur": fmt_currency(pt.revenue_year1, decimal=d),
-            "equity_irr_pct": fmt_pct(pt.equity_irr, decimal=d),
-            "project_irr_pct": fmt_pct(pt.project_irr, decimal=d),
-            "npv_eur": fmt_currency(pt.npv, decimal=d),
-            "dscr_min": fmt_float(pt.dscr_min, decimal=d),
-            "dscr_avg": fmt_float(pt.dscr_avg, decimal=d),
+            "equity_irr_pct": fmt_pct(pt.metrics.equity_irr, decimal=d),
+            "project_irr_pct": fmt_pct(pt.metrics.project_irr, decimal=d),
+            "npv_eur": fmt_currency(pt.metrics.npv, decimal=d),
+            "dscr_min": fmt_float(pt.metrics.dscr_min, decimal=d),
+            "dscr_avg": fmt_float(pt.metrics.dscr_avg, decimal=d),
             "is_optimal": str(pt.is_optimal),
         })
 

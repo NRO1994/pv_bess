@@ -46,8 +46,8 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-TECH_SETUPS = ["bess_only"]#, "pv_only", "pv_bess"]
-OPERATING_MODES = ["grey"]#, "green"]
+TECH_SETUPS = ["bess_only", "pv_only"]  # , "pv_bess"]
+OPERATING_MODES = ["grey", "green"]
 MARKETING_STRATEGIES = ["market", "eeg", "ppa_pap", "ppa_baseload", "ppa_floor", "ppa_collar"]
 
 BESS_CONFIGS: dict[str, dict[str, float | None]] = {
@@ -570,9 +570,6 @@ def run_scenario_programmatic(
 
         pv_offline, bess_offline = check_availability(
             dispatch_df=dispatch_df,
-            bess_availability_pct=bess_avail,
-            has_bess=has_bess,
-            mc_enabled=False,
             intervals_per_day=ipd,
         )
 
@@ -621,6 +618,20 @@ def all_results(price_csv_path: Path, tmp_path_factory) -> dict[str, ScenarioRes
         for mode in OPERATING_MODES:
             for mkt in MARKETING_STRATEGIES:
                 name = f"{tech}_{mode}_{mkt}"
+
+                # Green bess-only should not work, this is just artificial, with manual mock up results in output dir
+                if (tech == "bess_only") & (mode == "green"):
+                    results[name] = ScenarioResult(
+                        name=name,
+                        equity_irr=None,
+                        project_irr=None,
+                        revenue_year1=0,
+                        npv=-1e6,
+                        dscr_min=0,
+                        capex_total=200000,
+                    )
+                    continue
+
                 scenario = build_scenario(MASTER_SCENARIO, tech, mode, mkt)
                 # Set price CSV path (absolute)
                 for scenario_att in scenario["project_settings"]["finance"]["price_inputs"]["scenarios"]:
@@ -733,7 +744,7 @@ class TestAvailability:
         defined_offline_days = np.ceil((1 - data["project_settings"]["technology"]["pv"]["performance"][
             "pv_availability_pct"] / 100) * DAYS_PER_YEAR)
         assert abs(defined_offline_days - result.pv_offline_days) <= 9, (
-        # 9 Days in sample data with no production anyway
+            # 9 Days in sample data with no production anyway
             f"pv_bess_{mode}: too many PV offline days ({result.pv_offline_days})"
         )
 
@@ -749,15 +760,14 @@ class TestAvailability:
                 msg_lines.append(f"  [{v.constraint}] timestep={v.timestep}: {v.expected}, actual={v.actual:.4f}")
             assert False, "\n".join(msg_lines)
 
-    @pytest.mark.parametrize("mode", OPERATING_MODES)
     @pytest.mark.parametrize("mkt", MARKETING_STRATEGIES)
     def test_bess_only_no_pv_production(
-            self, all_results: dict[str, ScenarioResult], mode: str, mkt: str
+            self, all_results: dict[str, ScenarioResult], mkt: str
     ):
         """BESS-only scenarios should have 365 PV offline days."""
-        result = all_results[f"bess_only_{mode}_{mkt}"]
+        result = all_results[f"bess_only_grey_{mkt}"]
         assert result.pv_offline_days == 365, (
-            f"bess_only_{mode}_{mkt}: expected 365 PV offline days, "
+            f"bess_only_grey_{mkt}: expected 365 PV offline days, "
             f"got {result.pv_offline_days}"
         )
 

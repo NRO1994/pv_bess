@@ -716,12 +716,6 @@ def _validate_baseload_ppa(data: dict) -> None:
         .get("design", {})
         .get("peak_power_kwp")
     )
-    if pv_peak_kwp is not None and baseload_mw * 1000 > pv_peak_kwp:
-        raise ValueError(
-            f"baseload_mw ({baseload_mw} MW = {baseload_mw * 1000} kW) "
-            f"exceeds PV peak power ({pv_peak_kwp} kWp). "
-            f"The baseload level must not exceed the PV nominal capacity."
-        )
 
 
 def _validate_bess_only(data: dict) -> None:

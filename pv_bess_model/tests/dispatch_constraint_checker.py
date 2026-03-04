@@ -46,17 +46,17 @@ class ConstraintViolation:
 
 
 def check_dispatch_constraints(
-    dispatch_df: pd.DataFrame,
-    pv_peak_kwp: float,
-    bess_power_kw: float,
-    bess_capacity_kwh: float,
-    grid_max_kw: float,
-    rte: float,
-    min_soc_pct: float,
-    max_soc_pct: float,
-    operating_mode: str,
-    grid_loss_factor: float,
-    tolerance: float = 0.01,
+        dispatch_df: pd.DataFrame,
+        pv_peak_kwp: float,
+        bess_power_kw: float,
+        bess_capacity_kwh: float,
+        grid_max_kw: float,
+        rte: float,
+        min_soc_pct: float,
+        max_soc_pct: float,
+        operating_mode: str,
+        grid_loss_factor: float,
+        tolerance: float = 0.01,
 ) -> list[ConstraintViolation]:
     """Validate dispatch output against all physical constraints.
 
@@ -96,7 +96,7 @@ def check_dispatch_constraints(
 
     # Extract columns as numpy arrays
     pv_prod = dispatch_df["pv_production_kwh"].values.astype(float)
-    export_pv = dispatch_df["grid_export_kwh"].values.astype(float)
+    export_pv = dispatch_df["pv_grid_export_kwh"].values.astype(float)
     charge_pv = dispatch_df["bess_charge_pv_kwh"].values.astype(float)
     charge_grid = dispatch_df["bess_charge_grid_kwh"].values.astype(float)
     discharge_green = dispatch_df["bess_discharge_green_kwh"].values.astype(float)
@@ -120,7 +120,7 @@ def check_dispatch_constraints(
 
     # 1. Energy balance PV: export_pv + charge_pv + curtail ≈ pv_production
     for t in range(n):
-        balance = (export_pv[t] + charge_pv[t] + curtail[t]) / grid_loss_factor
+        balance = (export_pv[t] + curtail[t]) / grid_loss_factor + charge_pv[t]
         diff = abs(balance - pv_prod[t])
         if diff > tolerance:
             violations.append(ConstraintViolation(
@@ -166,7 +166,7 @@ def check_dispatch_constraints(
 
         # 4. Discharge power limits
         for t in range(n):
-            total_discharge = discharge_green[t] + discharge_grey[t]
+            total_discharge = (discharge_green[t] + discharge_grey[t]) / rte
             max_discharge = bess_power_kw * timestep_h
             if total_discharge > max_discharge + tolerance:
                 violations.append(ConstraintViolation(
@@ -180,10 +180,8 @@ def check_dispatch_constraints(
     # 5. Grid connection limit
     grid_max_energy = grid_max_kw * timestep_h
     for t in range(n):
-        total_export = (
-            export_pv[t] * grid_loss_factor
-            + (discharge_green[t] + discharge_grey[t]) * rte
-        )
+        total_export = export_pv[t] + (discharge_green[t] + discharge_grey[t])
+
         if total_export > grid_max_energy + tolerance:
             violations.append(ConstraintViolation(
                 constraint="grid_connection_limit",
@@ -195,7 +193,7 @@ def check_dispatch_constraints(
 
     # 6. Non-negativity
     var_names = [
-        ("export_pv", export_pv),
+        ("pv_grid_export", export_pv),
         ("charge_pv", charge_pv),
         ("charge_grid", charge_grid),
         ("discharge_green", discharge_green),
@@ -234,19 +232,28 @@ def check_dispatch_constraints(
                 ))
 
     if has_bess:
-        # 8. SoC continuity day-to-day
+        # 8. SoC charging/discharging
         n_days = n // ipd
-        for d in range(1, n_days):
-            soc_end_prev = soc[d * ipd - 1]
-            soc_start_curr = soc[(d - 1) * ipd] if d == 1 else soc[d * ipd]
-            # Actually: soc[t] represents the SoC at the END of interval t.
-            # So soc at end of day d-1 = soc[(d)*ipd - 1]
-            # The start of day d is reflected in the first interval of day d:
-            # soc[d*ipd] = soc_end_prev + charge - discharge at interval d*ipd
-            # We can't directly check start SoC from the CSV since it only
-            # records end-of-interval SoC. Skip detailed check here — the LP
-            # optimizer handles coupling internally.
-            pass
+        for t in range(n):
+            previous_soc = soc[max(t-1, 0)]
+            total_charge = charge_grid[t] + charge_pv[t]
+            total_discharge = -(discharge_green[t] - discharge_grey[t]) / rte
+
+            if (total_charge > 0) and (abs(previous_soc - soc[t]) > total_charge + tolerance):
+                violations.append(ConstraintViolation(
+                    constraint="charging_soc_cummulative",
+                    timestep=t,
+                    expected=f"prev_soc + charge_grid + charge_pv = soc {previous_soc + total_charge}",
+                    actual=soc[t],
+                    severity="error",))
+
+            if (total_discharge > 0) and (abs(previous_soc - soc[t]) > total_discharge + tolerance):
+                violations.append(ConstraintViolation(
+                    constraint="discharging_soc_cummulative",
+                    timestep=t,
+                    expected=f"prev_soc - discharge_green + discharge_grey = soc {previous_soc + total_discharge}",
+                    actual=soc[t],
+                    severity="error",))
 
         # 9. BESS offline days: no charge/discharge, SoC constant
         for d in range(n_days):
@@ -273,11 +280,8 @@ def check_dispatch_constraints(
 
 
 def check_availability(
-    dispatch_df: pd.DataFrame,
-    bess_availability_pct: float,
-    has_bess: bool,
-    mc_enabled: bool,
-    intervals_per_day: int = 24,
+        dispatch_df: pd.DataFrame,
+        intervals_per_day: int = 24,
 ) -> tuple[int, int]:
     """Count PV and BESS offline days from dispatch data.
 
@@ -331,23 +335,24 @@ def check_availability(
 
         # BESS offline: no charge and no discharge for the entire day
         day_charge = (
-            np.sum(charge_pv[start:end])
-            + np.sum(charge_grid[start:end])
+                np.sum(charge_pv[start:end])
+                + np.sum(charge_grid[start:end])
         )
         day_discharge = (
-            np.sum(discharge_green[start:end])
-            + np.sum(discharge_grey[start:end])
+                np.sum(discharge_green[start:end])
+                + np.sum(discharge_grey[start:end])
         )
         if day_charge < tolerance and day_discharge < tolerance:
             bess_offline_days += 1
 
     return pv_offline_days, bess_offline_days
 
+
 def check_price_dependencies(
         dispatch_df: pd.DataFrame,
 ) -> list[ConstraintViolation]:
     violations: list[ConstraintViolation] = []
-    pv_prod = dispatch_df["grid_export_kwh"].values.astype(float)
+    pv_prod = dispatch_df["pv_grid_export_kwh"].values.astype(float)
     eff_price = dispatch_df["price_effective_eur_per_kwh"].values.astype(float)
 
     mask = (pv_prod > 0) & (eff_price < 0)
