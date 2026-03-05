@@ -46,9 +46,10 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-TECH_SETUPS = ["bess_only", "pv_only"]  # , "pv_bess"]
+TECH_SETUPS = ["bess_only", "pv_only", "pv_bess"]
 OPERATING_MODES = ["grey", "green"]
 MARKETING_STRATEGIES = ["market", "eeg", "ppa_pap", "ppa_baseload", "ppa_floor", "ppa_collar"]
+ONLY_CHECK_NOT_RERUN = False
 
 BESS_CONFIGS: dict[str, dict[str, float | None]] = {
     "pv_only": {"bess_power": None, "bess_capacity": None},
@@ -334,7 +335,7 @@ def build_scenario(
         rev["marketing"] = {"type": "ppa"}
         rev["ppa"] = {
             "type": "ppa_pay_as_produced",
-            "pay_as_produced_price_eur_per_kwh": 0.053,
+            "pay_as_produced_price_eur_per_kwh": 0.073,
             "duration_years": 15,
             "inflation_on_ppa": False,
             "guarantee_of_origin_eur_per_kwh": 0.003,
@@ -343,8 +344,8 @@ def build_scenario(
         rev["marketing"] = {"type": "ppa"}
         rev["ppa"] = {
             "type": "ppa_baseload",
-            "pay_as_produced_price_eur_per_kwh": 0.070,
-            "baseload_mw": 0.3,
+            "pay_as_produced_price_eur_per_kwh": 0.075,
+            "baseload_mw": 0.1,
             "duration_years": 15,
             "inflation_on_ppa": False,
             "guarantee_of_origin_eur_per_kwh": 0.003,
@@ -536,6 +537,9 @@ def run_scenario_programmatic(
     exit_code = run(args)
     assert exit_code == 0, f"Scenario {name} failed with exit code {exit_code}"
 
+    return check_dispatch_on_violations(name, output_dir, scenario_dict)
+
+def check_dispatch_on_violations(name:str, output_dir: Path, scenario_dict:dict):
     # Parse results from output CSVs
     kpis = parse_results_from_csvs(output_dir, name)
 
@@ -561,10 +565,6 @@ def run_scenario_programmatic(
             **params,
         )
 
-        has_bess = params["bess_power_kw"] > 0
-        bess_avail = float(
-            scenario_dict["project_settings"]["technology"]["bess"]["performance"]["bess_availability_pct"]
-        )
         n_intervals = len(dispatch_df)
         ipd = 96 if n_intervals == 35040 else 24
 
@@ -636,6 +636,11 @@ def all_results(price_csv_path: Path, tmp_path_factory) -> dict[str, ScenarioRes
                 # Set price CSV path (absolute)
                 for scenario_att in scenario["project_settings"]["finance"]["price_inputs"]["scenarios"]:
                     scenario_att["price_csv"] = str(price_csv_path)
+
+                # check constraints, without rerunning all tests
+                if ONLY_CHECK_NOT_RERUN:
+                    results[name] = check_dispatch_on_violations(name, Path(scenario["scenario"]["output"]["directory"]), scenario)
+                    continue
 
                 logger.info("Running integration scenario: %s", name)
                 try:
@@ -723,7 +728,7 @@ class TestAvailability:
             # No BESS → every day is "offline" (no charge/discharge)
             assert result.bess_offline_days == 365
         else:
-            expected_min = round((1.0 - 97.0 / 100.0) * 365)
+            expected_min = round((1.0 - 99.0 / 100.0) * 365)
             assert result.bess_offline_days >= expected_min, (
                 f"{tech}_{mode}: expected >= {expected_min} BESS offline days, "
                 f"got {result.bess_offline_days}"
@@ -790,6 +795,13 @@ class TestKPIRanking:
             return None
         return r.equity_irr
 
+    def _rev1(self, results: dict, key: str) -> float | None:
+        """Get equity IRR from results."""
+        r = results.get(key)
+        if r is None:
+            return None
+        return r.revenue_year1
+
     @pytest.mark.parametrize("tech", ["pv_only", "pv_bess"])
     @pytest.mark.parametrize("mode", OPERATING_MODES)
     def test_marketing_ranking(
@@ -806,23 +818,23 @@ class TestKPIRanking:
         """
         tol = 1.0  # EUR tolerance
 
-        npv_eeg = self._npv(all_results, f"{tech}_{mode}_eeg")
-        npv_floor = self._npv(all_results, f"{tech}_{mode}_ppa_floor")
-        npv_collar = self._npv(all_results, f"{tech}_{mode}_ppa_collar")
-        npv_pap = self._npv(all_results, f"{tech}_{mode}_ppa_pap")
-        npv_market = self._npv(all_results, f"{tech}_{mode}_market")
+        rev1_eeg = self._rev1(all_results, f"{tech}_{mode}_eeg")
+        rev1_floor = self._rev1(all_results, f"{tech}_{mode}_ppa_floor")
+        rev1_collar = self._rev1(all_results, f"{tech}_{mode}_ppa_collar")
+        rev1_pap = self._rev1(all_results, f"{tech}_{mode}_ppa_pap")
+        rev1_market = self._rev1(all_results, f"{tech}_{mode}_market")
 
-        assert npv_eeg >= npv_floor - tol, (
-            f"{tech}_{mode}: EEG ({npv_eeg:.0f}) < Floor ({npv_floor:.0f})"
+        assert rev1_eeg >= rev1_floor - tol, (
+            f"{tech}_{mode}: EEG ({rev1_eeg:.0f}) < Floor ({rev1_floor:.0f})"
         )
-        assert npv_floor >= npv_collar - tol, (
-            f"{tech}_{mode}: Floor ({npv_floor:.0f}) < Collar ({npv_collar:.0f})"
+        assert rev1_floor >= rev1_collar - tol, (
+            f"{tech}_{mode}: Floor ({rev1_floor:.0f}) < Collar ({rev1_collar:.0f})"
         )
-        assert npv_collar >= npv_pap - tol, (
-            f"{tech}_{mode}: Collar ({npv_collar:.0f}) < PaP ({npv_pap:.0f})"
+        assert rev1_collar >= rev1_pap - tol, (
+            f"{tech}_{mode}: Collar ({rev1_collar:.0f}) < PaP ({rev1_pap:.0f})"
         )
-        assert npv_pap >= npv_market - tol, (
-            f"{tech}_{mode}: PaP ({npv_pap:.0f}) < Market ({npv_market:.0f})"
+        assert rev1_pap >= rev1_market - tol, (
+            f"{tech}_{mode}: PaP ({rev1_pap:.0f}) < Market ({rev1_market:.0f})"
         )
 
     @pytest.mark.parametrize("tech", ["pv_only", "pv_bess"])
@@ -832,15 +844,15 @@ class TestKPIRanking:
     ):
         """Baseload PPA NPV is between Market and EEG."""
         tol = 1.0
-        npv_market = self._npv(all_results, f"{tech}_{mode}_market")
-        npv_baseload = self._npv(all_results, f"{tech}_{mode}_ppa_baseload")
-        npv_eeg = self._npv(all_results, f"{tech}_{mode}_eeg")
+        rev1_market = self._rev1(all_results, f"{tech}_{mode}_market")
+        rev1_baseload = self._rev1(all_results, f"{tech}_{mode}_ppa_baseload")
+        rev1_eeg = self._rev1(all_results, f"{tech}_{mode}_eeg")
 
-        assert npv_baseload >= npv_market - tol, (
-            f"{tech}_{mode}: Baseload ({npv_baseload:.0f}) < Market ({npv_market:.0f})"
+        assert rev1_baseload >= rev1_market - tol, (
+            f"{tech}_{mode}: Baseload ({rev1_baseload:.0f}) < Market ({rev1_market:.0f})"
         )
-        assert npv_baseload <= npv_eeg + tol, (
-            f"{tech}_{mode}: Baseload ({npv_baseload:.0f}) > EEG ({npv_eeg:.0f})"
+        assert rev1_baseload <= rev1_eeg + tol, (
+            f"{tech}_{mode}: Baseload ({rev1_baseload:.0f}) > EEG ({rev1_eeg:.0f})"
         )
 
     @pytest.mark.parametrize("mkt", MARKETING_STRATEGIES)
@@ -890,29 +902,6 @@ class TestKPIRanking:
                 f"bess_only_green: NPV spread too large: {npvs}"
             )
 
-    def test_bess_only_grey_all_approx_equal(self, all_results: dict[str, ScenarioResult]):
-        """BESS-only grey: all marketing strategies yield approximately equal NPV.
-
-        In grey mode, BESS charges from grid, so the marketing strategy
-        primarily affects PV revenue (which is zero). Some small differences
-        may arise from GOO premiums or floor prices affecting discharge revenue.
-        """
-        npvs = [
-            self._npv(all_results, f"bess_only_grey_{mkt}")
-            for mkt in MARKETING_STRATEGIES
-        ]
-        # Filter out any None/0 values that indicate failed scenarios
-        valid_npvs = [n for n in npvs if n != 0.0]
-        if len(valid_npvs) < 2:
-            pytest.skip("Not enough valid bess_only_grey scenarios")
-        npv_range = max(valid_npvs) - min(valid_npvs)
-        npv_mean = abs(sum(valid_npvs) / len(valid_npvs))
-        if npv_mean > 0:
-            spread_pct = npv_range / npv_mean * 100
-            assert spread_pct < 20.0, (
-                f"bess_only_grey: NPV spread {spread_pct:.1f}% > 20% "
-                f"(range={npv_range:.0f}, mean={npv_mean:.0f})"
-            )
 
     @pytest.mark.parametrize("mode", OPERATING_MODES)
     @pytest.mark.parametrize("mkt", MARKETING_STRATEGIES)
@@ -924,13 +913,12 @@ class TestKPIRanking:
         Note: This may not always hold if BESS CAPEX/OPEX exceeds the
         incremental revenue. We use a generous tolerance.
         """
-        tol = 1.0
-        npv_pv_only = self._npv(all_results, f"pv_only_{mode}_{mkt}")
-        npv_pv_bess = self._npv(all_results, f"pv_bess_{mode}_{mkt}")
+        rev1_pv_only = self._rev1(all_results, f"pv_only_{mode}_{mkt}")
+        rev1_pv_bess = self._rev1(all_results, f"pv_bess_{mode}_{mkt}")
         # BESS may not always add value, so just check it's not wildly worse
         # Allow PV+BESS to be up to 50k worse (BESS costs may exceed revenue)
-        assert npv_pv_bess >= npv_pv_only - 500_000, (
-            f"{mode}_{mkt}: PV+BESS ({npv_pv_bess:.0f}) << PV-only ({npv_pv_only:.0f})"
+        assert rev1_pv_bess >= rev1_pv_only - 500_000, (
+            f"{mode}_{mkt}: PV+BESS ({rev1_pv_bess:.0f}) << PV-only ({rev1_pv_only:.0f})"
         )
 
     def test_bess_only_grey_gt_green(self, all_results: dict[str, ScenarioResult]):

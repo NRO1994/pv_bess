@@ -488,6 +488,7 @@ def _extract_green_result(x: np.ndarray, T: int, eff_prices: np.ndarray, rte: fl
     # Add losses to the energy flow
     discharge_green = discharge_green * grid_loss_factor * rte
     export_pv = export_pv * grid_loss_factor
+    curtail = curtail * grid_loss_factor
 
     # Revenue per hour (€):
     # PV export at effective price (floor/cap protected)
@@ -546,6 +547,7 @@ def _extract_grey_result(
     discharge_green = discharge_green * grid_loss_factor * rte
     discharge_grey = discharge_grey * rte
     export_pv = export_pv * grid_loss_factor
+    curtail = curtail * grid_loss_factor
 
     # Revenue (€): PV export and green discharge at effective price × glf,
     # BESS discharge (grey) at spot, minus grid import at spot

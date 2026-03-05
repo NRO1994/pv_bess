@@ -545,7 +545,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
 
     revenue_year1 = annual_revenues_p50[0] if annual_revenues_p50 else 0.0
 
-    for y in range(args.lifetime_years + 1):
+    for y in range(args.lifetime_years):
         cf.years[y].grid_import_costs = sim_p50.annual_results[y].grid_import_cost
         cf.years[y].baseload_matching_costs = sim_p50.annual_results[y].missing_baseload_cost
 
@@ -789,11 +789,14 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
     # Identify optimum: highest Equity IRR (None treated as -inf)
     optimal: GridPointResult | None = None
     best_irr: float = float("-inf")
-    for r in results:
-        irr = r.metrics.equity_irr if r.metrics.equity_irr is not None else float("-inf")
-        if irr > best_irr:
-            best_irr = irr
-            optimal = r
+    if len(results) == 1:
+        optimal = results[0]
+    else:
+        for r in results:
+            irr = r.metrics.equity_irr if r.metrics.equity_irr is not None else float("-inf")
+            if irr > best_irr:
+                best_irr = irr
+                optimal = r
 
     if optimal is not None:
         optimal.is_optimal = True

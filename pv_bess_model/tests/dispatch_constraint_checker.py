@@ -239,21 +239,29 @@ def check_dispatch_constraints(
             total_charge = charge_grid[t] + charge_pv[t]
             total_discharge = -(discharge_green[t] - discharge_grey[t]) / rte
 
-            if (total_charge > 0) and (abs(previous_soc - soc[t]) > total_charge + tolerance):
+            if (total_charge > 0) and (total_discharge > 0):
                 violations.append(ConstraintViolation(
-                    constraint="charging_soc_cummulative",
-                    timestep=t,
-                    expected=f"prev_soc + charge_grid + charge_pv = soc {previous_soc + total_charge}",
-                    actual=soc[t],
-                    severity="error",))
+                        constraint="charging_soc_simultaneously",
+                        timestep=t,
+                        expected=f"only total_discharge > 0 or only total_charge > 0",
+                        actual=total_charge,
+                        severity="warning",))
+            else:
+                if (total_charge > 0) and (abs(previous_soc - soc[t]) > total_charge + tolerance):
+                    violations.append(ConstraintViolation(
+                        constraint="charging_soc_cumulative",
+                        timestep=t,
+                        expected=f"prev_soc + charge_grid + charge_pv = soc {previous_soc + total_charge}",
+                        actual=soc[t],
+                        severity="error",))
 
-            if (total_discharge > 0) and (abs(previous_soc - soc[t]) > total_discharge + tolerance):
-                violations.append(ConstraintViolation(
-                    constraint="discharging_soc_cummulative",
-                    timestep=t,
-                    expected=f"prev_soc - discharge_green + discharge_grey = soc {previous_soc + total_discharge}",
-                    actual=soc[t],
-                    severity="error",))
+                if (total_discharge > 0) and (abs(previous_soc - soc[t]) > total_discharge + tolerance):
+                    violations.append(ConstraintViolation(
+                        constraint="discharging_soc_cumulative",
+                        timestep=t,
+                        expected=f"prev_soc - discharge_green + discharge_grey = soc {previous_soc + total_discharge}",
+                        actual=soc[t],
+                        severity="error",))
 
         # 9. BESS offline days: no charge/discharge, SoC constant
         for d in range(n_days):

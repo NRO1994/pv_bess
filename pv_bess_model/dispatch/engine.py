@@ -607,16 +607,18 @@ def run_simulation(
             day_bess_spot_rev = day_rev_grey
 
             # Baseload additional purchase, if necessary
-            total_feed_in = result["export_pv"] + result["discharge_green"] + result["discharge_grey"]
-            missed_baseload = np.maximum([baseload_kw/4 - total_feed_in],0)
-            day_purchase_missing_baseload = float(np.sum(missed_baseload * spot_day))
+            if fixed_price > 0:
+                total_feed_in = result["export_pv"] + result["discharge_green"] + result["discharge_grey"]
+                missed_baseload = np.maximum([baseload_kw/4 - total_feed_in],0)
+            else:
+                missed_baseload = np.zeros(len(result["export_pv"]))
 
             year_revenue_pv += day_rev_pv
             year_revenue_green += day_rev_green
             year_revenue_grey += day_rev_grey
             year_import_cost += day_import
             year_bess_spot_revenue += day_bess_spot_rev
-            year_missing_baseload += day_purchase_missing_baseload
+            year_missing_baseload += float(np.sum(missed_baseload * spot_day))
             year_pv_export += float(np.sum(result["export_pv"]))
             year_pv_curtailed += float(np.sum(result["curtail"]))
             year_charge_pv += float(np.sum(result["charge_pv"]))
