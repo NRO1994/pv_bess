@@ -29,6 +29,7 @@ from pv_bess_model.config.defaults import (
     DEFAULT_MC_ITERATIONS,
     MC_WEIGHT_TOLERANCE,
 )
+from pv_bess_model.config.loader import PriceWeatherScenario
 from pv_bess_model.dispatch.engine import DispatchEngineConfig, run_simulation
 from pv_bess_model.finance.cashflow import build_cashflow_projection
 from pv_bess_model.finance.debt import build_annuity_schedule
@@ -86,15 +87,13 @@ class MCParams:
     sigma_pv_availability: float = 0.02
     mu_bess_availability: float = 0.97
     sigma_bess_availability: float = 0.02
-    price_scenarios: dict[str, dict] = field(default_factory=dict)
+    price_scenarios: list[PriceWeatherScenario] = field(default_factory=dict)
     seed: int = 0
     max_workers: int | None = None
 
     def __post_init__(self) -> None:
         """Set default price scenarios and validate weights."""
-        if not self.price_scenarios:
-            self.price_scenarios = {"mid": {"csv_column": "MID", "weight": 1.0}}
-        weights = sum(v["weight"] for v in self.price_scenarios.values())
+        weights = sum(version.weight for version in self.price_scenarios)
         if abs(weights - 1.0) > MC_WEIGHT_TOLERANCE:
             raise ValueError(
                 f"MC price scenario weights must sum to 1.0, got {weights:.6f}."
@@ -246,10 +245,9 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
     rng = np.random.default_rng(seed=mc.seed + iteration)
 
     # --- Sample price scenario ---
-    scenario_names = list(mc.price_scenarios.keys())
-    weights = [mc.price_scenarios[n]["weight"] for n in scenario_names]
-    scenario_name = str(rng.choice(scenario_names, p=weights))
-    spot_prices_yearly: list[np.ndarray] = scenario_prices[scenario_name]
+    weights = [mc.price_scenarios[n].weight for n in range(len(scenario_prices))]
+    scenario_idx = rng.choice(list(range(len(scenario_prices))), p=weights)
+    selected_price_scenario: PriceWeatherScenario = scenario_prices[scenario_idx]
 
     # --- Sample noise factors ---
     capex_factor_pv = float(rng.normal(1.0, mc.sigma_capex_pv))
@@ -292,9 +290,6 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
             pv_offline_days_yearly.append({int(d) for d in day_indices})
         else:
             pv_offline_days_yearly.append(set())
-
-    # --- PV timeseries (no yield factor, offline days handle availability) ---
-    pv_timeseries = base.pv_base_timeseries_p50
 
     # --- Scale CAPEX / OPEX per asset ---
     capex_pv = optimal.capex_pv * capex_factor_pv
@@ -340,18 +335,24 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         lifetime_years=base.lifetime_years,
         bess_power_kw=optimal.bess_power_kw,
         grid_loss_factor=base.grid_loss_factor,
+        timestep_hours=base.timestep_hours,
+        intervals_per_day=base.intervals_per_day,
+        intervals_per_year=base.intervals_per_year,
+        commissioning_year=base.commissioning_year,
     )
 
     # --- Run dispatch simulation ---
     sim = run_simulation(
         config=engine_config,
-        pv_base_timeseries=pv_timeseries,
-        spot_prices_yearly=spot_prices_yearly,
+        pv_base_timeseries=selected_price_scenario.pv_timeseries_15min,
+        spot_prices_yearly=selected_price_scenario.price_per_year,
         fixed_prices_yearly=base.fixed_prices_yearly,
         offline_days_yearly=offline_days_yearly,
         goo_prices_yearly=base.goo_prices_yearly if base.goo_prices_yearly else None,
         cap_prices_yearly=base.cap_prices_yearly if base.cap_prices_yearly else None,
         pv_offline_days_yearly=pv_offline_days_yearly if n_pv_offline_days > 0 else None,
+        pv_base_timeseries_year=selected_price_scenario.weather_year,
+        baseload_kw=base.baseload_mw
     )
 
     annual_revenues = [r.total_revenue for r in sim.annual_results]
@@ -385,6 +386,9 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         solidaritaetszuschlag_pct=base.solidaritaetszuschlag_pct,
         replacement_cost=replacement_cost,
         replacement_year=replacement_year_cf,
+        replacement_leverage_pct=base.leverage_pct,
+        replacement_interest_rate=base.interest_rate_pct / 100.0,
+        replacement_loan_tenor_years=base.loan_tenor_years,
         optimization_fee_pct=base.optimization_fee_pct,
         annual_bess_spot_revenues=annual_bess_spot_revenues,
     )
@@ -414,7 +418,7 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
 
     return MCIterationResult(
         iteration=iteration,
-        price_scenario=scenario_name,
+        price_scenario=selected_price_scenario.name,
         capex_factor_pv=capex_factor_pv,
         capex_factor_bess=capex_factor_bess,
         opex_factor_pv=opex_factor_pv,
@@ -515,7 +519,7 @@ def run_monte_carlo(
     base_config: GridSearchConfig,
     optimal: GridPointResult,
     mc_params: MCParams,
-    scenario_prices: dict[str, list[np.ndarray]],
+    scenario_prices: list[PriceWeatherScenario],
 ) -> MCResult:
     """Run the Monte Carlo simulation on the optimal BESS configuration.
 
@@ -539,8 +543,14 @@ def run_monte_carlo(
         Monte Carlo hyper-parameters (iterations, σ values, price scenarios).
     scenario_prices:
         Mapping from scenario name (e.g. ``"mid"``) to a list of per-year
-        spot price arrays (each shape (8760,), in €/kWh).  Length of each
-        list must equal ``base_config.lifetime_years``.
+        spot price arrays (each shape ``(intervals_per_year,)``, in €/kWh).
+        Length of each list must equal ``base_config.lifetime_years``.
+    scenario_pv_timeseries:
+        Optional mapping from scenario name to the undegraded PV production
+        timeseries for that scenario.  Each array has shape
+        ``(intervals_per_year,)`` in kWh.  When provided, each MC iteration
+        uses the PV timeseries from the sampled scenario.  When ``None``,
+        all iterations use ``base_config.pv_base_timeseries``.
 
     Returns
     -------
@@ -553,13 +563,6 @@ def run_monte_carlo(
         If a scenario name in ``mc_params.price_scenarios`` is not present in
         ``scenario_prices``.
     """
-    for name in mc_params.price_scenarios:
-        if name not in scenario_prices:
-            raise ValueError(
-                f"MC price scenario '{name}' not found in scenario_prices. "
-                f"Available keys: {sorted(scenario_prices)}."
-            )
-
     logger.info(
         "Monte Carlo: %d iterations, %d price scenario(s), max_workers=%s.",
         mc_params.iterations,
@@ -567,7 +570,7 @@ def run_monte_carlo(
         mc_params.max_workers,
     )
 
-    shared_state = {
+    shared_state: dict = {
         "grid_config": base_config,
         "optimal": optimal,
         "scenario_prices": scenario_prices,

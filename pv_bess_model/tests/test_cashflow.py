@@ -54,6 +54,7 @@ def _build_simple_projection(
     hebesatz: float = 400.0,
     replacement_cost: float = 0.0,
     replacement_year: int | None = None,
+    replacement_leverage: float = 0.0,
     optimization_fee_pct: float = 0.0,
     annual_bess_spot_revenues: list[float] | None = None,
 ):
@@ -76,6 +77,9 @@ def _build_simple_projection(
         gewerbesteuer_hebesatz=hebesatz,
         replacement_cost=replacement_cost,
         replacement_year=replacement_year,
+        replacement_leverage_pct=replacement_leverage,
+        replacement_interest_rate=rate,
+        replacement_loan_tenor_years=tenor,
         optimization_fee_pct=optimization_fee_pct,
         annual_bess_spot_revenues=annual_bess_spot_revenues,
     )
@@ -806,3 +810,194 @@ class TestOptimizationFee:
             expected_fee = bess_revenues[i] * fee_pct / 100.0
             expected_opex = base_opex + expected_fee
             assert math.isclose(y.opex, expected_opex)
+
+
+# ---------------------------------------------------------------------------
+# Debt-financed BESS replacement (FIX-S2-13)
+# ---------------------------------------------------------------------------
+
+
+class TestReplacementDebtFinancing:
+    """Tests for BESS replacement financed with debt (FIX-S2-13).
+
+    When replacement_leverage_pct > 0, only the equity portion of the
+    replacement cost reduces the equity cashflow.  The debt portion is
+    added to the debt schedule and serviced via increased debt payments.
+    """
+
+    def test_equity_cf_only_reduced_by_equity_share(self) -> None:
+        """Equity CF in replacement year drops by equity share, not full cost."""
+        repl_cost = 500_000.0
+        repl_year = 3
+        leverage = 75.0  # 75% debt → equity share = 125 000 €
+        equity_share = repl_cost * (1.0 - leverage / 100.0)
+
+        proj_no_repl = _build_simple_projection(
+            lifetime=5, inflation=0.0,
+            capex_total=0.0, capex_pv=0.0, capex_bess=0.0,
+            leverage=0.0, messzahl=0.0,
+        )
+        proj_with_repl = _build_simple_projection(
+            lifetime=5, inflation=0.0,
+            replacement_cost=repl_cost, replacement_year=repl_year,
+            replacement_leverage=leverage,
+            capex_total=0.0, capex_pv=0.0, capex_bess=0.0,
+            leverage=0.0, messzahl=0.0,
+        )
+
+        repl_idx = repl_year - 1
+        # The equity CF reduction in the replacement year should be close to
+        # the equity share (plus debt service for replacement loan in that year,
+        # minus any tax effects from the new AfA)
+        diff = proj_no_repl.years[repl_idx].equity_cf - proj_with_repl.years[repl_idx].equity_cf
+        # Diff must be > equity share (because debt service starts too)
+        # but << full replacement cost
+        assert diff < repl_cost, "Equity CF should not drop by full replacement cost"
+        assert diff >= equity_share - 1.0, "Equity CF should drop by at least the equity share"
+
+    def test_full_equity_vs_debt_financed_replacement_year(self) -> None:
+        """With debt financing, equity CF in replacement year is higher than 100% equity."""
+        repl_cost = 500_000.0
+        repl_year = 3
+
+        proj_100pct_equity = _build_simple_projection(
+            lifetime=5, inflation=0.0,
+            replacement_cost=repl_cost, replacement_year=repl_year,
+            replacement_leverage=0.0,
+            capex_total=0.0, capex_pv=0.0, capex_bess=0.0,
+            leverage=0.0, messzahl=0.0,
+        )
+        proj_75pct_debt = _build_simple_projection(
+            lifetime=5, inflation=0.0,
+            replacement_cost=repl_cost, replacement_year=repl_year,
+            replacement_leverage=75.0,
+            capex_total=0.0, capex_pv=0.0, capex_bess=0.0,
+            leverage=0.0, messzahl=0.0,
+        )
+
+        repl_idx = repl_year - 1
+        # With debt financing, year-of-replacement equity CF is less negative
+        assert proj_75pct_debt.years[repl_idx].equity_cf > proj_100pct_equity.years[repl_idx].equity_cf
+
+    def test_debt_service_increases_after_replacement(self) -> None:
+        """Debt service increases from the replacement year onward."""
+        repl_cost = 500_000.0
+        repl_year = 3
+        proj = _build_simple_projection(
+            lifetime=5, inflation=0.0,
+            replacement_cost=repl_cost, replacement_year=repl_year,
+            replacement_leverage=75.0,
+            capex_total=0.0, capex_pv=0.0, capex_bess=0.0,
+            leverage=0.0, messzahl=0.0,
+            tenor=5,
+        )
+        # Before replacement: no debt (leverage=0 on original CAPEX=0)
+        for y in proj.years[:repl_year - 1]:
+            assert y.debt_service == 0.0
+
+        # From replacement year onward: debt service > 0
+        for y in proj.years[repl_year - 1:]:
+            assert y.debt_service > 0.0
+
+    def test_debt_interest_and_repayment_sum_to_service(self) -> None:
+        """Interest + repayment = debt_service in every year after replacement."""
+        repl_cost = 500_000.0
+        repl_year = 3
+        proj = _build_simple_projection(
+            lifetime=10, inflation=0.0,
+            replacement_cost=repl_cost, replacement_year=repl_year,
+            replacement_leverage=75.0,
+            capex_total=1_000_000.0, capex_pv=500_000.0, capex_bess=500_000.0,
+            leverage=75.0, messzahl=0.0,
+            tenor=10,
+        )
+        for y in proj.years:
+            assert math.isclose(
+                y.debt_interest + y.debt_repayment, y.debt_service, rel_tol=1e-9
+            ), f"Year {y.year}: {y.debt_interest} + {y.debt_repayment} != {y.debt_service}"
+
+    def test_zero_replacement_leverage_is_full_equity(self) -> None:
+        """With replacement_leverage=0, behavior is identical to full equity financing."""
+        repl_cost = 500_000.0
+        repl_year = 3
+        proj_default = _build_simple_projection(
+            lifetime=5, inflation=0.0,
+            replacement_cost=repl_cost, replacement_year=repl_year,
+            capex_total=0.0, capex_pv=0.0, capex_bess=0.0,
+            leverage=0.0, messzahl=0.0,
+        )
+        proj_explicit_zero = _build_simple_projection(
+            lifetime=5, inflation=0.0,
+            replacement_cost=repl_cost, replacement_year=repl_year,
+            replacement_leverage=0.0,
+            capex_total=0.0, capex_pv=0.0, capex_bess=0.0,
+            leverage=0.0, messzahl=0.0,
+        )
+        for y1, y2 in zip(proj_default.years, proj_explicit_zero.years):
+            assert math.isclose(y1.equity_cf, y2.equity_cf)
+            assert math.isclose(y1.debt_service, y2.debt_service)
+
+    def test_project_cf_unchanged_by_leverage(self) -> None:
+        """Project CF (pre-leverage) is unaffected by how replacement is financed."""
+        repl_cost = 500_000.0
+        repl_year = 3
+        proj_equity = _build_simple_projection(
+            lifetime=5, inflation=0.0,
+            replacement_cost=repl_cost, replacement_year=repl_year,
+            replacement_leverage=0.0,
+            capex_total=0.0, capex_pv=0.0, capex_bess=0.0,
+            leverage=0.0, messzahl=0.0,
+        )
+        proj_debt = _build_simple_projection(
+            lifetime=5, inflation=0.0,
+            replacement_cost=repl_cost, replacement_year=repl_year,
+            replacement_leverage=75.0,
+            capex_total=0.0, capex_pv=0.0, capex_bess=0.0,
+            leverage=0.0, messzahl=0.0,
+        )
+        for y1, y2 in zip(proj_equity.years, proj_debt.years):
+            assert math.isclose(y1.project_cf, y2.project_cf), (
+                f"Year {y1.year}: project CF {y1.project_cf} != {y2.project_cf}"
+            )
+
+    def test_capex_column_shows_full_replacement_cost(self) -> None:
+        """The capex field always shows the full replacement cost, regardless of leverage."""
+        repl_cost = 500_000.0
+        repl_year = 3
+        proj = _build_simple_projection(
+            lifetime=5, inflation=0.0,
+            replacement_cost=repl_cost, replacement_year=repl_year,
+            replacement_leverage=75.0,
+            capex_total=0.0, capex_pv=0.0, capex_bess=0.0,
+            leverage=0.0, messzahl=0.0,
+        )
+        assert math.isclose(proj.years[repl_year - 1].capex, repl_cost)
+
+    def test_replacement_with_original_debt(self) -> None:
+        """Both original project debt and replacement debt combine correctly."""
+        capex = 1_000_000.0
+        leverage = 75.0
+        tenor = 18
+        repl_cost = 500_000.0
+        repl_year = 10
+
+        proj = _build_simple_projection(
+            lifetime=25, inflation=0.0,
+            revenues=[300_000.0] * 25,
+            capex_total=capex, capex_pv=500_000.0, capex_bess=500_000.0,
+            leverage=leverage, tenor=tenor,
+            replacement_cost=repl_cost, replacement_year=repl_year,
+            replacement_leverage=leverage,
+            messzahl=0.0,
+        )
+
+        # Before replacement: debt service = original annuity (constant)
+        ds_before = proj.years[0].debt_service
+        for y in proj.years[1:repl_year - 1]:
+            assert math.isclose(y.debt_service, ds_before, rel_tol=1e-9)
+
+        # From replacement year: debt service increases
+        for y in proj.years[repl_year - 1:tenor]:
+            assert y.debt_service > ds_before + 1.0, (
+                f"Year {y.year}: ds {y.debt_service} not > original {ds_before}"
+            )

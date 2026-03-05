@@ -68,7 +68,7 @@
 ---
 
 ### FIX-S2-03: BESS-Only Cases ermöglichen
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `config/schema.py`, `main.py`, `optimization/grid_search.py`, `tests/test_integration_bess_only.py` (neu)
 
 **Problem:** Das Modell unterstützt keine reinen BESS-Szenarien ohne PV. Die Eingabelogik erzwingt `peak_power_kwp > 0` und BESS-Sizing ist relativ zur PV-Leistung.
@@ -92,10 +92,6 @@
    - Division-by-Zero-Guard bei `pv_peak_kwp = 0`
    - PVGIS-Fetch überspringen wenn `pv_peak_kwp == 0`
    - PV-Timeseries = `np.zeros(HOURS_PER_YEAR)` wenn keine PV
-4. **Integrationstest** (`@pytest.mark.integration`):
-   - BESS-Only-Szenario durchlaufen
-   - Prüfen: PV-Produktion = 0, BESS-Revenue > 0 (Grey Mode) oder = 0 (Green Mode)
-   - Prüfen: CAPEX enthält nur BESS + Grid
 
 **Abhängigkeiten:**
 - Unabhängig von anderen Fixes
@@ -132,7 +128,7 @@
 ## Kosmetik
 
 ### FIX-S2-06: CSV Timestamp/Separator/Decimal als User Input
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `config/defaults.py`, `config/schema.py`, `output/csv_writer.py`, `output/formatting.py`, `main.py`
 
 **Problem:** Timestamp-Spaltenname, Zeitformat, CSV-Separator und Dezimalzeichen sind nicht vom User konfigurierbar.
@@ -164,7 +160,7 @@
 ---
 
 ### FIX-S2-07: Output Directory aus JSON übernehmen
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `main.py`
 
 **Problem:** `scenario.output.directory` aus dem JSON wird komplett ignoriert. Es wird immer `DEFAULT_OUTPUT_DIR` oder `--output` CLI-Flag verwendet.
@@ -198,7 +194,7 @@
 ---
 
 ### FIX-S2-08: Dezimalkomma als Default
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `config/defaults.py`, `output/formatting.py`, `output/csv_writer.py`
 
 **Problem:** Der CSV-Writer gibt Dezimalpunkte aus. Für deutsche Nutzer soll Dezimalkomma der Default sein.
@@ -226,7 +222,7 @@
 ---
 
 ### FIX-S2-09: Excel Lock Error Handling
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `output/csv_writer.py`
 
 **Problem:** Wenn eine CSV-Datei in Excel geöffnet ist, schlägt das Schreiben mit `PermissionError` fehl.
@@ -271,7 +267,7 @@
 ---
 
 ### FIX-S2-10: Debt Service Split (Interest + Repayment)
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `finance/cashflow.py`, `finance/debt.py`, `output/csv_writer.py`, `tests/test_cashflow.py`, `tests/test_csv_writer_cashflows.py`
 
 **Problem:** Die `debt_service`-Spalte enthält nur den Gesamtwert. Gewünscht sind separate Spalten für Zinsanteil und Tilgungsanteil.
@@ -301,7 +297,7 @@
 ---
 
 ### FIX-S2-11: Grid Search Skip bei Einzel-Werten
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `optimization/grid_search.py`, `main.py`
 
 **Problem:** Die Grid Search läuft auch bei nur einem Wert je Array mit dem vollen Parallel-Overhead (ProcessPoolExecutor).
@@ -313,8 +309,7 @@
 - **Achtung:** Scale=0% (PV-only Baseline) ist konzeptionell wichtig als Vergleichsbasis
 
 **Empfohlene Änderung:**
-1. In `run_grid_search()`: Wenn genau 1 Kombination (nach Hinzufügen von scale=0%), direkt im Hauptprozess evaluieren statt über ProcessPoolExecutor
-2. Alternativ: Wenn der User genau einen scale-Wert und einen E/P-Wert angibt, die automatische Hinzufügung von scale=0% optional machen (z.B. Flag `skip_baseline: true` im JSON)
+1. Wenn der User genau einen scale-Wert und einen E/P-Wert angibt, die automatische Hinzufügung von scale=0% optional machen (z.B. Flag `skip_baseline: true` im JSON)
 3. Logging: "Grid search skipped – single configuration" im Info-Log
 
 **Abhängigkeiten:**
@@ -325,7 +320,7 @@
 ---
 
 ### FIX-S2-12: BESS Charging nur am ersten Tag des PPA/EEG-Jahres (Collar Bug)
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `dispatch/optimizer.py`, `dispatch/engine.py`
 
 **Problem:** In einem "Green PV+BESS"-Szenario mit Collar-PPA (oder EEG/Floor-PPA) wird der BESS nur am ersten Tag jedes PPA-Jahres geladen/entladen. Erst nach Ablauf des PPA/EEG funktioniert der BESS an allen Tagen korrekt.
@@ -423,7 +418,7 @@ Profitabel wenn `spot[t_discharge] > eff[t_charge] / RTE`. Bei EEG floor = 54.9 
 ---
 
 ### FIX-S2-13: BESS-Replacement CAPEX fremdfinanzieren
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `finance/cashflow.py`, `finance/debt.py`, `bess/replacement.py`, `optimization/grid_search.py`, `optimization/monte_carlo.py`
 
 **Problem:** Der BESS-Replacement-CAPEX wird aktuell vollständig aus Eigenkapital finanziert. Er soll stattdessen (anteilig) fremdfinanziert werden – die Restschuld des bestehenden Kredits wird um den FK-Anteil des Replacements erhöht.
@@ -461,6 +456,7 @@ Profitabel wenn `spot[t_discharge] > eff[t_charge] / RTE`. Bei EEG floor = 54.9 
    - Equity-CF-Abzug nur mit `replacement_equity`, nicht dem vollen Betrag
    - Debt Schedule muss **vor** der Cashflow-Schleife um den Replacement-Debt erweitert werden (oder in der Schleife bei `y == replacement_year` modifiziert werden)
 3. **`bess/replacement.py`**: `pct_of_capex` als Feld zu `ReplacementConfig` hinzufügen (aktuell fehlt es)
+4. Die Laufzeit des neuen Kredits ist das Minimum aus der im JSON definierten Laufzeit und der verbleibenden Projektlaufzeit vom Replacement jahr
 4. **Tests:** `test_debt.py` um `add_replacement_debt` erweitern; `test_cashflow.py` Replacement-Szenario anpassen
 
 **Abhängigkeiten:**
@@ -471,7 +467,7 @@ Profitabel wenn `spot[t_discharge] > eff[t_charge] / RTE`. Bei EEG floor = 54.9 
 ---
 
 ### FIX-S2-14: `-v` Flag setzt `max_workers=1`
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `main.py`
 
 **Problem:** Das `-v` / `--verbose` CLI-Flag setzt nur den Log-Level auf DEBUG, aber nicht `max_workers=1`. Multi-Processing erschwert Debugging erheblich.
@@ -500,7 +496,7 @@ Profitabel wenn `spot[t_discharge] > eff[t_charge] / RTE`. Bei EEG floor = 54.9 
 ---
 
 ### FIX-S2-15: BESS-Replacement Kapazitäts-Upgrade-Faktor
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `config/schema.py`, `bess/replacement.py`, `dispatch/engine.py`, `main.py`, `optimization/grid_search.py`
 
 **Problem:** Es soll möglich sein, dem BESS-Replacement einen Kapazitäts-Upgrade-Faktor mitzugeben, um Technologiesprünge zu simulieren (z.B. neuer BESS hat 120% der ursprünglichen Kapazität). Default = 1.0 (100%, kein Upgrade).
@@ -575,7 +571,7 @@ Profitabel wenn `spot[t_discharge] > eff[t_charge] / RTE`. Bei EEG floor = 54.9 
 ---
 
 ### FIX-S2-17: SoC Start = MIN_SOC statt 50%
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `config/defaults.py`, `dispatch/engine.py`
 
 **Problem:** Der BESS startet die Simulation bei 50% des maximalen SoC. Ökonomisch sinnvoller (und realistischer) ist der Start bei MIN_SOC (leer), da der BESS am ersten Tag aus PV oder Netz geladen wird.
@@ -645,22 +641,22 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 
 ## Zusammenfassung
 
-| # | Beschreibung | Status | Priorität | Impact |
-|---|---|---|---|---|
-| FIX-S2-01 | Cashflow Benchmark-Test | OFFEN | Hoch | Neuer Test, keine Code-Änderung |
-| FIX-S2-02 | Smoke Test | OFFEN | Hoch | Neuer Test + JSON-Fix |
-| FIX-S2-03 | BESS-Only Cases | OFFEN | Hoch | Schema, Main, Grid Search |
-| FIX-S2-04 | OPEX eur_per_kw/kwh | BEREITS IMPLEMENTIERT | – | – |
-| FIX-S2-05 | Loan Tenor | BEREITS IMPLEMENTIERT | – | – |
-| FIX-S2-06 | CSV User Input | OFFEN | Mittel | Defaults, Schema, CSV Writer |
-| FIX-S2-07 | Output Dir aus JSON | OFFEN | Niedrig | Main.py (3 Zeilen) |
-| FIX-S2-08 | Dezimalkomma | OFFEN | Mittel | Formatting, Defaults, Tests |
-| FIX-S2-09 | Excel Lock Handling | OFFEN | Niedrig | CSV Writer |
-| FIX-S2-10 | Debt Service Split | OFFEN | Mittel | Cashflow, Debt, CSV Writer |
-| FIX-S2-11 | Grid Search Skip | OFFEN | Niedrig | Grid Search, Performance |
-| FIX-S2-12 | Collar Bug (BESS Discharge-Koeffizient auf Spot) | OFFEN | Hoch | Optimizer, Engine (LP + Revenue) |
-| FIX-S2-13 | BESS-Replacement fremdfinanzieren | OFFEN | Hoch | Cashflow, Debt, Replacement |
-| FIX-S2-14 | `-v` → `max_workers=1` | OFFEN | Niedrig | Main.py (2 Zeilen) |
-| FIX-S2-15 | BESS-Replacement Upgrade-Faktor | OFFEN | Mittel | Schema, Replacement, Engine |
+| # | Beschreibung | Status                     | Priorität | Impact |
+|---|---|----------------------------|---|---|
+| FIX-S2-01 | Cashflow Benchmark-Test | OFFEN                      | Hoch | Neuer Test, keine Code-Änderung |
+| FIX-S2-02 | Smoke Test | OFFEN                      | Hoch | Neuer Test + JSON-Fix |
+| FIX-S2-03 | BESS-Only Cases | ERLEDIGT                   | Hoch | Schema, Main, Grid Search |
+| FIX-S2-04 | OPEX eur_per_kw/kwh | BEREITS IMPLEMENTIERT      | – | – |
+| FIX-S2-05 | Loan Tenor | BEREITS IMPLEMENTIERT      | – | – |
+| FIX-S2-06 | CSV User Input | ERLEDIGT                   | Mittel | Defaults, Schema, CSV Writer |
+| FIX-S2-07 | Output Dir aus JSON | ERLEDIGT                   | Niedrig | Main.py (3 Zeilen) |
+| FIX-S2-08 | Dezimalkomma | ERLEDIGT                   | Mittel | Formatting, Defaults, Tests |
+| FIX-S2-09 | Excel Lock Handling | ERLEDIGT                   | Niedrig | CSV Writer |
+| FIX-S2-10 | Debt Service Split | ERLEDIGT                   | Mittel | Cashflow, Debt, CSV Writer |
+| FIX-S2-11 | Grid Search Skip | ERLEDIGT                   | Niedrig | Grid Search, Performance |
+| FIX-S2-12 | Collar Bug (BESS Discharge-Koeffizient auf Spot) | ERLEDIGT                   | Hoch | Optimizer, Engine (LP + Revenue) |
+| FIX-S2-13 | BESS-Replacement fremdfinanzieren | ERLEDIGT                   | Hoch | Cashflow, Debt, Replacement |
+| FIX-S2-14 | `-v` → `max_workers=1` | ERLEDIGT                   | Niedrig | Main.py (2 Zeilen) |
+| FIX-S2-15 | BESS-Replacement Upgrade-Faktor | ERLEDIGT                   | Mittel | Schema, Replacement, Engine |
 | FIX-S2-16 | P90-DSCR entfernen | ABGEDECKT DURCH FEATURE 06 | – | Feature 06 eliminiert P90 komplett |
-| FIX-S2-17 | SoC Start = MIN_SOC | OFFEN | Hoch | Engine, Defaults (2 Zeilen) |
+| FIX-S2-17 | SoC Start = MIN_SOC | ERLEDIGT                   | Hoch | Engine, Defaults (2 Zeilen) |

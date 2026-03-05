@@ -20,47 +20,47 @@ auf früheren aufbauen.
 | 02 | [Systemverluste am Netzanschluss](02_system_losses_restructuring.md) | Mittel (2-4h) | Keine | ERLEDIGT |
 | 05 | [MC Framework Erweiterungen](05_mc_framework_enhancements.md) | Mittel (3-4h) | Keine | ERLEDIGT |
 
-### Phase 3: Fixes Session 2 – Quick Wins & Stabilisierung
+### Phase 3: Fixes Session 2 – Quick Wins & Stabilisierung (abgeschlossen)
 
-| # | Item | Aufwand | Abhängigkeiten | Status |
-|---|------|---------|----------------|--------|
-| S2-17 | SoC Start = MIN_SOC | Klein (2 Zeilen) | Keine | OFFEN |
-| S2-14 | `-v` → `max_workers=1` | Klein (2 Zeilen) | Keine | OFFEN |
-| S2-12 | Collar Bug Verifikation | Klein (Diagnose) | S2-17 | OFFEN |
-| S2-07 | Output Directory aus JSON | Klein (3 Zeilen) | Keine | OFFEN |
-| S2-08 | Dezimalkomma Default | Klein-Mittel | Keine | OFFEN |
-| S2-06 | CSV User Input (Separator/Decimal/Timestamp) | Mittel | S2-08 | OFFEN |
-| S2-09 | Excel Lock Error Handling | Klein | Keine | OFFEN |
-| S2-10 | Debt Service Split (Interest + Repayment) | Mittel | Keine | OFFEN |
-| S2-11 | Grid Search Skip bei Einzel-Werten | Klein | Keine | OFFEN |
+| # | Item | Aufwand | Abhängigkeiten | Status   |
+|---|------|---------|----------------|----------|
+| S2-17 | SoC Start = MIN_SOC | Klein (2 Zeilen) | Keine | ERLEDIGT |
+| S2-14 | `-v` → `max_workers=1` | Klein (2 Zeilen) | Keine | ERLEDIGT |
+| S2-07 | Output Directory aus JSON | Klein (3 Zeilen) | Keine | ERLEDIGT |
+| S2-08 | Dezimalkomma Default | Klein-Mittel | Keine | ERLEDIGT |
+| S2-06 | CSV User Input (Separator/Decimal/Timestamp) | Mittel | S2-08 | ERLEDIGT |
+| S2-09 | Excel Lock Error Handling | Klein | Keine | ERLEDIGT |
+| S2-10 | Debt Service Split (Interest + Repayment) | Mittel | Keine | ERLEDIGT |
+| S2-11 | Grid Search Skip bei Einzel-Werten | Klein | Keine | ERLEDIGT |
 
-### Phase 4: Fixes Session 2 – Finanzmodell & Strukturelle Änderungen
+### Phase 4: Fixes Session 2 – Finanzmodell & Strukturelle Änderungen (abgeschlossen)
 
-| # | Item | Aufwand | Abhängigkeiten | Status |
-|---|------|---------|----------------|--------|
-| S2-15 | BESS-Replacement Upgrade-Faktor | Mittel | Keine | OFFEN |
-| S2-13 | BESS-Replacement fremdfinanzieren | Groß | S2-10, S2-15 | OFFEN |
-| S2-03 | BESS-Only Cases ermöglichen | Groß | Keine | OFFEN |
+| # | Item | Aufwand | Abhängigkeiten | Status   |
+|---|------|---------|----------------|----------|
+| S2-12 | Collar Bug Verifikation | Klein (Diagnose) | S2-17 | ERLEDIGT |
+| S2-15 | BESS-Replacement Upgrade-Faktor | Mittel | Keine | ERLEDIGT |
+| S2-13 | BESS-Replacement fremdfinanzieren | Groß | S2-10, S2-15 | ERLEDIGT |
+| S2-03 | BESS-Only Cases ermöglichen | Groß | Keine | ERLEDIGT |
 
-### Phase 5: Großes Datenmodell-Refactoring
+### Phase 5: Großes Datenmodell-Refactoring (abgeschlossen)
 
-| # | Feature | Aufwand | Abhängigkeiten | Status |
-|---|---------|---------|----------------|--------|
-| 06 | [Preisszenario-Wetterjahr-Mapping](06_price_weather_scenario_mapping.md) | Groß (8-12h) | 02, 05, S2-17 | OFFEN |
+| # | Feature | Aufwand | Abhängigkeiten | Status   |
+|---|---------|---------|----------------|----------|
+| 06 | [Preisszenario-Wetterjahr-Mapping](06_price_weather_scenario_mapping.md) | Groß (8-12h) | 02, 05, S2-17 | ERLEDIGT |
 
-### Phase 6: Neue Analysen
+### Phase 6: Neue Analysen (abgeschlossen)
 
-| # | Feature | Aufwand | Abhängigkeiten | Status |
-|---|---------|---------|----------------|--------|
-| 07 | [Post-Grid-Search Analysen](07_post_gridsearch_analyses.md) | Groß (8-12h) | 01, 06, S2-12, S2-13 | OFFEN |
+| # | Feature | Aufwand | Abhängigkeiten | Status   |
+|---|---------|---------|----------------|----------|
+| 07 | [Post-Grid-Search Analysen](07_post_gridsearch_analyses.md) | Groß (8-12h) | 01, 06, S2-12, S2-13 | ERLEDIGT |
 
 ### Phase 7: Integration & Qualitätssicherung
 
-| # | Item | Aufwand | Abhängigkeiten | Status |
-|---|------|---------|----------------|--------|
-| 09 | [Integration Test Suite](09_integration_suite.md) | Groß (8-12h) | S2-03, S2-17 | OFFEN |
-| S2-01 | Cashflow Benchmark-Test | Mittel | S2-08, S2-10 | OFFEN |
-| S2-02 | Smoke Test | Mittel | Keine | OFFEN |
+| # | Item | Aufwand | Abhängigkeiten | Status   |
+|---|------|---------|----------------|----------|
+| 09 | [Integration Test Suite](09_integration_suite.md) | Groß (8-12h) | S2-03, S2-17 | ERLEDIGT |
+| S2-01 | Cashflow Benchmark-Test | Mittel | S2-08, S2-10 | OFFEN    |
+| S2-02 | Smoke Test | Mittel | Keine | OFFEN    |
 
 ### Phase 8: Reporting
 

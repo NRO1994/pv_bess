@@ -453,3 +453,82 @@ class TestCollectScenarioColumns:
         }
         result = collect_scenario_columns(scenarios)
         assert result == sorted(result)
+
+
+# ---------------------------------------------------------------------------
+# load_market_prices() – custom CSV format parameters
+# ---------------------------------------------------------------------------
+
+
+def _write_price_csv_custom_format(
+    path: Path,
+    delimiter: str = ";",
+    decimal: str = ".",
+    timestamp_col: str = "timestamp",
+    n_rows: int = HOURS_PER_YEAR,
+    value: float = 50.0,
+) -> None:
+    """Write a price CSV with custom formatting options."""
+    val_str = f"{value:.2f}".replace(".", decimal)
+    rows = [delimiter.join([timestamp_col, "MID"])]
+    rows += [f"2023-01-01T{i % 24:02d}:00:00{delimiter}{val_str}" for i in range(n_rows)]
+    path.write_text("\n".join(rows), encoding="utf-8")
+
+
+class TestLoadMarketPricesCustomFormat:
+    """Tests for custom delimiter, decimal, and timestamp_column in load_market_prices."""
+
+    def test_custom_delimiter_comma(self, tmp_path: Path) -> None:
+        """load_market_prices reads a comma-delimited CSV correctly."""
+        csv = tmp_path / "prices.csv"
+        _write_price_csv_custom_format(csv, delimiter=",")
+        mp = load_market_prices(
+            csv_path=csv,
+            required_columns=["MID"],
+            price_unit="eur_per_mwh",
+            lifetime_years=1,
+            delimiter=",",
+        )
+        assert len(mp.get_column("MID")) == HOURS_PER_YEAR
+
+    def test_custom_decimal_comma(self, tmp_path: Path) -> None:
+        """load_market_prices converts values written with comma decimal correctly."""
+        csv = tmp_path / "prices.csv"
+        _write_price_csv_custom_format(csv, decimal=",", value=1000.0)
+        mp = load_market_prices(
+            csv_path=csv,
+            required_columns=["MID"],
+            price_unit="eur_per_mwh",
+            lifetime_years=1,
+            decimal=",",
+        )
+        # 1000 €/MWh → 1.0 €/kWh
+        assert math.isclose(float(mp.get_column("MID")[0]), 1.0, rel_tol=1e-6)
+
+    def test_custom_timestamp_column(self, tmp_path: Path) -> None:
+        """load_market_prices reads a CSV with non-standard timestamp column name."""
+        csv = tmp_path / "prices.csv"
+        _write_price_csv_custom_format(csv, timestamp_col="time")
+        mp = load_market_prices(
+            csv_path=csv,
+            required_columns=["MID"],
+            price_unit="eur_per_mwh",
+            lifetime_years=1,
+            timestamp_column="time",
+        )
+        assert len(mp.get_column("MID")) == HOURS_PER_YEAR
+
+    def test_lifetime_extension_with_custom_format(self, tmp_path: Path) -> None:
+        """Year repetition still works when custom delimiter is used."""
+        csv = tmp_path / "prices.csv"
+        _write_price_csv_custom_format(csv, delimiter=",", value=50.0)
+        mp = load_market_prices(
+            csv_path=csv,
+            required_columns=["MID"],
+            price_unit="eur_per_mwh",
+            lifetime_years=3,
+            delimiter=",",
+        )
+        # Should extend 1 year → 3 years
+        assert len(mp.get_column("MID")) == 3 * HOURS_PER_YEAR
+        np.testing.assert_allclose(mp.get_column("MID"), 0.05, rtol=1e-6)

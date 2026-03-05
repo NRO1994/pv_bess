@@ -13,12 +13,17 @@ fmt_optional – Format any optional float, returning "" for None.
 
 from __future__ import annotations
 
-from pv_bess_model.config.defaults import CURRENCY_PRECISION, FLOAT_PRECISION
+from pv_bess_model.config.defaults import (
+    CSV_DECIMAL_SEPARATOR,
+    CURRENCY_PRECISION,
+    FLOAT_PRECISION,
+)
 
 
 def fmt_float(
     value: float | None,
     precision: int = FLOAT_PRECISION,
+    decimal: str = CSV_DECIMAL_SEPARATOR,
 ) -> str:
     """Format a float to a fixed number of decimal places.
 
@@ -28,20 +33,23 @@ def fmt_float(
         The value to format. None is returned as an empty string.
     precision:
         Number of decimal places.
+    decimal:
+        Decimal separator character (default: ``CSV_DECIMAL_SEPARATOR``).
 
     Returns
     -------
     str
-        Formatted string, e.g. ``"3.1416"``.
+        Formatted string, e.g. ``"3,1416"`` with the default separator.
     """
     if value is None:
         return ""
-    return f"{value:.{precision}f}"
+    return f"{value:.{precision}f}".replace(".", decimal)
 
 
 def fmt_currency(
     value: float | None,
     precision: int = CURRENCY_PRECISION,
+    decimal: str = CSV_DECIMAL_SEPARATOR,
 ) -> str:
     """Format a monetary value in euros.
 
@@ -51,15 +59,17 @@ def fmt_currency(
         Value in euros. None is returned as an empty string.
     precision:
         Decimal places (default 2).
+    decimal:
+        Decimal separator character (default: ``CSV_DECIMAL_SEPARATOR``).
 
     Returns
     -------
     str
-        Formatted string, e.g. ``"1234567.89"``.
+        Formatted string, e.g. ``"1234567,89"`` with the default separator.
     """
     if value is None:
         return ""
-    return f"{value:.{precision}f}"
+    return f"{value:.{precision}f}".replace(".", decimal)
 
 
 def fmt_pct(
@@ -67,6 +77,7 @@ def fmt_pct(
     precision: int = 2,
     *,
     already_pct: bool = False,
+    decimal: str = CSV_DECIMAL_SEPARATOR,
 ) -> str:
     """Format a fraction (or percentage) as a percentage string.
 
@@ -81,21 +92,25 @@ def fmt_pct(
         Number of decimal places in the formatted output.
     already_pct:
         Set to True when *value* is already in percent units.
+    decimal:
+        Decimal separator character (default: ``CSV_DECIMAL_SEPARATOR``).
 
     Returns
     -------
     str
-        Formatted percentage string, e.g. ``"7.35"`` (without the % sign).
+        Formatted percentage string, e.g. ``"7,35"`` (using default separator,
+        without the % sign).
     """
     if value is None:
         return ""
     display = value if already_pct else value * 100.0
-    return f"{display:.{precision}f}"
+    return f"{display:.{precision}f}".replace(".", decimal)
 
 
 def fmt_optional(
     value: float | None,
     precision: int = FLOAT_PRECISION,
+    decimal: str = CSV_DECIMAL_SEPARATOR,
 ) -> str:
     """Format any optional float, returning an empty string for None.
 
@@ -108,10 +123,12 @@ def fmt_optional(
         Value to format, or None.
     precision:
         Number of decimal places.
+    decimal:
+        Decimal separator character (default: ``CSV_DECIMAL_SEPARATOR``).
 
     Returns
     -------
     str
         Formatted string or ``""``.
     """
-    return fmt_float(value, precision=precision)
+    return fmt_float(value, precision=precision, decimal=decimal)

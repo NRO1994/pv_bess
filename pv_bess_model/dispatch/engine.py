@@ -54,10 +54,9 @@ import numpy as np
 from pv_bess_model.bess.replacement import ReplacementConfig
 from pv_bess_model.config.defaults import (
     DAYS_PER_YEAR,
-    DEFAULT_START_SOC_FRACTION,
     DISPATCH_SAMPLE_YEAR,
     HOURS_PER_DAY,
-    HOURS_PER_YEAR,
+    HOURS_PER_YEAR, INTERVALS_PER_HOUR, MWH_TO_KWH,
 )
 from pv_bess_model.dispatch.optimizer import (
     BessParams,
@@ -66,6 +65,7 @@ from pv_bess_model.dispatch.optimizer import (
     optimize_day,
 )
 from pv_bess_model.pv.degradation import degradation_factor
+from pv_bess_model.pv.timeseries import align_weather_to_forecast_year
 
 logger = logging.getLogger(__name__)
 
@@ -128,8 +128,12 @@ class DispatchEngineConfig:
     pv_degradation_rate: float
     replacement: ReplacementConfig
     lifetime_years: int
+    commissioning_year: int
     bess_power_kw: float
     grid_loss_factor: float = 1.0
+    timestep_hours: float = 1.0
+    intervals_per_day: int = 24
+    intervals_per_year: int = 8760
 
 
 # ---------------------------------------------------------------------------
@@ -151,11 +155,13 @@ class AnnualResult:
     revenue_pv_export: float
     """Revenue from PV exported directly to grid."""
     revenue_bess_green: float
-    """Revenue from green BESS discharge (discharge_green x RTE x eff_price)."""
+    """Revenue from green BESS discharge (discharge_green x RTE x spot_price)."""
     revenue_bess_grey: float
     """Revenue from grey BESS discharge (discharge_grey x RTE x spot).  0.0 in green mode."""
     grid_import_cost: float
     """Cost of grid imports for BESS charging (charge_grid x spot).  0.0 in green mode."""
+    missing_baseload_cost: float
+    """Cost of fulfilling baseload criteria in ppa-baseload mode."""
     total_revenue: float
     """Net revenue = pv_export + bess_green + bess_grey - grid_import_cost."""
 
@@ -227,7 +233,8 @@ class SimulationResult:
 
 
 def compute_deterministic_offline_days(
-    bess_availability_pct: float,
+        bess_availability_pct: float,
+        offset: int = 0,
 ) -> set[int]:
     """Compute evenly-spaced BESS offline day indices for deterministic dispatch.
 
@@ -237,6 +244,8 @@ def compute_deterministic_offline_days(
     ----------
     bess_availability_pct:
         BESS availability as a percentage (0--100).  100 % = always online.
+    offset:
+        To avoid PV and BESS unavailability at the same day, offset pv for a couple of days.
 
     Returns
     -------
@@ -251,12 +260,12 @@ def compute_deterministic_offline_days(
 
     # Distribute evenly: every Nth day
     step = DAYS_PER_YEAR / n_offline
-    return {int(i * step) for i in range(n_offline)}
+    return {int(i * step + offset) for i in range(n_offline)}
 
 
 def _bess_params_for_capacity(
-    config: DispatchEngineConfig,
-    degraded_capacity_kwh: float,
+        config: DispatchEngineConfig,
+        degraded_capacity_kwh: float,
 ) -> BessParams:
     """Build a :class:`BessParams` from engine config and a degraded capacity.
 
@@ -277,15 +286,16 @@ def _bess_params_for_capacity(
         round_trip_efficiency=config.bess_rte,
         soc_min_kwh=degraded_capacity_kwh * config.bess_min_soc_pct / 100.0,
         soc_max_kwh=degraded_capacity_kwh * config.bess_max_soc_pct / 100.0,
+        timestep_hours=config.timestep_hours,
     )
 
 
 def _clip_soc_to_limits(
-    current_soc: float,
-    current_soc_green: float,
-    current_soc_grey: float,
-    soc_min: float,
-    soc_max: float,
+        current_soc: float,
+        current_soc_green: float,
+        current_soc_grey: float,
+        soc_min: float,
+        soc_max: float,
 ) -> tuple[float, float, float]:
     """Clip total SoC to new limits after a capacity change.
 
@@ -325,9 +335,9 @@ def _clip_soc_to_limits(
     return new_soc, new_green, new_grey
 
 
-def _empty_hourly_sample() -> HourlySample:
+def _empty_hourly_sample(intervals_per_year: int = HOURS_PER_YEAR) -> HourlySample:
     """Create an all-zeros hourly sample (fallback)."""
-    z = np.zeros(HOURS_PER_YEAR)
+    z = np.zeros(intervals_per_year)
     return HourlySample(
         pv_production=z.copy(),
         spot_prices=z.copy(),
@@ -351,14 +361,16 @@ def _empty_hourly_sample() -> HourlySample:
 
 
 def run_simulation(
-    config: DispatchEngineConfig,
-    pv_base_timeseries: np.ndarray,
-    spot_prices_yearly: list[np.ndarray],
-    fixed_prices_yearly: list[float],
-    offline_days_yearly: list[set[int]],
-    goo_prices_yearly: list[float] | None = None,
-    cap_prices_yearly: list[float] | None = None,
-    pv_offline_days_yearly: list[set[int]] | None = None,
+        config: DispatchEngineConfig,
+        pv_base_timeseries: np.ndarray,
+        pv_base_timeseries_year: int,
+        spot_prices_yearly: list[np.ndarray],
+        fixed_prices_yearly: list[float],
+        offline_days_yearly: list[set[int]],
+        baseload_kw: float = 0.0,
+        goo_prices_yearly: list[float] | None = None,
+        cap_prices_yearly: list[float] | None = None,
+        pv_offline_days_yearly: list[set[int]] | None = None,
 ) -> SimulationResult:
     """Execute the full multi-year dispatch simulation.
 
@@ -420,8 +432,12 @@ def run_simulation(
 
     has_bess = config.bess_nameplate_kwh > 0.0
 
-    # BESS degradation: track years since start or last replacement
+    # BESS degradation: track years since start or last replacement.
+    # effective_nameplate_kwh is the reference capacity from which degradation
+    # is applied.  It equals config.bess_nameplate_kwh initially and is
+    # updated to the upgraded capacity after each replacement event.
     bess_age = 0
+    effective_nameplate_kwh = config.bess_nameplate_kwh
 
     # SoC state carried between days and years
     current_soc = 0.0
@@ -433,32 +449,41 @@ def run_simulation(
         year_idx = year - 1
 
         # ---- 1. PV degradation ----
-        pv_factor = degradation_factor(config.pv_degradation_rate, year)
+        pv_factor = degradation_factor(config.pv_degradation_rate, year_idx)
         pv_year = pv_base_timeseries * pv_factor
+
+        # ---- 1.1 shift weather year to match price year ----
+        pv_year_aligned = align_weather_to_forecast_year(weather_ts=pv_year,
+                                                         weather_year=pv_base_timeseries_year,
+                                                         forecast_year=config.commissioning_year + year_idx)
 
         # ---- 2. BESS degradation + replacement ----
         replacement_cost = 0.0
         if has_bess:
             if config.replacement.enabled and year == config.replacement.year:
-                # Replacement: reset capacity to nameplate, restart degradation
-                bess_cap = config.bess_nameplate_kwh
-                bess_age = 0
+                # Replacement: reset capacity to nameplate × upgrade factor,
+                # restart degradation from zero.
+                upgrade = config.replacement.capacity_factor_pct / 100.0
+                effective_nameplate_kwh = config.bess_nameplate_kwh * upgrade
+                bess_cap = effective_nameplate_kwh
+                bess_age = 1
                 replacement_cost = config.replacement.replacement_cost(
                     config.bess_power_kw,
                     config.bess_nameplate_kwh,
                 )
                 logger.info(
-                    "BESS replacement at year %d: capacity reset to %.1f kWh, "
-                    "cost = %.2f EUR.",
+                    "BESS replacement at year %d: capacity set to %.1f kWh "
+                    "(upgrade factor %.0f %%), cost = %.2f EUR.",
                     year,
                     bess_cap,
+                    config.replacement.capacity_factor_pct,
                     replacement_cost,
                 )
             else:
-                bess_age += 1
-                bess_cap = config.bess_nameplate_kwh * degradation_factor(
+                bess_cap = effective_nameplate_kwh * degradation_factor(
                     config.bess_degradation_rate, bess_age
                 )
+                bess_age += 1
         else:
             bess_cap = 0.0
 
@@ -467,7 +492,7 @@ def run_simulation(
 
         # ---- 4. Initialise or clip SoC to new limits ----
         if not soc_initialised:
-            current_soc = bess_params.soc_max_kwh * DEFAULT_START_SOC_FRACTION
+            current_soc = bess_params.soc_min_kwh
             current_soc_green = current_soc
             current_soc_grey = 0.0
             soc_initialised = True
@@ -488,18 +513,22 @@ def run_simulation(
         offline_days = offline_days_yearly[year_idx]
 
         # ---- 6. Prepare hourly sample arrays (year 1 only) ----
+        intervals_per_year = config.intervals_per_year
+        intervals_per_day = config.intervals_per_day
         is_sample_year = year == DISPATCH_SAMPLE_YEAR
         if is_sample_year:
-            h_charge_pv = np.zeros(HOURS_PER_YEAR)
-            h_charge_grid = np.zeros(HOURS_PER_YEAR)
-            h_discharge_green = np.zeros(HOURS_PER_YEAR)
-            h_discharge_grey = np.zeros(HOURS_PER_YEAR)
-            h_export_pv = np.zeros(HOURS_PER_YEAR)
-            h_curtail = np.zeros(HOURS_PER_YEAR)
-            h_soc = np.zeros(HOURS_PER_YEAR)
-            h_soc_green = np.zeros(HOURS_PER_YEAR)
-            h_soc_grey = np.zeros(HOURS_PER_YEAR)
-            h_revenue = np.zeros(HOURS_PER_YEAR)
+            h_production_pv = np.zeros(intervals_per_year)
+            h_charge_pv = np.zeros(intervals_per_year)
+            h_charge_grid = np.zeros(intervals_per_year)
+            h_discharge_green = np.zeros(intervals_per_year)
+            h_discharge_grey = np.zeros(intervals_per_year)
+            h_export_pv = np.zeros(intervals_per_year)
+            h_curtail = np.zeros(intervals_per_year)
+            h_soc = np.zeros(intervals_per_year)
+            h_soc_green = np.zeros(intervals_per_year)
+            h_soc_grey = np.zeros(intervals_per_year)
+            h_revenue = np.zeros(intervals_per_year)
+            h_effective_price = np.zeros(intervals_per_year)
 
         # ---- 7. Annual accumulators ----
         year_revenue_pv = 0.0
@@ -513,20 +542,21 @@ def run_simulation(
         year_discharge_green = 0.0
         year_discharge_grey = 0.0
         year_bess_spot_revenue = 0.0
+        year_missing_baseload = 0.0
 
         # ---- 8. Day loop (365 days) ----
         for day in range(DAYS_PER_YEAR):
-            h_start = day * HOURS_PER_DAY
-            h_end = h_start + HOURS_PER_DAY
+            h_start = day * intervals_per_day
+            h_end = h_start + intervals_per_day
 
-            pv_day = pv_year[h_start:h_end].copy()
+            pv_day = pv_year_aligned[h_start:h_end].copy()
             spot_day = spot_prices[h_start:h_end]
 
             # Zero PV production on PV offline days
             if (
-                pv_offline_days_yearly is not None
-                and year_idx < len(pv_offline_days_yearly)
-                and day in pv_offline_days_yearly[year_idx]
+                    pv_offline_days_yearly is not None
+                    and year_idx < len(pv_offline_days_yearly)
+                    and day in pv_offline_days_yearly[year_idx]
             ):
                 pv_day[:] = 0.0
 
@@ -544,6 +574,7 @@ def run_simulation(
                     goo_premium_eur_per_kwh=goo_price,
                     price_cap_eur_per_kwh=cap_price,
                     grid_loss_factor=config.grid_loss_factor,
+                    timestep_hours=config.timestep_hours,
                 )
             else:
                 result = optimize_day(
@@ -554,8 +585,8 @@ def run_simulation(
                     grid_max_kw=config.grid_max_kw,
                     mode=config.mode,
                     start_soc_kwh=current_soc,
-                    start_soc_green_kwh=current_soc_green if config.mode == "grey" else None,
-                    start_soc_grey_kwh=current_soc_grey if config.mode == "grey" else None,
+                    start_soc_green_kwh=current_soc_green,
+                    start_soc_grey_kwh=current_soc_grey,
                     goo_premium_eur_per_kwh=goo_price,
                     price_cap_eur_per_kwh=cap_price,
                     grid_loss_factor=config.grid_loss_factor,
@@ -566,63 +597,57 @@ def run_simulation(
             current_soc_green = result["end_soc_green"]
             current_soc_grey = result["end_soc_grey"]
 
-            # Revenue breakdown for this day (clip(spot, floor, cap) + goo)
-            if fixed_price > 0.0:
-                eff_day = np.maximum(spot_day, fixed_price)
-            else:
-                eff_day = spot_day
-            if cap_price > 0.0:
-                eff_day = np.minimum(eff_day, cap_price)
-            if goo_price > 0.0:
-                eff_day = eff_day + goo_price
-
-            glf = config.grid_loss_factor
-            day_rev_pv = float(np.sum(result["export_pv"] * glf * eff_day))
-            day_rev_green = float(
-                np.sum(result["discharge_green"] * config.bess_rte * glf * eff_day)
-            )
-            day_rev_grey = float(
-                np.sum(result["discharge_grey"] * config.bess_rte * spot_day)
-            )
+            # Revenue breakdown for this day
+            day_rev_pv = float(np.sum(result["export_pv"] * result["effective_price"]))
+            # BESS green discharge revenue at spot price (separate revenue stream)
+            day_rev_green = float(np.sum(result["discharge_green"] * result["effective_price"]))
+            day_rev_grey = float(np.sum(result["discharge_grey"] * spot_day))
             day_import = float(np.sum(result["charge_grid"] * spot_day))
 
-            day_bess_spot_rev = float(
-                np.sum(result["discharge_green"] * config.bess_rte * glf * spot_day)
-                + np.sum(result["discharge_grey"] * config.bess_rte * spot_day)
-            )
+            day_bess_spot_rev = day_rev_grey
+
+            # Baseload additional purchase, if necessary
+            if fixed_price > 0 and baseload_kw is not None:
+                total_feed_in = result["export_pv"] + result["discharge_green"] + result["discharge_grey"]
+                missed_baseload = np.maximum([baseload_kw/INTERVALS_PER_HOUR/MWH_TO_KWH - total_feed_in],0)
+            else:
+                missed_baseload = np.zeros(len(result["export_pv"]))
 
             year_revenue_pv += day_rev_pv
             year_revenue_green += day_rev_green
             year_revenue_grey += day_rev_grey
             year_import_cost += day_import
             year_bess_spot_revenue += day_bess_spot_rev
-            year_pv_export += float(np.sum(result["export_pv"]) * glf)
+            year_missing_baseload += float(np.sum(missed_baseload * spot_day))
+            year_pv_export += float(np.sum(result["export_pv"]))
             year_pv_curtailed += float(np.sum(result["curtail"]))
             year_charge_pv += float(np.sum(result["charge_pv"]))
             year_charge_grid += float(np.sum(result["charge_grid"]))
-            year_discharge_green += float(np.sum(result["discharge_green"]) * glf *config.bess_rte)
-            year_discharge_grey += float(np.sum(result["discharge_grey"]) * config.bess_rte)
+            year_discharge_green += float(np.sum(result["discharge_green"]))
+            year_discharge_grey += float(np.sum(result["discharge_grey"]))
 
             # Store hourly sample arrays
             if is_sample_year:
+                h_production_pv[h_start:h_end] = pv_day
                 h_charge_pv[h_start:h_end] = result["charge_pv"]
                 h_charge_grid[h_start:h_end] = result["charge_grid"]
-                h_discharge_green[h_start:h_end] = result["discharge_green"] * glf * config.bess_rte
-                h_discharge_grey[h_start:h_end] = result["discharge_grey"] * config.bess_rte
-                h_export_pv[h_start:h_end] = result["export_pv"] * glf
+                h_discharge_green[h_start:h_end] = result["discharge_green"]
+                h_discharge_grey[h_start:h_end] = result["discharge_grey"]
+                h_export_pv[h_start:h_end] = result["export_pv"]
                 h_curtail[h_start:h_end] = result["curtail"]
                 h_soc[h_start:h_end] = result["soc"]
                 h_soc_green[h_start:h_end] = result["soc_green"]
                 h_soc_grey[h_start:h_end] = result["soc_grey"]
                 h_revenue[h_start:h_end] = result["revenue"]
+                h_effective_price[h_start:h_end] = result["effective_price"]
 
         # ---- 9. Compute annual aggregates ----
         total_pv = float(np.sum(pv_year))
         total_revenue = (
-            year_revenue_pv + year_revenue_green + year_revenue_grey - year_import_cost
+                year_revenue_pv + year_revenue_green + year_revenue_grey - year_import_cost - year_missing_baseload
         )
         bess_throughput = (
-            year_charge_pv + year_charge_grid + year_discharge_green + year_discharge_grey
+                year_charge_pv + year_charge_grid + year_discharge_green + year_discharge_grey
         )
 
         annual_results.append(
@@ -644,6 +669,7 @@ def run_simulation(
                 bess_capacity_kwh=bess_cap,
                 replacement_cost=replacement_cost,
                 bess_spot_revenue=year_bess_spot_revenue,
+                missing_baseload_cost=year_missing_baseload,
             )
         )
 
@@ -658,7 +684,7 @@ def run_simulation(
             if goo_price > 0.0:
                 eff_prices_year = eff_prices_year + goo_price
             hourly_sample = HourlySample(
-                pv_production=pv_year.copy(),
+                pv_production=h_production_pv,
                 spot_prices=spot_prices.copy(),
                 effective_prices=eff_prices_year,
                 soc=h_soc,
@@ -683,7 +709,7 @@ def run_simulation(
 
     # Fallback if sample year was never reached
     if hourly_sample is None:
-        hourly_sample = _empty_hourly_sample()
+        hourly_sample = _empty_hourly_sample(config.intervals_per_year)
 
     return SimulationResult(
         annual_results=annual_results,

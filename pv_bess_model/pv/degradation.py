@@ -116,6 +116,6 @@ def degradation_factor(degradation_rate: float, year: int) -> float:
     """
     if not 0.0 <= degradation_rate < 1.0:
         raise ValueError(f"degradation_rate must be in [0, 1), got {degradation_rate}.")
-    if year < 1:
-        raise ValueError(f"year must be ≥ 1, got {year}.")
+    if year < 0:
+        raise ValueError(f"year must be ≥ 0, got {year}.")
     return (1.0 - degradation_rate) ** year

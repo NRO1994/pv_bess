@@ -112,8 +112,130 @@ def get_debt_service(schedule: AnnuitySchedule, year: int) -> float:
         year: Project year (1-indexed). Year 0 is the CAPEX year with no debt service.
 
     Returns:
-        Annual debt service payment (0.0 if *year* is outside the loan tenor).
+        Annual debt service payment (0.0 if *year* is outside the schedule).
     """
     if year < 1 or year > len(schedule.interest_payments):
         return 0.0
-    return schedule.annual_payment
+    idx = year - 1
+    return schedule.interest_payments[idx] + schedule.principal_payments[idx]
+
+
+def add_replacement_debt(
+    existing_schedule: AnnuitySchedule,
+    replacement_cost: float,
+    leverage_pct: float,
+    annual_interest_rate: float,
+    replacement_year: int,
+    loan_tenor_years: int,
+    lifetime_years: int,
+) -> AnnuitySchedule:
+    """Add replacement debt to an existing annuity schedule.
+
+    At ``replacement_year`` (1-indexed), a new loan is taken out for the
+    debt-financed portion of the replacement cost.  The replacement loan
+    tenor is ``min(remaining_project_lifetime, loan_tenor_years)`` so that
+    the loan is fully repaid by the end of the project.
+
+    The combined schedule extends to whichever loan ends later.
+
+    Args:
+        existing_schedule: Original project debt schedule.
+        replacement_cost: Total BESS replacement cost in euros.
+        leverage_pct: Debt share of the replacement cost (e.g. 75.0).
+        annual_interest_rate: Annual interest rate for the replacement loan.
+        replacement_year: Project year (1-indexed) of the replacement event.
+        loan_tenor_years: Maximum loan tenor in years for the replacement loan.
+        lifetime_years: Total project lifetime in years.  The replacement
+            loan must be repaid by the end of the project.
+
+    Returns:
+        A new :class:`AnnuitySchedule` that combines original and replacement
+        debt payments.  ``loan_amount`` reflects the sum of both loans.
+        ``annual_payment`` is set to 0.0 since the combined payment is no
+        longer constant — use per-year lists instead.
+    """
+    replacement_loan = replacement_cost * leverage_pct / 100.0
+
+    if replacement_loan <= 0.0 or replacement_year < 1:
+        return existing_schedule
+
+    # Replacement tenor: the shorter of the configured loan tenor and the
+    # remaining project lifetime, so the loan is fully amortised by project end.
+    remaining_project_years = max(lifetime_years - replacement_year + 1, 1)
+    remaining_tenor = min(remaining_project_years, loan_tenor_years)
+
+    repl_annuity = calculate_annuity(replacement_loan, annual_interest_rate, remaining_tenor)
+
+    # Build per-year arrays for the replacement loan
+    repl_interest: list[float] = []
+    repl_principal: list[float] = []
+    repl_balance_list: list[float] = []
+    balance = replacement_loan
+    for _ in range(remaining_tenor):
+        interest = balance * annual_interest_rate
+        principal = repl_annuity - interest
+        balance = balance - principal
+        repl_interest.append(interest)
+        repl_principal.append(principal)
+        repl_balance_list.append(max(balance, 0.0))
+
+    # Determine total schedule length: max of original end and replacement end
+    repl_end_year = replacement_year - 1 + remaining_tenor  # 0-indexed end
+    orig_len = len(existing_schedule.interest_payments)
+    total_len = max(orig_len, repl_end_year)
+
+    # Merge arrays
+    combined_interest: list[float] = []
+    combined_principal: list[float] = []
+    combined_balance: list[float] = []
+
+    for i in range(total_len):
+        # Original component
+        orig_i = existing_schedule.interest_payments[i] if i < orig_len else 0.0
+        orig_p = existing_schedule.principal_payments[i] if i < orig_len else 0.0
+        orig_b = existing_schedule.remaining_balance[i] if i < orig_len else 0.0
+
+        # Replacement component (starts at replacement_year - 1, 0-indexed)
+        repl_offset = i - (replacement_year - 1)
+        if 0 <= repl_offset < remaining_tenor:
+            r_i = repl_interest[repl_offset]
+            r_p = repl_principal[repl_offset]
+            r_b = repl_balance_list[repl_offset]
+        else:
+            r_i = 0.0
+            r_p = 0.0
+            r_b = 0.0
+
+        combined_interest.append(orig_i + r_i)
+        combined_principal.append(orig_p + r_p)
+        combined_balance.append(orig_b + r_b)
+
+    return AnnuitySchedule(
+        loan_amount=existing_schedule.loan_amount + replacement_loan,
+        annual_payment=0.0,  # no longer constant
+        interest_payments=combined_interest,
+        principal_payments=combined_principal,
+        remaining_balance=combined_balance,
+    )
+
+
+def get_debt_components(
+    schedule: AnnuitySchedule,
+    year: int,
+) -> tuple[float, float, float]:
+    """Return the interest, principal repayment, and total debt service for a year.
+
+    Args:
+        schedule: The annuity schedule.
+        year: Project year (1-indexed).
+
+    Returns:
+        A three-tuple ``(interest, repayment, total)`` where all values are 0.0
+        when *year* falls outside the loan tenor.
+    """
+    if year < 1 or year > len(schedule.interest_payments):
+        return (0.0, 0.0, 0.0)
+    interest = schedule.interest_payments[year - 1]
+    repayment = schedule.principal_payments[year - 1]
+    total = interest + repayment
+    return (interest, repayment, total)

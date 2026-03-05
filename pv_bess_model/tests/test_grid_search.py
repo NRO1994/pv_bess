@@ -64,7 +64,7 @@ def _make_config(
         scale_pct_of_pv=scales,
         e_to_p_ratio_hours=e_to_p,
         pv_peak_kwp=PV_PEAK_KWP,
-        pv_base_timeseries_p50=pv,
+        pv_base_timeseries=pv,
         pv_degradation_rate=0.004,
         # CAPEX large enough that Year 1 CF is negative (CAPEX > Year 1 revenue)
         pv_costs_capex={"eur_per_kw": 50.0},
@@ -82,6 +82,7 @@ def _make_config(
         replacement_eur_per_kw=0.0,
         replacement_eur_per_kwh=0.0,
         replacement_pct_of_capex=0.0,
+        replacement_capacity_factor_pct=100.0,
         grid_max_kw=GRID_MAX_KW,
         grid_loss_factor=1.0,
         grid_costs_capex={},   # no grid costs to keep CAPEX minimal
@@ -101,7 +102,7 @@ def _make_config(
         gewerbesteuer_hebesatz=400,
         koerperschaftsteuer_pct=15.0,
         solidaritaetszuschlag_pct=5.5,
-        debt_uses_p90=False,
+
         max_workers=1,
     )
 

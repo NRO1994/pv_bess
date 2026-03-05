@@ -18,7 +18,12 @@ from typing import Any
 
 import numpy as np
 
-from pv_bess_model.config.defaults import HOURS_PER_YEAR
+from pv_bess_model.config.defaults import (
+    CSV_DELIMITER,
+    CSV_INPUT_DECIMAL_SEPARATOR,
+    CSV_TIMESTAMP_COLUMN,
+    HOURS_PER_YEAR,
+)
 from pv_bess_model.config.loader import (
     PriceData,
     extend_price_timeseries,
@@ -113,6 +118,10 @@ def load_market_prices(
     price_unit: str,
     lifetime_years: int,
     commissioning_year: int | None = None,
+    delimiter: str = CSV_DELIMITER,
+    decimal: str = CSV_INPUT_DECIMAL_SEPARATOR,
+    timestamp_column: str = CSV_TIMESTAMP_COLUMN,
+    timestamp_format: str | None = None,
 ) -> MarketPrices:
     """Load a price CSV file and extend all columns to the full project lifetime.
 
@@ -133,6 +142,17 @@ def load_market_prices(
         Number of project years to cover.
     commissioning_year:
         If provided, rows before January 1st of this year are discarded.
+    delimiter:
+        Column delimiter used in the CSV file (default: ``CSV_DELIMITER``).
+    decimal:
+        Decimal separator used for numeric values in the CSV
+        (default: ``CSV_INPUT_DECIMAL_SEPARATOR`` = ``"."``).
+    timestamp_column:
+        Name of the column containing ISO 8601 timestamps
+        (default: ``CSV_TIMESTAMP_COLUMN`` = ``"timestamp"``).
+    timestamp_format:
+        ``strftime``-compatible format string for parsing timestamps.
+        ``None`` (default) lets pandas auto-detect the format.
 
     Returns
     -------
@@ -144,6 +164,10 @@ def load_market_prices(
         required_columns=required_columns,
         price_unit=price_unit,
         commissioning_year=commissioning_year,
+        delimiter=delimiter,
+        decimal=decimal,
+        timestamp_column=timestamp_column,
+        timestamp_format=timestamp_format,
     )
 
     extended: dict[str, np.ndarray] = {}

@@ -39,16 +39,6 @@ _CAPEX_BLOCK = {
     "additionalProperties": False,
 }
 
-_PRICE_SCENARIO_ENTRY = {
-    "type": "object",
-    "required": ["csv_column", "weight"],
-    "properties": {
-        "csv_column": {"type": "string", "minLength": 1},
-        "weight": {"type": "number", "minimum": 0, "maximum": 1},
-    },
-    "additionalProperties": False,
-}
-
 _MONTE_CARLO = {
     "type": "object",
     "required": ["enabled"],
@@ -63,9 +53,28 @@ _MONTE_CARLO = {
         "sigma_bess_availability_pct": {"type": "number", "minimum": 0},
         "price_scenarios": {
             "type": "object",
-            "minProperties": 1,
-            "additionalProperties": _PRICE_SCENARIO_ENTRY,
+            "additionalProperties": {
+                "type": "object",
+                "required": ["csv_column", "weight"],
+                "properties": {
+                    "csv_column": {"type": "string", "minLength": 1},
+                    "weight": {"type": "number", "minimum": 0, "maximum": 1},
+                },
+                "additionalProperties": False,
+            },
         },
+    },
+    "additionalProperties": False,
+}
+
+_REPORT = {
+    "type": "object",
+    "properties": {
+        "enabled": {"type": "boolean"},
+        "company_name": {"type": "string"},
+        "logo_path": {"type": "string"},
+        "llm_api_key_env": {"type": "string"},
+        "llm_model": {"type": "string"},
     },
     "additionalProperties": False,
 }
@@ -76,6 +85,91 @@ _OUTPUT = {
     "properties": {
         "directory": {"type": "string", "minLength": 1},
         "export_dispatch_sample": {"type": "boolean"},
+        "csv_separator": {"type": "string", "minLength": 1},
+        "csv_decimal": {"type": "string", "minLength": 1},
+        "csv_timestamp_column": {"type": "string", "minLength": 1},
+        "csv_timestamp_format": {"type": "string", "minLength": 1},
+        "report": _REPORT,
+    },
+    "additionalProperties": False,
+}
+
+_EEG_SENSITIVITY = {
+    "type": "object",
+    "required": ["enabled", "floor_prices_eur_per_kwh"],
+    "properties": {
+        "enabled": {"type": "boolean"},
+        "floor_prices_eur_per_kwh": {
+            "type": "array",
+            "items": {"type": "number", "minimum": 0},
+            "minItems": 1,
+        },
+    },
+    "additionalProperties": False,
+}
+
+_PPA_COLLAR = {
+    "type": "object",
+    "required": [
+        "enabled",
+        "floor_prices_eur_per_mwh",
+        "cap_spreads_eur_per_mwh",
+        "duration_years",
+        "goo_premium_eur_per_kwh",
+    ],
+    "properties": {
+        "enabled": {"type": "boolean"},
+        "floor_prices_eur_per_mwh": {
+            "type": "array",
+            "items": {"type": "number", "minimum": 0},
+            "minItems": 1,
+        },
+        "cap_spreads_eur_per_mwh": {
+            "type": "array",
+            "items": {"type": "number", "minimum": 0},
+            "minItems": 1,
+        },
+        "duration_years": {"type": "integer", "minimum": 1},
+        "inflation_on_ppa": {"type": "boolean"},
+        "goo_premium_eur_per_kwh": {"type": "number", "minimum": 0},
+    },
+    "additionalProperties": False,
+}
+
+_PPA_BASELOAD = {
+    "type": "object",
+    "required": [
+        "enabled",
+        "ppa_prices_eur_per_mwh",
+        "baseload_levels_mw",
+        "duration_years",
+        "goo_premium_eur_per_kwh",
+    ],
+    "properties": {
+        "enabled": {"type": "boolean"},
+        "ppa_prices_eur_per_mwh": {
+            "type": "array",
+            "items": {"type": "number", "minimum": 0},
+            "minItems": 1,
+        },
+        "baseload_levels_mw": {
+            "type": "array",
+            "items": {"type": "number", "minimum": 0},
+            "minItems": 1,
+        },
+        "duration_years": {"type": "integer", "minimum": 1},
+        "inflation_on_ppa": {"type": "boolean"},
+        "goo_premium_eur_per_kwh": {"type": "number", "minimum": 0},
+    },
+    "additionalProperties": False,
+}
+
+_ANALYSES = {
+    "type": "object",
+    "properties": {
+        "eeg_sensitivity": _EEG_SENSITIVITY,
+        "ppa_collar": _PPA_COLLAR,
+        "ppa_baseload": _PPA_BASELOAD,
     },
     "additionalProperties": False,
 }
@@ -87,6 +181,8 @@ _SCENARIO_BLOCK = {
         "name": {"type": "string", "minLength": 1},
         "monte_carlo": _MONTE_CARLO,
         "output": _OUTPUT,
+        "skip_baseline": {"type": "boolean"},
+        "analyses": _ANALYSES,
     },
     "additionalProperties": False,
 }
@@ -99,7 +195,7 @@ _PV_DESIGN = {
     "type": "object",
     "required": ["peak_power_kwp", "mounting_type", "azimuth_deg", "tilt_deg"],
     "properties": {
-        "peak_power_kwp": {"type": "number", "exclusiveMinimum": 0},
+        "peak_power_kwp": {"type": "number", "minimum": 0},
         "mounting_type": {"type": "string", "enum": ["free", "building"]},
         "azimuth_deg": {"type": "number", "minimum": -180, "maximum": 180},
         "tilt_deg": {"type": "number", "minimum": 0, "maximum": 90},
@@ -109,13 +205,14 @@ _PV_DESIGN = {
 
 _PV_PERFORMANCE = {
     "type": "object",
-    "required": ["degradation_rate_pct_per_year"],
+    "required": ["degradation_rate_pct_per_year", "pv_availability_pct"],
     "properties": {
         "degradation_rate_pct_per_year": {
             "type": "number",
             "minimum": 0,
             "maximum": 100,
         },
+        "pv_availability_pct": {"type": "number", "minimum": 0, "maximum": 100},
     },
     "additionalProperties": False,
 }
@@ -159,6 +256,8 @@ _BESS_DESIGN_SPACE = {
             "items": {"type": "number", "exclusiveMinimum": 0},
             "minItems": 1,
         },
+        "absolute_power_kw": {"type": "number", "minimum": 0},
+        "absolute_capacity_kwh": {"type": "number", "minimum": 0},
     },
     "additionalProperties": False,
 }
@@ -196,6 +295,7 @@ _BESS_REPLACEMENT = {
         "eur_per_kw": _NON_NEGATIVE_NUMBER,
         "eur_per_kwh": _NON_NEGATIVE_NUMBER,
         "pct_of_capex": {"type": "number", "minimum": 0, "maximum": 1},
+        "capacity_factor_pct": {"type": "number", "minimum": 0},
     },
     "additionalProperties": False,
 }
@@ -308,6 +408,31 @@ _REVENUE_STREAMS = {
     "additionalProperties": False,
 }
 
+_PRICE_WEATHER_SCENARIO = {
+    "type": "object",
+    "required": ["name", "csv_column", "weather_year", "weight"],
+    "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "label": {"type": "string"},
+        "csv_column": {"type": "string", "minLength": 1},
+        "weather_year": {"type": "integer", "minimum": 1900},
+        "weight": {"type": "number", "minimum": 0, "maximum": 1},
+        "is_central": {"type": "boolean"},
+        # Per-scenario overrides (inherited from parent block if absent)
+        "price_csv": {"type": "string", "minLength": 1},
+        "price_unit": {
+            "type": "string",
+            "enum": ["eur_per_mwh", "eur_per_kwh"],
+        },
+        "inflation_on_input_data": {"type": "boolean"},
+        "csv_separator": {"type": "string", "minLength": 1},
+        "csv_decimal": {"type": "string", "minLength": 1},
+        "csv_timestamp_column": {"type": "string", "minLength": 1},
+        "csv_timestamp_format": {"type": "string", "minLength": 1},
+    },
+    "additionalProperties": False,
+}
+
 _PRICE_INPUTS = {
     "type": "object",
     "required": ["day_ahead_csv", "price_unit"],
@@ -318,6 +443,15 @@ _PRICE_INPUTS = {
             "enum": ["eur_per_mwh", "eur_per_kwh"],
         },
         "inflation_on_input_data": {"type": "boolean"},
+        "csv_separator": {"type": "string", "minLength": 1},
+        "csv_decimal": {"type": "string", "minLength": 1},
+        "csv_timestamp_column": {"type": "string", "minLength": 1},
+        "csv_timestamp_format": {"type": "string", "minLength": 1},
+        "scenarios": {
+            "type": "array",
+            "items": _PRICE_WEATHER_SCENARIO,
+            "minItems": 1,
+        },
     },
     "additionalProperties": False,
 }
@@ -347,7 +481,6 @@ _FINANCE = {
         "leverage_pct",
         "interest_rate_pct",
         "loan_tenor_years",
-        "debt_uses_p90",
         "inflation_rate",
         "revenue_streams",
         "price_inputs",
@@ -359,6 +492,7 @@ _FINANCE = {
         "loan_tenor_years": {"type": "integer", "minimum": 1},
         "equity_irr_target": {"type": ["number", "null"]},
         "debt_uses_p90": {"type": "boolean"},
+        "debt_sizing_downside_pct": {"type": "number", "minimum": 0, "maximum": 100},
         "inflation_rate": {"type": "number", "minimum": 0},
         "revenue_streams": _REVENUE_STREAMS,
         "price_inputs": _PRICE_INPUTS,
@@ -473,27 +607,66 @@ def validate_scenario(data: dict) -> None:
     # ------------------------------------------------------------------
     # Cross-field semantic validation
     # ------------------------------------------------------------------
+    _validate_scenarios(data)
     _validate_mc_weights(data)
     _validate_soc_limits(data)
     _validate_baseload_ppa(data)
+    _validate_bess_only(data)
+
+
+def _validate_scenarios(data: dict) -> None:
+    """Validate price-weather scenarios in price_inputs.scenarios.
+
+    Checks:
+    - Exactly one scenario has ``is_central: true``.
+    - Scenario weights sum to 1.0 (±tolerance).
+    """
+    from pv_bess_model.config.defaults import MC_WEIGHT_TOLERANCE
+
+    scenarios = (
+        data.get("project_settings", {})
+        .get("finance", {})
+        .get("price_inputs", {})
+        .get("scenarios", [])
+    )
+    if not scenarios:
+        return
+
+    # Check exactly one is_central
+    central_count = sum(1 for s in scenarios if s.get("is_central", False))
+    if central_count != 1:
+        raise ValueError(
+            f"Exactly one scenario must have 'is_central: true', "
+            f"but {central_count} scenario(s) are marked as central. "
+            f"Check project_settings.finance.price_inputs.scenarios."
+        )
+
+    # Check weights sum to 1.0
+    total_weight = sum(s.get("weight", 0.0) for s in scenarios)
+    if abs(total_weight - 1.0) > MC_WEIGHT_TOLERANCE:
+        raise ValueError(
+            f"Scenario weights must sum to 1.0, but they sum to "
+            f"{total_weight:.6f}. "
+            f"Adjust the 'weight' fields in "
+            f"project_settings.finance.price_inputs.scenarios."
+        )
 
 
 def _validate_mc_weights(data: dict) -> None:
-    """Check that Monte Carlo price scenario weights sum to 1.0 (±tolerance)."""
+    """Validate MC price_scenarios weights sum to 1.0 (legacy format)."""
     from pv_bess_model.config.defaults import MC_WEIGHT_TOLERANCE
 
     mc = data.get("scenario", {}).get("monte_carlo", {})
     if not mc.get("enabled", False):
         return
-    scenarios = mc.get("price_scenarios", {})
-    if not scenarios:
+    price_scenarios = mc.get("price_scenarios", {})
+    if not price_scenarios:
         return
-    total = sum(s.get("weight", 0.0) for s in scenarios.values())
-    if abs(total - 1.0) > MC_WEIGHT_TOLERANCE:
+
+    total_weight = sum(v.get("weight", 0.0) for v in price_scenarios.values())
+    if abs(total_weight - 1.0) > MC_WEIGHT_TOLERANCE:
         raise ValueError(
-            f"Monte Carlo price scenario weights must sum to 1.0, "
-            f"but they sum to {total:.6f}. "
-            f"Adjust the 'weight' fields in scenario.monte_carlo.price_scenarios."
+            f"MC price_scenarios weights must sum to 1.0, got {total_weight:.6f}."
         )
 
 
@@ -543,11 +716,54 @@ def _validate_baseload_ppa(data: dict) -> None:
         .get("design", {})
         .get("peak_power_kwp")
     )
-    if pv_peak_kwp is not None and baseload_mw * 1000 > pv_peak_kwp:
+
+
+def _validate_bess_only(data: dict) -> None:
+    """Check consistency of BESS-only configuration.
+
+    When ``pv_peak_kwp`` is zero, the ratio-based BESS sizing formula
+    (``bess_power = pv_peak × scale / 100``) always yields zero power for
+    every non-zero scale value.  The user must supply ``absolute_power_kw``
+    and ``absolute_capacity_kwh`` in ``bess.design_space`` to get a meaningful
+    non-zero BESS configuration.
+
+    Rules enforced:
+    - ``absolute_power_kw`` and ``absolute_capacity_kwh`` must be specified
+      together (both present or both absent).
+    - When ``pv_peak_kwp == 0`` and no absolute values are given, the grid
+      search will only evaluate the PV-only baseline (0 kW BESS); a
+      ``ValueError`` is raised to alert the user.
+    """
+    design_space = (
+        data.get("project_settings", {})
+        .get("technology", {})
+        .get("bess", {})
+        .get("design_space", {})
+    )
+    has_power = "absolute_power_kw" in design_space
+    has_capacity = "absolute_capacity_kwh" in design_space
+
+    if has_power != has_capacity:
         raise ValueError(
-            f"baseload_mw ({baseload_mw} MW = {baseload_mw * 1000} kW) "
-            f"exceeds PV peak power ({pv_peak_kwp} kWp). "
-            f"The baseload level must not exceed the PV nominal capacity."
+            "bess.design_space.absolute_power_kw and absolute_capacity_kwh "
+            "must both be specified or both omitted. "
+            "Provide both fields to enable BESS-Only sizing."
+        )
+
+    pv_peak_kwp = (
+        data.get("project_settings", {})
+        .get("technology", {})
+        .get("pv", {})
+        .get("design", {})
+        .get("peak_power_kwp")
+    )
+    if pv_peak_kwp == 0 and not has_power:
+        raise ValueError(
+            "pv_peak_kwp is 0 (BESS-Only scenario) but "
+            "bess.design_space.absolute_power_kw and absolute_capacity_kwh "
+            "are not specified. Without absolute sizing the grid search can "
+            "only evaluate the zero-BESS baseline. "
+            "Add absolute_power_kw and absolute_capacity_kwh to bess.design_space."
         )
 
 

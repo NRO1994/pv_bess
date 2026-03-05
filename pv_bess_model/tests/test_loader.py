@@ -592,3 +592,144 @@ class TestLoadPriceCSVCommissioningYearFilter:
                 p, required_columns=["MID"], price_unit="eur_per_mwh",
                 commissioning_year=2025,
             )
+
+
+# ---------------------------------------------------------------------------
+# load_price_csv – custom CSV format parameters
+# ---------------------------------------------------------------------------
+
+
+def _make_price_csv_custom(
+    tmp_path,
+    delimiter: str = ";",
+    decimal: str = ".",
+    timestamp_col: str = "timestamp",
+    n_rows: int = HOURS_PER_YEAR,
+    value: float = 50.0,
+    filename: str = "custom_prices.csv",
+) -> object:
+    """Write a synthetic price CSV with custom formatting."""
+    header = delimiter.join([timestamp_col, "MID"])
+    # Format value with the chosen decimal separator
+    val_str = f"{value:.2f}".replace(".", decimal)
+    rows = [header] + [
+        f"2023-01-01T{i % 24:02d}:00:00{delimiter}{val_str}"
+        for i in range(n_rows)
+    ]
+    p = tmp_path / filename
+    p.write_text("\n".join(rows), encoding="utf-8")
+    return p
+
+
+class TestLoadPriceCSVCustomFormat:
+    """Tests for custom delimiter, decimal, and timestamp column parameters."""
+
+    def test_custom_delimiter_comma(self, tmp_path):
+        """CSV with comma as delimiter is loaded correctly."""
+        p = _make_price_csv_custom(tmp_path, delimiter=",", decimal=".")
+        data = load_price_csv(
+            p, required_columns=["MID"], price_unit="eur_per_mwh",
+            delimiter=",",
+        )
+        assert data.n_hours == HOURS_PER_YEAR
+        assert "MID" in data.columns
+
+    def test_custom_delimiter_tab(self, tmp_path):
+        """CSV with tab as delimiter is loaded correctly."""
+        p = _make_price_csv_custom(tmp_path, delimiter="\t", decimal=".")
+        data = load_price_csv(
+            p, required_columns=["MID"], price_unit="eur_per_mwh",
+            delimiter="\t",
+        )
+        assert data.n_hours == HOURS_PER_YEAR
+
+    def test_custom_decimal_comma(self, tmp_path):
+        """CSV with comma as decimal separator is loaded and converted correctly."""
+        p = _make_price_csv_custom(tmp_path, delimiter=";", decimal=",", value=1000.0)
+        data = load_price_csv(
+            p, required_columns=["MID"], price_unit="eur_per_mwh",
+            decimal=",",
+        )
+        # 1000 €/MWh → 1.0 €/kWh
+        assert data.n_hours == HOURS_PER_YEAR
+        import math
+        assert math.isclose(float(data.columns["MID"][0]), 1.0, rel_tol=1e-6)
+
+    def test_custom_timestamp_column_name(self, tmp_path):
+        """CSV with a non-standard timestamp column name is loaded correctly."""
+        p = _make_price_csv_custom(tmp_path, timestamp_col="time")
+        data = load_price_csv(
+            p, required_columns=["MID"], price_unit="eur_per_mwh",
+            timestamp_column="time",
+        )
+        assert data.n_hours == HOURS_PER_YEAR
+
+    def test_custom_timestamp_column_with_filtering(self, tmp_path):
+        """Commissioning year filtering uses the custom timestamp column name."""
+        p = tmp_path / "ts_prices.csv"
+        timestamps = []
+        vals = []
+        for year in [2023, 2024]:
+            ts = pd.date_range(start=f"{year}-01-01", periods=HOURS_PER_YEAR, freq="h")
+            timestamps.extend(ts.strftime("%Y-%m-%dT%H:%M:%S").tolist())
+            vals.extend([50.0] * HOURS_PER_YEAR)
+        pd.DataFrame({"zeit": timestamps, "MID": vals}).to_csv(
+            p, index=False, sep=";"
+        )
+        data = load_price_csv(
+            p, required_columns=["MID"], price_unit="eur_per_mwh",
+            commissioning_year=2024,
+            timestamp_column="zeit",
+        )
+        assert data.n_hours == HOURS_PER_YEAR
+
+    def test_custom_timestamp_format(self, tmp_path):
+        """Explicit timestamp format is used for parsing."""
+        p = tmp_path / "fmt_prices.csv"
+        # Write timestamps in non-standard format: DD.MM.YYYY HH:MM
+        rows = ["timestamp;MID"]
+        for i in range(HOURS_PER_YEAR):
+            rows.append(f"01.01.2023 {i % 24:02d}:00;50.0")
+        p.write_text("\n".join(rows), encoding="utf-8")
+        data = load_price_csv(
+            p, required_columns=["MID"], price_unit="eur_per_mwh",
+            timestamp_format="%d.%m.%Y %H:%M",
+        )
+        assert data.n_hours == HOURS_PER_YEAR
+
+    def test_custom_timestamp_format_with_filtering(self, tmp_path):
+        """Commissioning year filtering works with a custom timestamp format."""
+        p = tmp_path / "fmt_filter_prices.csv"
+        rows = ["ts;MID"]
+        # Year 2023: 8760 rows, Year 2024: 8760 rows
+        for year in [2023, 2024]:
+            ts = pd.date_range(start=f"{year}-01-01", periods=HOURS_PER_YEAR, freq="h")
+            for t in ts:
+                rows.append(f"{t.strftime('%d.%m.%Y %H:%M')};50.0")
+        p.write_text("\n".join(rows), encoding="utf-8")
+        data = load_price_csv(
+            p, required_columns=["MID"], price_unit="eur_per_mwh",
+            commissioning_year=2024,
+            timestamp_column="ts",
+            timestamp_format="%d.%m.%Y %H:%M",
+        )
+        assert data.n_hours == HOURS_PER_YEAR
+
+    def test_wrong_delimiter_raises(self, tmp_path):
+        """Specifying the wrong delimiter causes a load failure or missing column."""
+        p = _make_price_csv_custom(tmp_path, delimiter=";", decimal=".")
+        # Try to load with comma delimiter → columns won't be split correctly
+        with pytest.raises((ValueError, KeyError)):
+            load_price_csv(
+                p, required_columns=["MID"], price_unit="eur_per_mwh",
+                delimiter=",",
+            )
+
+    def test_default_decimal_dot_reads_standard_csv(self, tmp_path):
+        """Default decimal '.' reads standard market data CSV correctly."""
+        p = _make_price_csv_custom(tmp_path, decimal=".", value=50.0)
+        data = load_price_csv(
+            p, required_columns=["MID"], price_unit="eur_per_mwh",
+        )
+        import math
+        assert math.isclose(float(data.columns["MID"][0]), 0.05, rel_tol=1e-6)

@@ -34,6 +34,8 @@ def _make_annual_cashflow(year: int) -> AnnualCashflow:
         opex=100.0 * year,
         capex=5000.0 if year == 1 else 0.0,
         debt_service=200.0,
+        debt_interest=120.0,
+        debt_repayment=80.0,
         depreciation=250.0,
         gewerbesteuer=10.0,
         koerperschaftsteuer=5.0,
@@ -198,8 +200,8 @@ class TestCashflowCsvYearColumn:
         rows = _read_csv_rows(path)
         expected_cols = {
             "year", "capex_eur", "pv_production_mwh", "bess_throughput_mwh",
-            "revenue_eur", "opex_eur", "debt_service_eur", "depreciation_eur",
-            "gewerbesteuer_eur", "koerperschaftsteuer_eur",
+            "revenue_eur", "opex_eur", "debt_interest_eur", "debt_repayment_eur",
+            "depreciation_eur", "gewerbesteuer_eur", "koerperschaftsteuer_eur",
             "solidaritaetszuschlag_eur", "total_tax_eur",
             "project_cf_eur", "equity_cf_eur", "cumulative_equity_cf_eur", "dscr",
         }

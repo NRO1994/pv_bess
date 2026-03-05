@@ -234,7 +234,11 @@ class TestLocation:
 
 
 class TestPVDesign:
-    def test_zero_peak_power_rejected(self, sample_scenario_config_green):
+    def test_zero_peak_power_requires_absolute_bess_values(
+        self, sample_scenario_config_green
+    ):
+        """peak_power_kwp = 0 is allowed by schema but requires absolute BESS sizing
+        via the cross-field validator."""
         bad = _deep_set(
             sample_scenario_config_green,
             0,
@@ -244,8 +248,29 @@ class TestPVDesign:
             "design",
             "peak_power_kwp",
         )
-        with pytest.raises(jsonschema.ValidationError):
+        with pytest.raises(ValueError, match="absolute_power_kw"):
             validate_scenario(bad)
+
+    def test_zero_peak_power_with_absolute_values_is_valid(
+        self, sample_scenario_config_green
+    ):
+        """peak_power_kwp = 0 + absolute_power_kw + absolute_capacity_kwh must pass."""
+        cfg = _deep_set(
+            sample_scenario_config_green,
+            0,
+            "project_settings",
+            "technology",
+            "pv",
+            "design",
+            "peak_power_kwp",
+        )
+        cfg["project_settings"]["technology"]["bess"]["design_space"][
+            "absolute_power_kw"
+        ] = 1000.0
+        cfg["project_settings"]["technology"]["bess"]["design_space"][
+            "absolute_capacity_kwh"
+        ] = 2000.0
+        validate_scenario(cfg)  # must not raise
 
     def test_negative_peak_power_rejected(self, sample_scenario_config_green):
         bad = _deep_set(

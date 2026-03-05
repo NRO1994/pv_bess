@@ -18,6 +18,18 @@ DAYS_PER_YEAR: int = 365
 HOURS_PER_DAY: int = 24
 """Number of hourly timesteps per dispatch day."""
 
+INTERVALS_PER_HOUR: int = 4
+"""Number of sub-hourly intervals per hour (4 = quarter-hourly resolution)."""
+
+INTERVALS_PER_DAY: int = HOURS_PER_DAY * INTERVALS_PER_HOUR
+"""Number of quarter-hourly intervals per day (24 × 4)."""
+
+INTERVALS_PER_YEAR: int = HOURS_PER_YEAR * INTERVALS_PER_HOUR
+"""Number of quarter-hourly intervals per non-leap year (365 × 96)."""
+
+TIMESTEP_HOURS: float = 1 / INTERVALS_PER_HOUR
+"""Duration of one sub-hourly interval in hours (0.25 = 15 minutes)."""
+
 # ---------------------------------------------------------------------------
 # PVGIS API
 # ---------------------------------------------------------------------------
@@ -75,11 +87,17 @@ MC_WEIGHT_TOLERANCE: float = 1e-6
 # BESS / dispatch defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_START_SOC_FRACTION: float = 0.50
-"""Initial state-of-charge for the first day of simulation (fraction of usable capacity)."""
+DEFAULT_DEBT_SIZING_DOWNSIDE_PCT: float = 10.0
+"""Default downside percentage for debt sizing (replaces P90-based approach).
+Applied as a reduction factor to PV production for conservative DSCR calculation."""
 
 DEFAULT_BESS_AVAILABILITY_PCT: float = 100.0
 """Default BESS availability percentage (100 % = always online)."""
+
+DEFAULT_BESS_REPLACEMENT_CAPACITY_FACTOR_PCT: float = 100.0
+"""Default capacity upgrade factor for a mid-life BESS replacement (100 % = same
+nameplate capacity as original; values > 100 model a technology-upgrade where
+the replacement unit has a larger energy capacity)."""
 
 DEFAULT_OPTIMIZATION_FEE_PCT: float = 0.0
 """Default BESS optimization service fee as percentage of BESS spot revenue."""
@@ -176,8 +194,20 @@ DEFAULT_OUTPUT_DIR: str = ".data/output"
 DISPATCH_SAMPLE_YEAR: int = 1
 """Project year exported to the dispatch sample CSV (1-indexed)."""
 
+_MAX_LOCK_RETRIES: int = 10
+"""Maximum number of alternative filenames tried when the target is locked."""
+
 CSV_DELIMITER: str = ";"
 """Delimiter used in all input and output CSV files."""
+
+CSV_DECIMAL_SEPARATOR: str = ","
+"""Decimal separator used in all output CSV files (German locale default)."""
+
+CSV_INPUT_DECIMAL_SEPARATOR: str = "."
+"""Decimal separator expected in input CSV files (standard market data format)."""
+
+CSV_TIMESTAMP_COLUMN: str = "timestamp"
+"""Column name for the timestamp field in price input and dispatch sample CSV files."""
 
 CSV_TIMESTAMP_FORMAT: str = "%Y-%m-%dT%H:%M:%S"
 """ISO 8601 timestamp format used in CSV files."""
@@ -194,6 +224,12 @@ CURRENCY_PRECISION: int = 2
 
 GRID_SEARCH_SCALE_ZERO_PCT: float = 0.0
 """Scale percentage representing the PV-only baseline (no BESS)."""
+
+DEFAULT_SKIP_BASELINE: bool = False
+"""Whether to skip the automatic inclusion of the PV-only baseline (scale=0 %)
+in the grid search.  When ``True``, the user takes responsibility for including
+the baseline explicitly or accepting that no PV-only comparison point is produced.
+Default is ``False`` (baseline always added)."""
 
 # ---------------------------------------------------------------------------
 # PPA type identifiers
@@ -262,3 +298,47 @@ DEFAULT_PV_DEGRADATION_RATE_PCT: float = 0.4
 
 DEFAULT_SYSTEM_LOSS_PCT: float = 14.0
 """Default system loss in percent."""
+
+DEFAULT_PV_AVAILABILITY_PCT: float = 99.0
+"""Default availability of PV asset"""
+
+# ---------------------------------------------------------------------------
+# Report defaults
+# ---------------------------------------------------------------------------
+
+REPORT_CORPORATE_COLORS: list[str] = [
+    "#FF8200",
+    "#F73E5E",
+    "#A51BA7",
+    "#00467A",
+    "#006EB2",
+    "#00BDDC",
+]
+"""Six-color corporate palette used for charts and report styling."""
+
+REPORT_CHART_DPI: int = 150
+"""Resolution (dots per inch) for exported chart PNG files."""
+
+REPORT_CHART_WIDTH_INCHES: float = 10.0
+"""Width of chart figures in inches."""
+
+REPORT_CHART_HEIGHT_INCHES: float = 5.5
+"""Height of chart figures in inches."""
+
+REPORT_CHARTS_SUBDIR: str = "charts"
+"""Sub-directory within the output directory for chart PNG files."""
+
+REPORT_LLM_MAX_TOKENS: int = 500
+"""Maximum output tokens per LLM text generation call."""
+
+REPORT_LLM_DEFAULT_MODEL: str = "claude-haiku-4-5-20251001"
+"""Default Anthropic model ID for report text generation."""
+
+REPORT_LLM_CACHE_FILENAME: str = "llm_cache.json"
+"""Filename for caching LLM-generated texts in the output directory."""
+
+REPORT_PDF_FILENAME_SUFFIX: str = "_report.pdf"
+"""Suffix appended to the scenario name for the PDF report file."""
+
+REPORT_MODEL_VERSION: str = "0.1.0"
+"""Version string displayed on the report cover page."""
