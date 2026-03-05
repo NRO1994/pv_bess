@@ -281,14 +281,18 @@ def _build_goo_prices_yearly(
         Index 0 = year 1.  0.0 for years outside the PPA period.
     """
     lifetime = scenario.lifetime_years
+    # If there is no PV, there is no chance for GoO
+    if scenario.pv.get('design', {}).get('peak_power', 0) == 0:
+        return [0.0] * lifetime
+
     ppa_cfg = ppa_config_from_dict(scenario.finance.get("revenue_streams", {}).get("ppa", {}))
     goo_prices = [ppa_cfg.goo_premium_eur_per_kwh] * lifetime
     eeg_dict = scenario.finance.get("revenue_streams", {}).get("marketing", {})
     eeg_type = eeg_dict.get("type", PPA_TYPE_NONE)
 
-    if eeg_type is MARKETING_TYPE_EEG: # Years under EEG does not have any GoO - only during direct marketing
+    if eeg_type == MARKETING_TYPE_EEG: # Years under EEG does not have any GoO - only during direct marketing
         duration = eeg_dict.get("fixed_price_years", lifetime)
-        goo_prices[:duration] = [0.0] * (lifetime - duration)
+        goo_prices = [0.0] * duration + goo_prices[duration:]
 
     return goo_prices
 
@@ -751,7 +755,10 @@ def run(args: argparse.Namespace) -> int:
         # NOTE: prices are NOT divided by 4 (price per kWh stays the same)
         extended_prices_15min: dict[str, np.ndarray] = {}
         for col, arr in extended_prices_hourly.items():
-            extended_prices_15min[col] = np.repeat(arr, INTERVALS_PER_HOUR)
+            if len(arr) < INTERVALS_PER_YEAR * lifetime:
+                extended_prices_15min[col] = np.repeat(arr, INTERVALS_PER_HOUR)
+            else:
+                extended_prices_15min[col] = arr
 
         spot_prices_yearly = _build_spot_prices_yearly(
             extended_prices_15min[sc.csv_column],
@@ -808,7 +815,7 @@ def run(args: argparse.Namespace) -> int:
         operating_mode=scenario.operating_mode,
         spot_prices_yearly=[sc.price_per_year for sc in scenarios_list if sc.is_central is True][0],
         fixed_prices_yearly=fixed_prices_yearly,
-        baseload_kw=scenario.finance.get("revenue_streams",{}).get("ppa", {}).get("baseload_mw", 0) / MWH_TO_KWH,
+        baseload_mw=scenario.finance.get("revenue_streams", {}).get("ppa", {}).get("baseload_mw", 0),
         goo_prices_yearly=goo_prices_yearly,
         cap_prices_yearly=cap_prices_yearly,
         lifetime_years=lifetime,
@@ -854,7 +861,7 @@ def run(args: argparse.Namespace) -> int:
 
 
     # ------------------------------------------------------------------
-    # Step 6: Build MC parameters (needed for MC and/or analyses)
+    # Step 6: Build MC parameters
     # ------------------------------------------------------------------
     analyses_cfg = scenario.raw.get("scenario", {}).get("analyses", {})
     any_analysis_enabled = (
@@ -890,19 +897,7 @@ def run(args: argparse.Namespace) -> int:
         )
 
     # ------------------------------------------------------------------
-    # Step 6a: Monte Carlo (only if enabled)
-    # ------------------------------------------------------------------
-    if mc_enabled and mc_params is not None:
-        logger.info("Starting Monte Carlo (%d iterations)…", mc_params.iterations)
-        mc_result = run_monte_carlo(
-            base_config=grid_search_config,
-            optimal=optimal_setup,
-            mc_params=mc_params,
-            scenario_prices=scenarios_list,
-        )
-
-    # ------------------------------------------------------------------
-    # Step 6b: Post-Grid-Search Analyses
+    # Step 6a: Post-Grid-Search Analyses
     # ------------------------------------------------------------------
     eeg_sens_result = None
     collar_result = None
@@ -917,7 +912,7 @@ def run(args: argparse.Namespace) -> int:
             eeg_cfg = analyses_cfg["eeg_sensitivity"]
             floor_prices = eeg_cfg["floor_prices_eur_per_kwh"]
             logger.info(
-                "Running EEG sensitivity analysis (%d price points)…",
+                "Running EEG sensitivity analysis (%d price points)",
                 len(floor_prices),
             )
             eeg_sens_result = run_eeg_sensitivity(
@@ -934,7 +929,7 @@ def run(args: argparse.Namespace) -> int:
         if analyses_cfg.get("ppa_collar", {}).get("enabled", False):
             collar_cfg = analyses_cfg["ppa_collar"]
             logger.info(
-                "Running PPA Collar analysis (%d × %d = %d combinations)…",
+                "Running PPA Collar analysis (%d × %d = %d combinations)",
                 len(collar_cfg["floor_prices_eur_per_mwh"]),
                 len(collar_cfg["cap_spreads_eur_per_mwh"]),
                 len(collar_cfg["floor_prices_eur_per_mwh"])
@@ -956,7 +951,7 @@ def run(args: argparse.Namespace) -> int:
         if analyses_cfg.get("ppa_baseload", {}).get("enabled", False):
             bl_cfg = analyses_cfg["ppa_baseload"]
             logger.info(
-                "Running PPA Baseload analysis (%d × %d = %d combinations)…",
+                "Running PPA Baseload analysis (%d × %d = %d combinations)",
                 len(bl_cfg["ppa_prices_eur_per_mwh"]),
                 len(bl_cfg["baseload_levels_mw"]),
                 len(bl_cfg["ppa_prices_eur_per_mwh"])
@@ -1014,16 +1009,10 @@ def run(args: argparse.Namespace) -> int:
         config=csv_config,
     )
 
-    write_grid_search_csv(
-        path=output_dir / f"{scenario.name}_grid_search.csv",
-        grid_result=grid_result,
-        config=csv_config,
-    )
-
-    if mc_result is not None:
-        write_monte_carlo_csv(
-            path=output_dir / f"{scenario.name}_monte_carlo.csv",
-            mc_result=mc_result,
+    if len(grid_result.points) > 1:
+        write_grid_search_csv(
+            path=output_dir / f"{scenario.name}_grid_search.csv",
+            grid_result=grid_result,
             config=csv_config,
         )
 
@@ -1065,28 +1054,27 @@ def run(args: argparse.Namespace) -> int:
     # ------------------------------------------------------------------
     # Step 7b: PDF Report generation
     # ------------------------------------------------------------------
-    if scenario.raw.get("scenario", {}).get("output", {}).get("report", {}).get("enabled", False):
-        _generate_report(
-            scenario=scenario,
-            output_dir=output_dir,
-            _out_block=_out_block,
-            args=args,
-            grid_result=grid_result,
-            opt=optimal_setup,
-            metrics=optimal_setup.metrics,
-            mc_result=mc_result,
-            weather_data_for_report=weather_data_for_report,
-            scenarios_list=scenarios_list,
-            commissioning_year=commissioning_year,
-            eeg_sens_result=eeg_sens_result,
-            collar_result=collar_result,
-            baseload_result=baseload_result,
-        )
+    _generate_report(
+        scenario=scenario,
+        output_dir=output_dir,
+        _out_block=_out_block,
+        args=args,
+        grid_result=grid_result,
+        opt=optimal_setup,
+        metrics=optimal_setup.metrics,
+        mc_result=mc_result,
+        weather_data_for_report=weather_data_for_report,
+        scenario_prices=scenarios_list,
+        commissioning_year=commissioning_year,
+        eeg_sens_result=eeg_sens_result,
+        collar_result=collar_result,
+        baseload_result=baseload_result,
+    )
 
-        # ------------------------------------------------------------------
-        # Step 8: Print summary
-        # ------------------------------------------------------------------
-        _print_summary(scenario.name, optimal_setup, optimal_setup.metrics, mc_result)
+    # ------------------------------------------------------------------
+    # Step 8: Print summary
+    # ------------------------------------------------------------------
+    _print_summary(scenario.name, optimal_setup.metrics, mc_result)
 
     return 0
 
@@ -1213,9 +1201,6 @@ def _generate_report(
     report_cfg = _out_block.get("report", {})
     report_enabled = report_cfg.get("enabled", False)
 
-    if not report_enabled or args.no_report:
-        return
-
     # Import report modules with graceful degradation
     try:
         from pv_bess_model.output.report.charts import create_all_charts
@@ -1231,14 +1216,6 @@ def _generate_report(
         logo_path=report_cfg.get("logo_path"),
     )
 
-    # Build scenario labels from scenarios_list
-    scenario_labels: dict[str, str] | None = None
-    if scenario_prices:
-        scenario_labels = {}
-        for sc in scenario_prices:
-            label = getattr(sc, "label", None) or sc.name
-            scenario_labels[sc.name] = label
-
     # Create charts (always, even without LLM)
     logger.info("Generating report charts…")
     try:
@@ -1246,8 +1223,7 @@ def _generate_report(
             output_dir=output_dir,
             grid_result=grid_result,
             weather_timeseries=weather_data_for_report,
-            scenario_prices=scenario_prices if scenario_prices else None,
-            scenario_labels=scenario_labels,
+            scenario_prices=scenario_prices,
             commissioning_year=commissioning_year,
             eeg_result=eeg_sens_result,
             collar_result=collar_result,
@@ -1259,6 +1235,9 @@ def _generate_report(
 
     # Generate LLM texts
     texts: dict[str, str] = {}
+
+    if not report_enabled or args.no_report:
+        return
 
     if not args.no_llm:
         api_key_env = report_cfg.get("llm_api_key_env", "ANTHROPIC_API_KEY")
@@ -1377,22 +1356,16 @@ def _generate_report(
 
 def _print_summary(
     scenario_name: str,
-    opt,
     metrics,
     mc_result,
 ) -> None:
     """Print a concise result summary to stdout."""
-    irr_str = f"{(opt.equity_irr or 0.0) * 100:.2f} %" if opt.equity_irr else "n/a"
-    npv_str = f"{opt.npv:,.0f} €"
+    irr_str = f"{(metrics.equity_irr or 0.0) * 100:.2f} %" if metrics.equity_irr else "n/a"
+    npv_str = f"{metrics.npv:,.0f} €"
     print()
     print("=" * 60)
     print(f"  Scenario: {scenario_name}")
     print("=" * 60)
-    print(f"  Optimal BESS scale:    {opt.scale_pct:.0f} % of PV")
-    print(f"  Optimal E/P ratio:     {opt.e_to_p_ratio:.1f} h")
-    print(f"  BESS power:            {opt.bess_power_kw:.0f} kW")
-    print(f"  BESS capacity:         {opt.bess_capacity_kwh:.0f} kWh")
-    print(f"  Total CAPEX:           {opt.capex_total:,.0f} €")
     print()
     print(f"  Equity IRR:            {irr_str}")
     print(f"  Project IRR:           {(metrics.project_irr or 0.0) * 100:.2f} %")

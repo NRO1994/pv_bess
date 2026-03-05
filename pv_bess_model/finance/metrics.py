@@ -110,7 +110,7 @@ def calculate_dscr(
     avg_dscr = sum(dscr_values) / len(dscr_values)
 
     if min_dscr < DSCR_MINIMUM_THRESHOLD:
-        logger.warning(
+        logger.debug(
             "Minimum DSCR %.2f is below threshold %.2f – debt may not be serviceable.",
             min_dscr,
             DSCR_MINIMUM_THRESHOLD,

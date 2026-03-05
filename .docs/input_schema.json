@@ -1,0 +1,998 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PV+BESS Scenario Configuration",
+  "type": "object",
+  "required": [
+    "scenario",
+    "project_settings"
+  ],
+  "properties": {
+    "scenario": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "monte_carlo": {
+          "type": "object",
+          "required": [
+            "enabled"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "iterations": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sigma_capex_pv_pct": {
+              "type": "number",
+              "minimum": 0
+            },
+            "sigma_capex_bess_pct": {
+              "type": "number",
+              "minimum": 0
+            },
+            "sigma_opex_pv_pct": {
+              "type": "number",
+              "minimum": 0
+            },
+            "sigma_opex_bess_pct": {
+              "type": "number",
+              "minimum": 0
+            },
+            "sigma_pv_availability_pct": {
+              "type": "number",
+              "minimum": 0
+            },
+            "sigma_bess_availability_pct": {
+              "type": "number",
+              "minimum": 0
+            },
+            "price_scenarios": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "required": [
+                  "csv_column",
+                  "weight"
+                ],
+                "properties": {
+                  "csv_column": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "weight": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "required": [
+            "directory"
+          ],
+          "properties": {
+            "directory": {
+              "type": "string",
+              "minLength": 1
+            },
+            "export_dispatch_sample": {
+              "type": "boolean"
+            },
+            "csv_separator": {
+              "type": "string",
+              "minLength": 1
+            },
+            "csv_decimal": {
+              "type": "string",
+              "minLength": 1
+            },
+            "csv_timestamp_column": {
+              "type": "string",
+              "minLength": 1
+            },
+            "csv_timestamp_format": {
+              "type": "string",
+              "minLength": 1
+            },
+            "report": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "company_name": {
+                  "type": "string"
+                },
+                "logo_path": {
+                  "type": "string"
+                },
+                "llm_api_key_env": {
+                  "type": "string"
+                },
+                "llm_model": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "skip_baseline": {
+          "type": "boolean"
+        },
+        "analyses": {
+          "type": "object",
+          "properties": {
+            "eeg_sensitivity": {
+              "type": "object",
+              "required": [
+                "enabled",
+                "floor_prices_eur_per_kwh"
+              ],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "floor_prices_eur_per_kwh": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "minItems": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "ppa_collar": {
+              "type": "object",
+              "required": [
+                "enabled",
+                "floor_prices_eur_per_mwh",
+                "cap_spreads_eur_per_mwh",
+                "duration_years",
+                "goo_premium_eur_per_kwh"
+              ],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "floor_prices_eur_per_mwh": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "minItems": 1
+                },
+                "cap_spreads_eur_per_mwh": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "minItems": 1
+                },
+                "duration_years": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "inflation_on_ppa": {
+                  "type": "boolean"
+                },
+                "goo_premium_eur_per_kwh": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false
+            },
+            "ppa_baseload": {
+              "type": "object",
+              "required": [
+                "enabled",
+                "ppa_prices_eur_per_mwh",
+                "baseload_levels_mw",
+                "duration_years",
+                "goo_premium_eur_per_kwh"
+              ],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "ppa_prices_eur_per_mwh": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "minItems": 1
+                },
+                "baseload_levels_mw": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "minItems": 1
+                },
+                "duration_years": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "inflation_on_ppa": {
+                  "type": "boolean"
+                },
+                "goo_premium_eur_per_kwh": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "project_settings": {
+      "type": "object",
+      "required": [
+        "lifetime_years",
+        "commissioning_year",
+        "discount_rate",
+        "operating_mode",
+        "location",
+        "technology",
+        "finance"
+      ],
+      "properties": {
+        "lifetime_years": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "commissioning_year": {
+          "type": "integer",
+          "minimum": 2020
+        },
+        "discount_rate": {
+          "type": "number",
+          "minimum": 0
+        },
+        "operating_mode": {
+          "type": "string",
+          "enum": [
+            "green",
+            "grey"
+          ]
+        },
+        "location": {
+          "type": "object",
+          "required": [
+            "latitude",
+            "longitude",
+            "pvgis_database"
+          ],
+          "properties": {
+            "latitude": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            },
+            "longitude": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            },
+            "pvgis_database": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "technology": {
+          "type": "object",
+          "required": [
+            "pv",
+            "bess",
+            "grid_connection"
+          ],
+          "properties": {
+            "pv": {
+              "type": "object",
+              "required": [
+                "design",
+                "performance",
+                "costs"
+              ],
+              "properties": {
+                "design": {
+                  "type": "object",
+                  "required": [
+                    "peak_power_kwp",
+                    "mounting_type",
+                    "azimuth_deg",
+                    "tilt_deg"
+                  ],
+                  "properties": {
+                    "peak_power_kwp": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "mounting_type": {
+                      "type": "string",
+                      "enum": [
+                        "free",
+                        "building"
+                      ]
+                    },
+                    "azimuth_deg": {
+                      "type": "number",
+                      "minimum": -180,
+                      "maximum": 180
+                    },
+                    "tilt_deg": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 90
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "performance": {
+                  "type": "object",
+                  "required": [
+                    "degradation_rate_pct_per_year",
+                    "pv_availability_pct"
+                  ],
+                  "properties": {
+                    "degradation_rate_pct_per_year": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "pv_availability_pct": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "costs": {
+                  "type": "object",
+                  "required": [
+                    "capex",
+                    "opex"
+                  ],
+                  "properties": {
+                    "capex": {
+                      "type": "object",
+                      "properties": {
+                        "fixed_eur": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "eur_per_kw": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "eur_per_kwh": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "pct_of_capex": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "opex": {
+                      "type": "object",
+                      "properties": {
+                        "fixed_eur": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "eur_per_kw": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "eur_per_kwh": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "pct_of_capex": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "bess": {
+              "type": "object",
+              "required": [
+                "design_space",
+                "performance",
+                "costs"
+              ],
+              "properties": {
+                "design_space": {
+                  "type": "object",
+                  "required": [
+                    "scale_pct_of_pv",
+                    "e_to_p_ratio_hours"
+                  ],
+                  "properties": {
+                    "scale_pct_of_pv": {
+                      "type": "array",
+                      "items": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 200
+                      },
+                      "minItems": 1
+                    },
+                    "e_to_p_ratio_hours": {
+                      "type": "array",
+                      "items": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "minItems": 1
+                    },
+                    "absolute_power_kw": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "absolute_capacity_kwh": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "performance": {
+                  "type": "object",
+                  "required": [
+                    "round_trip_efficiency_pct",
+                    "min_soc_pct",
+                    "max_soc_pct",
+                    "degradation_rate_pct_per_year",
+                    "bess_availability_pct"
+                  ],
+                  "properties": {
+                    "round_trip_efficiency_pct": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "min_soc_pct": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "max_soc_pct": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "degradation_rate_pct_per_year": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "bess_availability_pct": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "costs": {
+                  "type": "object",
+                  "required": [
+                    "capex",
+                    "opex"
+                  ],
+                  "properties": {
+                    "capex": {
+                      "type": "object",
+                      "properties": {
+                        "fixed_eur": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "eur_per_kw": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "eur_per_kwh": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "pct_of_capex": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "opex": {
+                      "type": "object",
+                      "properties": {
+                        "fixed_eur": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "eur_per_kw": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "eur_per_kwh": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "pct_of_capex": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "optimization_fee_pct": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "replacement": {
+                      "type": "object",
+                      "required": [
+                        "enabled"
+                      ],
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "year": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "fixed_eur": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "eur_per_kw": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "eur_per_kwh": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "pct_of_capex": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        "capacity_factor_pct": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "grid_connection": {
+              "type": "object",
+              "required": [
+                "max_export_kw",
+                "costs"
+              ],
+              "properties": {
+                "max_export_kw": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "system_loss_pct": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "costs": {
+                  "type": "object",
+                  "required": [
+                    "capex",
+                    "opex"
+                  ],
+                  "properties": {
+                    "capex": {
+                      "type": "object",
+                      "properties": {
+                        "fixed_eur": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "eur_per_kw": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "eur_per_kwh": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "pct_of_capex": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "opex": {
+                      "type": "object",
+                      "properties": {
+                        "fixed_eur": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "eur_per_kw": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "eur_per_kwh": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "pct_of_capex": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "finance": {
+          "type": "object",
+          "required": [
+            "leverage_pct",
+            "interest_rate_pct",
+            "loan_tenor_years",
+            "inflation_rate",
+            "revenue_streams",
+            "price_inputs",
+            "tax"
+          ],
+          "properties": {
+            "leverage_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "interest_rate_pct": {
+              "type": "number",
+              "minimum": 0
+            },
+            "loan_tenor_years": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "equity_irr_target": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "debt_uses_p90": {
+              "type": "boolean"
+            },
+            "debt_sizing_downside_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "inflation_rate": {
+              "type": "number",
+              "minimum": 0
+            },
+            "revenue_streams": {
+              "type": "object",
+              "required": [
+                "marketing"
+              ],
+              "properties": {
+                "marketing": {
+                  "type": "object",
+                  "required": [
+                    "type"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "eeg",
+                        "ppa",
+                        "market"
+                      ]
+                    },
+                    "floor_price_eur_per_kwh": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "fixed_price_years": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1
+                    },
+                    "eeg_inflation": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "ppa": {
+                  "type": "object",
+                  "required": [
+                    "type"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "none",
+                        "ppa_pay_as_produced",
+                        "ppa_baseload",
+                        "ppa_floor",
+                        "ppa_collar"
+                      ]
+                    },
+                    "pay_as_produced_price_eur_per_kwh": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "baseload_mw": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "floor_price_eur_per_kwh": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "cap_price_eur_per_kwh": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "duration_years": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "inflation_on_ppa": {
+                      "type": "boolean"
+                    },
+                    "guarantee_of_origin_eur_per_kwh": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "price_inputs": {
+              "type": "object",
+              "required": [
+                "day_ahead_csv",
+                "price_unit"
+              ],
+              "properties": {
+                "day_ahead_csv": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "price_unit": {
+                  "type": "string",
+                  "enum": [
+                    "eur_per_mwh",
+                    "eur_per_kwh"
+                  ]
+                },
+                "inflation_on_input_data": {
+                  "type": "boolean"
+                },
+                "csv_separator": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "csv_decimal": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "csv_timestamp_column": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "csv_timestamp_format": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "scenarios": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "csv_column",
+                      "weather_year",
+                      "weight"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "csv_column": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "weather_year": {
+                        "type": "integer",
+                        "minimum": 1900
+                      },
+                      "weight": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "is_central": {
+                        "type": "boolean"
+                      },
+                      "price_csv": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "price_unit": {
+                        "type": "string",
+                        "enum": [
+                          "eur_per_mwh",
+                          "eur_per_kwh"
+                        ]
+                      },
+                      "inflation_on_input_data": {
+                        "type": "boolean"
+                      },
+                      "csv_separator": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "csv_decimal": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "csv_timestamp_column": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "csv_timestamp_format": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "minItems": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "tax": {
+              "type": "object",
+              "required": [
+                "afa_years_pv",
+                "afa_years_bess",
+                "gewerbesteuer_hebesatz",
+                "gewerbesteuer_messzahl"
+              ],
+              "properties": {
+                "afa_years_pv": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "afa_years_bess": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "gewerbesteuer_hebesatz": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "gewerbesteuer_messzahl": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "koerperschaftsteuer_pct": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "solidaritaetszuschlag_pct": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

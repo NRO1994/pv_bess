@@ -245,10 +245,9 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
     rng = np.random.default_rng(seed=mc.seed + iteration)
 
     # --- Sample price scenario ---
-    scenario_names = list(mc.price_scenarios.keys())
-    weights = [mc.price_scenarios[n]["weight"] for n in scenario_names]
-    scenario_name = str(rng.choice(scenario_names, p=weights))
-    spot_prices_yearly: list[np.ndarray] = scenario_prices[scenario_name]
+    weights = [mc.price_scenarios[n].weight for n in range(len(scenario_prices))]
+    scenario_idx = rng.choice(list(range(len(scenario_prices))), p=weights)
+    selected_price_scenario: PriceWeatherScenario = scenario_prices[scenario_idx]
 
     # --- Sample noise factors ---
     capex_factor_pv = float(rng.normal(1.0, mc.sigma_capex_pv))
@@ -291,15 +290,6 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
             pv_offline_days_yearly.append({int(d) for d in day_indices})
         else:
             pv_offline_days_yearly.append(set())
-
-    # --- PV timeseries: use scenario-specific timeseries if available ---
-    scenario_pv: dict[str, np.ndarray] | None = _MC_WORKER_STATE.get(
-        "scenario_pv_timeseries"
-    )
-    if scenario_pv is not None and scenario_name in scenario_pv:
-        pv_timeseries = scenario_pv[scenario_name]
-    else:
-        pv_timeseries = base.pv_base_timeseries
 
     # --- Scale CAPEX / OPEX per asset ---
     capex_pv = optimal.capex_pv * capex_factor_pv
@@ -348,18 +338,21 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         timestep_hours=base.timestep_hours,
         intervals_per_day=base.intervals_per_day,
         intervals_per_year=base.intervals_per_year,
+        commissioning_year=base.commissioning_year,
     )
 
     # --- Run dispatch simulation ---
     sim = run_simulation(
         config=engine_config,
-        pv_base_timeseries=pv_timeseries,
-        spot_prices_yearly=spot_prices_yearly,
+        pv_base_timeseries=selected_price_scenario.pv_timeseries_15min,
+        spot_prices_yearly=selected_price_scenario.price_per_year,
         fixed_prices_yearly=base.fixed_prices_yearly,
         offline_days_yearly=offline_days_yearly,
         goo_prices_yearly=base.goo_prices_yearly if base.goo_prices_yearly else None,
         cap_prices_yearly=base.cap_prices_yearly if base.cap_prices_yearly else None,
         pv_offline_days_yearly=pv_offline_days_yearly if n_pv_offline_days > 0 else None,
+        pv_base_timeseries_year=selected_price_scenario.weather_year,
+        baseload_kw=base.baseload_mw
     )
 
     annual_revenues = [r.total_revenue for r in sim.annual_results]
@@ -425,7 +418,7 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
 
     return MCIterationResult(
         iteration=iteration,
-        price_scenario=scenario_name,
+        price_scenario=selected_price_scenario.name,
         capex_factor_pv=capex_factor_pv,
         capex_factor_bess=capex_factor_bess,
         opex_factor_pv=opex_factor_pv,
@@ -570,13 +563,6 @@ def run_monte_carlo(
         If a scenario name in ``mc_params.price_scenarios`` is not present in
         ``scenario_prices``.
     """
-    for name in mc_params.price_scenarios:
-        if name not in scenario_prices:
-            raise ValueError(
-                f"MC price scenario '{name}' not found in scenario_prices. "
-                f"Available keys: {sorted(scenario_prices)}."
-            )
-
     logger.info(
         "Monte Carlo: %d iterations, %d price scenario(s), max_workers=%s.",
         mc_params.iterations,
@@ -590,8 +576,6 @@ def run_monte_carlo(
         "scenario_prices": scenario_prices,
         "mc_params": mc_params,
     }
-    if scenario_pv_timeseries is not None:
-        shared_state["scenario_pv_timeseries"] = scenario_pv_timeseries
 
     iteration_indices = list(range(1, mc_params.iterations + 1))
     results: list[MCIterationResult] = []

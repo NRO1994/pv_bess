@@ -24,6 +24,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from pv_bess_model.config.loader import PriceWeatherScenario
 from pv_bess_model.finance.inflation import inflate_value
 from pv_bess_model.market.eeg import EegConfig, effective_eeg_price
 from pv_bess_model.optimization.grid_search import GridPointResult, GridSearchConfig
@@ -186,7 +187,7 @@ def run_eeg_sensitivity(
     base_config: GridSearchConfig,
     optimal: GridPointResult,
     mc_params: MCParams,
-    scenario_prices: dict[str, list[np.ndarray]],
+    scenario_prices: list[PriceWeatherScenario],
     floor_prices: list[float],
     inflation_rate: float,
     eeg_inflation: bool,
@@ -254,7 +255,6 @@ def run_eeg_sensitivity(
             optimal=optimal,
             mc_params=mc_params,
             scenario_prices=scenario_prices,
-            scenario_pv_timeseries=scenario_pv_timeseries,
         )
 
         points.append(AnalysisResult(
@@ -269,14 +269,13 @@ def run_ppa_collar_analysis(
     base_config: GridSearchConfig,
     optimal: GridPointResult,
     mc_params: MCParams,
-    scenario_prices: dict[str, list[np.ndarray]],
+    scenario_prices: list[PriceWeatherScenario],
     floor_prices_eur_per_mwh: list[float],
     cap_spreads_eur_per_mwh: list[float],
     duration_years: int,
     inflation_on_ppa: bool,
     goo_premium_eur_per_kwh: float,
     inflation_rate: float,
-    scenario_pv_timeseries: dict[str, np.ndarray] | None = None,
 ) -> SensitivityResult:
     """Run PPA Collar 2D sensitivity analysis.
 
@@ -354,7 +353,6 @@ def run_ppa_collar_analysis(
             optimal=optimal,
             mc_params=mc_params,
             scenario_prices=scenario_prices,
-            scenario_pv_timeseries=scenario_pv_timeseries,
         )
 
         points.append(AnalysisResult(
@@ -373,14 +371,13 @@ def run_ppa_baseload_analysis(
     base_config: GridSearchConfig,
     optimal: GridPointResult,
     mc_params: MCParams,
-    scenario_prices: dict[str, list[np.ndarray]],
+    scenario_prices: list[PriceWeatherScenario],
     ppa_prices_eur_per_mwh: list[float],
     baseload_levels_mw: list[float],
     duration_years: int,
     inflation_on_ppa: bool,
     goo_premium_eur_per_kwh: float,
     inflation_rate: float,
-    scenario_pv_timeseries: dict[str, np.ndarray] | None = None,
 ) -> SensitivityResult:
     """Run PPA Baseload 2D sensitivity analysis.
 
@@ -450,6 +447,7 @@ def run_ppa_baseload_analysis(
             goo_prices_yearly=new_goo,
             # Baseload has no cap
             cap_prices_yearly=[0.0] * base_config.lifetime_years,
+            baseload_mw=baseload_mw,
         )
 
         mc_result = run_monte_carlo(
@@ -457,7 +455,6 @@ def run_ppa_baseload_analysis(
             optimal=optimal,
             mc_params=mc_params,
             scenario_prices=scenario_prices,
-            scenario_pv_timeseries=scenario_pv_timeseries,
         )
 
         points.append(AnalysisResult(

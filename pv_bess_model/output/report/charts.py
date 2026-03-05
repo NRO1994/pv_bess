@@ -7,10 +7,10 @@ Public API
 ----------
 create_pv_yield_chart        -- Monthly PV production per weather year.
 create_price_scenario_chart  -- Annual mean prices per scenario over lifetime.
-create_grid_search_chart     -- Equity IRR vs BESS scale per E/P ratio.
-create_eeg_sensitivity_chart -- Equity IRR vs EEG floor price.
-create_ppa_collar_chart      -- Equity IRR vs floor price per cap spread.
-create_ppa_baseload_chart    -- Equity IRR vs PPA price per baseload level.
+create_grid_search_chart     -- Project IRR vs BESS scale per E/P ratio.
+create_eeg_sensitivity_chart -- Project IRR vs EEG floor price.
+create_ppa_collar_chart      -- Project IRR vs floor price per cap spread.
+create_ppa_baseload_chart    -- Project IRR vs PPA price per baseload level.
 create_all_charts            -- Convenience wrapper creating all applicable charts.
 """
 
@@ -28,6 +28,8 @@ from pv_bess_model.config.defaults import (
     REPORT_CHART_WIDTH_INCHES,
     REPORT_CORPORATE_COLORS,
 )
+from pv_bess_model.config.loader import PriceWeatherScenario
+from pv_bess_model.optimization.grid_search import GridSearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +156,7 @@ def create_pv_yield_chart(
             intervals = hours * intervals_per_hour
             chunk = ts[offset : offset + intervals]
             # Each interval is (1/intervals_per_hour) hours
-            monthly_kwh.append(float(np.sum(chunk)) / intervals_per_hour)
+            monthly_kwh.append(float(np.sum(chunk)) / intervals_per_hour/1e6)
             offset += intervals
 
         color = colors[i % len(colors)]
@@ -165,13 +167,12 @@ def create_pv_yield_chart(
         ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
     )
     ax.legend(fontsize=8)
-    _apply_corporate_style(fig, ax, "PV-Ertrag nach Wetterjahr", "Monat", "kWh", colors)
+    _apply_corporate_style(fig, ax, "Brutto PV-Ertrag nach Wetterjahr", "Monat", "GWh", colors)
     return _save_chart(fig, output_path)
 
 
 def create_price_scenario_chart(
-    scenario_prices: dict[str, list[np.ndarray]],
-    scenario_labels: dict[str, str] | None,
+    scenario_prices: list[PriceWeatherScenario],
     commissioning_year: int,
     output_path: Path,
     colors: list[str] | None = None,
@@ -183,8 +184,6 @@ def create_price_scenario_chart(
     scenario_prices:
         Mapping ``{scenario_name: [year1_array, year2_array, ...]}``.
         Each array contains hourly or 15-min spot prices in EUR/kWh.
-    scenario_labels:
-        Optional mapping ``{scenario_name: display_label}``.
     commissioning_year:
         First calendar year of the project.
     output_path:
@@ -206,18 +205,19 @@ def create_price_scenario_chart(
         figsize=(REPORT_CHART_WIDTH_INCHES, REPORT_CHART_HEIGHT_INCHES)
     )
 
-    for i, (name, yearly_arrays) in enumerate(sorted(scenario_prices.items())):
-        years = [commissioning_year + y for y in range(len(yearly_arrays))]
+    for scenario in scenario_prices:
+        years = [commissioning_year + y for y in range(len(scenario.price_per_year))]
         # Convert EUR/kWh to EUR/MWh for display
-        means = [float(np.mean(arr)) * 1000.0 for arr in yearly_arrays]
-        label = scenario_labels.get(name, name) if scenario_labels else name
-        color = colors[i % len(colors)]
+        means = [float(np.mean(arr)) * 1000.0 for arr in scenario.price_per_year]
+        label = f"{scenario.name} (WY:{scenario.weather_year})"
+        color = colors[scenario.weather_year % len(colors)]
         ax.plot(years, means, marker=".", markersize=3, color=color, label=label)
 
     ax.legend(fontsize=8)
     _apply_corporate_style(
         fig, ax, "Preisszenarien (Jahresmittel)", "Jahr", "EUR/MWh", colors
     )
+    ax.set_xlim(commissioning_year, commissioning_year + len(scenario_prices[0].price_per_year) - 1)
     return _save_chart(fig, output_path)
 
 
@@ -226,7 +226,7 @@ def create_grid_search_chart(
     output_path: Path,
     colors: list[str] | None = None,
 ) -> Path:
-    """Create a grid search chart: Equity IRR vs BESS scale per E/P ratio.
+    """Create a grid search chart: Project IRR vs BESS scale per E/P ratio.
 
     Parameters
     ----------
@@ -260,7 +260,7 @@ def create_grid_search_chart(
     for i, (ep, pts) in enumerate(sorted(groups.items())):
         pts_sorted = sorted(pts, key=lambda p: p.scale_pct)
         scales = [p.scale_pct for p in pts_sorted]
-        irrs = [(p.equity_irr or 0.0) * 100.0 for p in pts_sorted]
+        irrs = [(p.metrics.project_irr or 0.0) * 100.0 for p in pts_sorted]
         color = colors[i % len(colors)]
         ax.plot(scales, irrs, marker="o", markersize=5, color=color, label=f"E/P = {ep:.0f}h")
 
@@ -269,7 +269,7 @@ def create_grid_search_chart(
         opt = grid_result.optimal
         ax.plot(
             opt.scale_pct,
-            (opt.equity_irr or 0.0) * 100.0,
+            (opt.metrics.project_irr or 0.0) * 100.0,
             marker="*",
             markersize=18,
             color=colors[1],
@@ -279,7 +279,7 @@ def create_grid_search_chart(
 
     ax.legend(fontsize=8)
     _apply_corporate_style(
-        fig, ax, "Grid Search: Equity IRR vs. BESS-Skalierung", "BESS-Anteil (% PV)", "Equity IRR (%)", colors
+        fig, ax, "Grid Search: Project IRR vs. BESS-Skalierung", "BESS-Anteil (% PV)", "Project IRR (%)", colors
     )
     return _save_chart(fig, output_path)
 
@@ -289,7 +289,7 @@ def create_eeg_sensitivity_chart(
     output_path: Path,
     colors: list[str] | None = None,
 ) -> Path:
-    """Create an EEG sensitivity chart: Equity IRR vs floor price.
+    """Create an EEG sensitivity chart: Project IRR vs floor price.
 
     Parameters
     ----------
@@ -320,7 +320,7 @@ def create_eeg_sensitivity_chart(
 
     for point in eeg_result.points:
         fp = point.params.get("floor_price_eur_per_kwh", 0.0) * 100.0  # ct/kWh
-        eq_stats = point.mc_result.overall_stats.get("equity_irr")
+        eq_stats = point.mc_result.overall_stats.get("project_irr")
         if eq_stats is not None:
             floor_prices.append(fp)
             means.append(eq_stats.mean * 100.0)
@@ -341,7 +341,7 @@ def create_eeg_sensitivity_chart(
 
     ax.legend(fontsize=8)
     _apply_corporate_style(
-        fig, ax, "EEG-Sensitivität: Equity IRR vs. Mindestpreis", "EEG-Mindestpreis (ct/kWh)", "Equity IRR (%)", colors
+        fig, ax, "EEG-Sensitivität: Project IRR vs. Gebotspreis", "EEG-Gebotspreis (ct/kWh)", "Project IRR (%)", colors
     )
     return _save_chart(fig, output_path)
 
@@ -351,7 +351,7 @@ def create_ppa_collar_chart(
     output_path: Path,
     colors: list[str] | None = None,
 ) -> Path:
-    """Create a PPA Collar chart: Equity IRR vs floor price per cap spread.
+    """Create a PPA Collar chart: Project IRR vs floor price per cap spread.
 
     Parameters
     ----------
@@ -381,7 +381,7 @@ def create_ppa_collar_chart(
     for point in collar_result.points:
         spread = point.params.get("cap_spread_eur_per_mwh", 0.0)
         floor = point.params.get("floor_price_eur_per_mwh", 0.0)
-        eq_stats = point.mc_result.overall_stats.get("equity_irr")
+        eq_stats = point.mc_result.overall_stats.get("project_irr")
         if eq_stats is not None:
             groups.setdefault(spread, []).append((floor, eq_stats.mean * 100.0))
 
@@ -394,7 +394,7 @@ def create_ppa_collar_chart(
 
     ax.legend(fontsize=8)
     _apply_corporate_style(
-        fig, ax, "PPA Collar: Equity IRR vs. Floor-Preis", "Floor-Preis (EUR/MWh)", "Equity IRR (%)", colors
+        fig, ax, "PPA Collar: Project IRR vs. Floor-Preis", "Floor-Preis (EUR/MWh)", "Project IRR (%)", colors
     )
     return _save_chart(fig, output_path)
 
@@ -404,7 +404,7 @@ def create_ppa_baseload_chart(
     output_path: Path,
     colors: list[str] | None = None,
 ) -> Path:
-    """Create a PPA Baseload chart: Equity IRR vs PPA price per baseload level.
+    """Create a PPA Baseload chart: Project IRR vs PPA price per baseload level.
 
     Parameters
     ----------
@@ -434,7 +434,7 @@ def create_ppa_baseload_chart(
     for point in baseload_result.points:
         bl = point.params.get("baseload_mw", 0.0)
         ppa_price = point.params.get("ppa_price_eur_per_mwh", 0.0)
-        eq_stats = point.mc_result.overall_stats.get("equity_irr")
+        eq_stats = point.mc_result.overall_stats.get("project_irr")
         if eq_stats is not None:
             groups.setdefault(bl, []).append((ppa_price, eq_stats.mean * 100.0))
 
@@ -447,17 +447,16 @@ def create_ppa_baseload_chart(
 
     ax.legend(fontsize=8)
     _apply_corporate_style(
-        fig, ax, "PPA Baseload: Equity IRR vs. PPA-Preis", "PPA-Preis (EUR/MWh)", "Equity IRR (%)", colors
+        fig, ax, "PPA Baseload: Project IRR vs. PPA-Preis", "PPA-Preis (EUR/MWh)", "Project IRR (%)", colors
     )
     return _save_chart(fig, output_path)
 
 
 def create_all_charts(
     output_dir: Path,
-    grid_result: Any,
+    grid_result: GridSearchResult,
     weather_timeseries: dict[int, np.ndarray] | None = None,
-    scenario_prices: dict[str, list[np.ndarray]] | None = None,
-    scenario_labels: dict[str, str] | None = None,
+    scenario_prices: list[PriceWeatherScenario] | None = None,
     commissioning_year: int = 2027,
     eeg_result: Any | None = None,
     collar_result: Any | None = None,
@@ -517,7 +516,6 @@ def create_all_charts(
         try:
             result["price_scenarios"] = create_price_scenario_chart(
                 scenario_prices,
-                scenario_labels,
                 commissioning_year,
                 charts_dir / "price_scenarios.png",
                 colors,
@@ -526,12 +524,13 @@ def create_all_charts(
             logger.warning("Failed to create price scenario chart.", exc_info=True)
 
     # Grid search chart (always)
-    try:
-        result["grid_search"] = create_grid_search_chart(
-            grid_result, charts_dir / "grid_search.png", colors
-        )
-    except Exception:
-        logger.warning("Failed to create grid search chart.", exc_info=True)
+    if len(grid_result.points) > 1:
+        try:
+            result["grid_search"] = create_grid_search_chart(
+                grid_result, charts_dir / "grid_search.png", colors
+            )
+        except Exception:
+            logger.warning("Failed to create grid search chart.", exc_info=True)
 
     # EEG sensitivity (conditional)
     if eeg_result is not None:

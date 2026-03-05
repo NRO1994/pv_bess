@@ -56,7 +56,7 @@ from pv_bess_model.config.defaults import (
     DAYS_PER_YEAR,
     DISPATCH_SAMPLE_YEAR,
     HOURS_PER_DAY,
-    HOURS_PER_YEAR,
+    HOURS_PER_YEAR, INTERVALS_PER_HOUR, MWH_TO_KWH,
 )
 from pv_bess_model.dispatch.optimizer import (
     BessParams,
@@ -607,9 +607,9 @@ def run_simulation(
             day_bess_spot_rev = day_rev_grey
 
             # Baseload additional purchase, if necessary
-            if fixed_price > 0:
+            if fixed_price > 0 and baseload_kw is not None:
                 total_feed_in = result["export_pv"] + result["discharge_green"] + result["discharge_grey"]
-                missed_baseload = np.maximum([baseload_kw/4 - total_feed_in],0)
+                missed_baseload = np.maximum([baseload_kw/INTERVALS_PER_HOUR/MWH_TO_KWH - total_feed_in],0)
             else:
                 missed_baseload = np.zeros(len(result["export_pv"]))
 

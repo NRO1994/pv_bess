@@ -320,7 +320,7 @@
 ---
 
 ### FIX-S2-12: BESS Charging nur am ersten Tag des PPA/EEG-Jahres (Collar Bug)
-**Status:** ZU PRÜFEN
+**Status:** ERLEDIGT
 **Dateien:** `dispatch/optimizer.py`, `dispatch/engine.py`
 
 **Problem:** In einem "Green PV+BESS"-Szenario mit Collar-PPA (oder EEG/Floor-PPA) wird der BESS nur am ersten Tag jedes PPA-Jahres geladen/entladen. Erst nach Ablauf des PPA/EEG funktioniert der BESS an allen Tagen korrekt.
@@ -654,7 +654,7 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 | FIX-S2-09 | Excel Lock Handling | ERLEDIGT                   | Niedrig | CSV Writer |
 | FIX-S2-10 | Debt Service Split | ERLEDIGT                   | Mittel | Cashflow, Debt, CSV Writer |
 | FIX-S2-11 | Grid Search Skip | ERLEDIGT                   | Niedrig | Grid Search, Performance |
-| FIX-S2-12 | Collar Bug (BESS Discharge-Koeffizient auf Spot) | ZU PRÜFEN                  | Hoch | Optimizer, Engine (LP + Revenue) |
+| FIX-S2-12 | Collar Bug (BESS Discharge-Koeffizient auf Spot) | ERLEDIGT                   | Hoch | Optimizer, Engine (LP + Revenue) |
 | FIX-S2-13 | BESS-Replacement fremdfinanzieren | ERLEDIGT                   | Hoch | Cashflow, Debt, Replacement |
 | FIX-S2-14 | `-v` → `max_workers=1` | ERLEDIGT                   | Niedrig | Main.py (2 Zeilen) |
 | FIX-S2-15 | BESS-Replacement Upgrade-Faktor | ERLEDIGT                   | Mittel | Schema, Replacement, Engine |

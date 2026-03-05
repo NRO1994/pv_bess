@@ -1,0 +1,1727 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Input-Wizard für PV/BESS Co-Location Analyse</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!--
+    PV+BESS Wizard (Variante C - Stepper)
+    - Läuft komplett offline (Single-File, keine externen Abhängigkeiten).
+    - Setzt das vom Nutzer gelieferte JSON-Schema (Draft-07) um.
+    - Import/Export/Validierung, Dark Mode, lokale Persistenz.
+    Autor: Niels Röschmann (Spezifikation), Umsetzung: M365 Copilot
+    Version: 1.0.0
+  -->
+  <style>
+    :root {
+      --bg: #ffffff;
+      --fg: #0f172a; /* slate-900 */
+      --muted: #475569; /* slate-600 */
+      --primary: #FF8200; /* blue-600 */
+      --primary-contrast: #ffffff;
+      --accent: #F73E5E; /* sky-500 */
+      --error: #dc2626;  /* red-600 */
+      --success: #16a34a; /* green-600 */
+      --surface: #f8fafc; /* slate-50 */
+      --border: #e2e8f0; /* slate-200 */
+      --surface-2: #eef2ff; /* indigo-50 */
+      --focus: #00467A; /* blue-300 */
+    }
+    [data-theme="dark"] {
+      --bg: #0b1220;
+      --fg: #e5e7eb;
+      --muted: #94a3b8;
+      --primary: #60a5fa;
+      --primary-contrast: #0b1220;
+      --accent: #38bdf8;
+      --error: #ef4444;
+      --success: #22c55e;
+      --surface: #111827;
+      --border: #1f2937;
+      --surface-2: #0f172a;
+      --focus: #60a5fa;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, Segoe UI, Roboto, Inter, system-ui, Arial, sans-serif;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px 16px 80px;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: 20px;
+      margin: 0;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    button, .button {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--fg);
+      padding: 10px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button.primary {
+      background: var(--primary);
+      color: var(--primary-contrast);
+      border-color: var(--primary);
+    }
+    button.ghost {
+      background: transparent;
+    }
+    button:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 2px;
+    }
+    .stepper {
+      display: grid;
+      grid-auto-flow: column;
+      gap: 8px;
+      margin: 12px 0 20px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      white-space: nowrap;
+      user-select: none;
+    }
+    .step.active {
+      background: var(--surface-2);
+      color: var(--fg);
+      border-color: var(--primary);
+    }
+    .step.done {
+      color: var(--success);
+      border-color: var(--success);
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .grid {
+      display: grid;
+      gap: 12px;
+    }
+    @media (min-width: 900px) {
+      .grid.cols-2 { grid-template-columns: 1fr 1fr; }
+      .grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    input[type="text"], input[type="number"], input[type="file"], select, textarea {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--fg);
+      padding: 10px;
+      border-radius: 10px;
+    }
+    textarea { min-height: 80px; resize: vertical; }
+    .row { display: flex; align-items: center; gap: 8px; }
+    .switch {
+      display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+    }
+    .switch input { accent-color: var(--primary); }
+    .error {
+      color: var(--error);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+    .banner {
+      border-radius: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      margin-bottom: 12px;
+      display: none;
+    }
+    .banner.show { display: block; }
+    .banner.success { border-color: var(--success); }
+    .banner.error { border-color: var(--error); }
+    .flex-between { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .section-title { font-size: 16px; font-weight: 700; margin: 2px 0 8px; }
+    .actions {
+      position: sticky; bottom: 0; left: 0; right: 0;
+      background: linear-gradient(180deg, transparent, var(--bg) 30%);
+      padding-top: 16px;
+    }
+    .actions .row { justify-content: space-between; }
+    .muted { color: var(--muted); }
+    .small { font-size: 12px; }
+    .pill {
+      display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border);
+      background: var(--surface-2); font-size: 12px;
+    }
+    .list {
+      display: grid; gap: 8px; margin-top: 8px;
+    }
+    .list .item {
+      display: grid; gap: 8px;
+      border: 1px dashed var(--border); border-radius: 12px; padding: 8px;
+      background: transparent;
+    }
+    @media (min-width: 900px) {
+      .list .item.cols-2 { grid-template-columns: 1fr 1fr auto; align-items: end; }
+      .list .item.cols-3 { grid-template-columns: repeat(3, 1fr) auto; align-items: end; }
+      .list .item.cols-4 { grid-template-columns: repeat(4, 1fr) auto; align-items: end; }
+    }
+    .danger { color: var(--error); }
+    footer {
+      margin-top: 24px;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .kbd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-size: 12px;
+    }
+    .hr { height: 1px; background: var(--border); margin: 12px 0; border: 0; }
+  </style>
+</head>
+<body>
+  <div class="container" id="app">
+    <header>
+      <div>
+        <h1>Input-Wizard für PV/BESS Co-Location Analyse</h1>
+        <div class="muted small">Eingabe der Parameter läuft nur lokal und offline • Simulation über Niels' Laptop • kein Backend</div>
+      </div>
+      <div class="toolbar" role="toolbar" aria-label="Globale Aktionen">
+        <label class="switch">
+          <input type="checkbox" id="toggleDark" /> Dark Mode
+        </label>
+        <label class="switch" title="Eingaben automatisch im Browser speichern (localStorage)">
+          <input type="checkbox" id="togglePersist" /> Eingaben merken
+        </label>
+        <input type="file" id="importFile" accept="application/json" style="display:none" />
+        <button id="btnImport">JSON importieren</button>
+        <button id="btnExport" class="primary">JSON exportieren</button>
+      </div>
+    </header>
+
+    <div class="banner" id="banner"></div>
+
+    <div class="card">
+      <div class="muted small">
+        <b>Hinweis:</b> Speichere die exportierte JSON im <span class="pill">OneDrive‑Sync‑Ordner</span> (z. B. <span class="kbd">…\Projekte\XYZ\Input</span>).
+        Dein Python‑Prozess liest von dort und legt Ergebnisse im <span class="pill">Output</span> ab.
+      </div>
+    </div>
+
+    <!-- Stepper -->
+    <div class="stepper" id="stepper" aria-label="Schritte">
+      <!-- Steps werden dynamisch markiert -->
+      <div class="step" data-step="1">1 · Szenario & Output</div>
+      <div class="step" data-step="2">2 · Analysen</div>
+      <div class="step" data-step="3">3 · Projekt</div>
+      <div class="step" data-step="4">4 · PV</div>
+      <div class="step" data-step="5">5 · BESS</div>
+      <div class="step" data-step="6">6 · Netzanschluss</div>
+      <div class="step" data-step="7">7 · Finance</div>
+      <div class="step" data-step="8">8 · Review & Export</div>
+    </div>
+
+    <!-- STEP 1: Scenario & Output -->
+    <section class="card" data-step="1" aria-labelledby="step1-title">
+      <div class="section-title" id="step1-title">Szenario & Output</div>
+
+      <div class="grid cols-2">
+        <div>
+          <label for="scenario.name">Szenario-Name *</label>
+          <input id="scenario.name" type="text" placeholder="z. B. Case_2026_Q3" required />
+          <div class="hint">Pflichtfeld</div>
+        </div>
+        <div>
+          <label class="switch"><input type="checkbox" id="scenario.skip_baseline" /> Baseline-Simulation überspringen</label>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="section-title">Output</div>
+      <div class="grid cols-3">
+        <div>
+          <label for="scenario.output.directory">Output-Verzeichnis *</label>
+          <input id="scenario.output.directory" type="text" placeholder="z. B. OneDrive/Projekte/XYZ/Output" required />
+        </div>
+        <div>
+          <label for="scenario.output.csv_separator">CSV Trennzeichen</label>
+          <input id="scenario.output.csv_separator" type="text" placeholder="; oder ," />
+        </div>
+        <div>
+          <label for="scenario.output.csv_decimal">CSV Dezimaltrennzeichen</label>
+          <input id="scenario.output.csv_decimal" type="text" placeholder=", oder ." />
+        </div>
+        <div>
+          <label for="scenario.output.csv_timestamp_column">CSV Zeitstempel-Spaltenname</label>
+          <input id="scenario.output.csv_timestamp_column" type="text" />
+        </div>
+        <div>
+          <label for="scenario.output.csv_timestamp_format">CSV Zeitstempel-Format</label>
+          <input id="scenario.output.csv_timestamp_format" type="text" placeholder="z. B. YYYY-MM-DD HH:mm" />
+        </div>
+        <div class="row">
+          <label class="switch" title="Beispieldispatch exportieren (optional)">
+            <input type="checkbox" id="scenario.output.export_dispatch_sample" /> Dispatch-Sample exportieren
+          </label>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="section-title">Report (optional)</div>
+        <div class="grid cols-3">
+          <label class="switch"><input type="checkbox" id="scenario.output.report.enabled" /> Report aktivieren</label>
+          <div>
+            <label for="scenario.output.report.company_name">Firmenname</label>
+            <input id="scenario.output.report.company_name" type="text" />
+          </div>
+          <div>
+            <label for="scenario.output.report.logo_path">Logo-Pfad</label>
+            <input id="scenario.output.report.logo_path" type="text" />
+          </div>
+          <div>
+            <label for="scenario.output.report.llm_api_key_env">LLM API Key (ENV)</label>
+            <input id="scenario.output.report.llm_api_key_env" type="text" />
+          </div>
+          <div>
+            <label for="scenario.output.report.llm_model">LLM Modell</label>
+            <input id="scenario.output.report.llm_model" type="text" placeholder="z. B. gpt-4o, o3-mini, ..." />
+          </div>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="section-title">Monte Carlo</div>
+      <div class="grid cols-3">
+        <label class="switch"><input type="checkbox" id="scenario.monte_carlo.enabled" /> Monte-Carlo aktivieren</label>
+        <div>
+          <label for="scenario.monte_carlo.iterations">Iterationen</label>
+          <input id="scenario.monte_carlo.iterations" type="number" min="1" step="1" placeholder="≥ 1" />
+        </div>
+      </div>
+      <div class="grid cols-3">
+        <div><label for="scenario.monte_carlo.sigma_capex_pv_pct">σ CAPEX PV (%)</label><input id="scenario.monte_carlo.sigma_capex_pv_pct" type="number" min="0" step="any" /></div>
+        <div><label for="scenario.monte_carlo.sigma_capex_bess_pct">σ CAPEX BESS (%)</label><input id="scenario.monte_carlo.sigma_capex_bess_pct" type="number" min="0" step="any" /></div>
+        <div><label for="scenario.monte_carlo.sigma_opex_pv_pct">σ OPEX PV (%)</label><input id="scenario.monte_carlo.sigma_opex_pv_pct" type="number" min="0" step="any" /></div>
+        <div><label for="scenario.monte_carlo.sigma_opex_bess_pct">σ OPEX BESS (%)</label><input id="scenario.monte_carlo.sigma_opex_bess_pct" type="number" min="0" step="any" /></div>
+        <div><label for="scenario.monte_carlo.sigma_pv_availability_pct">σ PV Verfügbarkeit (%)</label><input id="scenario.monte_carlo.sigma_pv_availability_pct" type="number" min="0" step="any" /></div>
+        <div><label for="scenario.monte_carlo.sigma_bess_availability_pct">σ BESS Verfügbarkeit (%)</label><input id="scenario.monte_carlo.sigma_bess_availability_pct" type="number" min="0" step="any" /></div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="flex-between">
+          <div class="section-title">Monte-Carlo Preisszenarien (Gewichtete)</div>
+          <button class="ghost" id="btnAddMCPrice">+ Eintrag</button>
+        </div>
+        <div class="small muted">Diese Eingaben werden als Objekt mit dynamischen Keys exportiert: <span class="kbd">price_scenarios[&lt;name&gt;] = {'csv_column','weight'}</span></div>
+        <div id="mcPriceList" class="list"></div>
+      </div>
+    </section>
+
+    <!-- STEP 2: Analyses -->
+    <section class="card" data-step="2" aria-labelledby="step2-title">
+      <div class="section-title" id="step2-title">Analysen</div>
+
+      <div class="card">
+        <div class="flex-between">
+          <div class="section-title">EEG Sensitivität</div>
+          <label class="switch"><input type="checkbox" id="scenario.analyses.eeg_sensitivity.enabled" /> aktiv</label>
+        </div>
+        <div>
+          <label>Floor-Preise (EUR/kWh) – mindestens 1</label>
+          <div id="eegFloorList" class="list"></div>
+          <button class="ghost" id="btnAddEegFloor">+ Preis</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="flex-between">
+          <div class="section-title">PPA Collar</div>
+          <label class="switch"><input type="checkbox" id="scenario.analyses.ppa_collar.enabled" /> aktiv</label>
+        </div>
+        <div class="grid cols-3">
+          <div>
+            <label>Dauer (Jahre)</label>
+            <input id="scenario.analyses.ppa_collar.duration_years" type="number" min="1" step="1" />
+          </div>
+          <label class="switch"><input type="checkbox" id="scenario.analyses.ppa_collar.inflation_on_ppa" /> Inflation auf PPA</label>
+          <div>
+            <label>GOO-Premium (EUR/kWh)</label>
+            <input id="scenario.analyses.ppa_collar.goo_premium_eur_per_kwh" type="number" min="0" step="any" />
+          </div>
+        </div>
+        <div class="grid cols-2">
+          <div>
+            <label>Floor-Preise (EUR/MWh) – min. 1</label>
+            <div id="ppaCollarFloorList" class="list"></div>
+            <button class="ghost" id="btnAddPpaCollarFloor">+ Floor</button>
+          </div>
+          <div>
+            <label>Cap-Spreads (EUR/MWh) – min. 1</label>
+            <div id="ppaCollarCapList" class="list"></div>
+            <button class="ghost" id="btnAddPpaCollarCap">+ Cap-Spread</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="flex-between">
+          <div class="section-title">PPA Baseload</div>
+          <label class="switch"><input type="checkbox" id="scenario.analyses.ppa_baseload.enabled" /> aktiv</label>
+        </div>
+        <div class="grid cols-3">
+          <div>
+            <label>Dauer (Jahre)</label>
+            <input id="scenario.analyses.ppa_baseload.duration_years" type="number" min="1" step="1" />
+          </div>
+          <label class="switch"><input type="checkbox" id="scenario.analyses.ppa_baseload.inflation_on_ppa" /> Inflation auf PPA</label>
+          <div>
+            <label>GOO-Premium (EUR/kWh)</label>
+            <input id="scenario.analyses.ppa_baseload.goo_premium_eur_per_kwh" type="number" min="0" step="any" />
+          </div>
+        </div>
+        <div class="grid cols-2">
+          <div>
+            <label>PPA-Preise (EUR/MWh) – min. 1</label>
+            <div id="ppaBaseloadPriceList" class="list"></div>
+            <button class="ghost" id="btnAddPpaBaseloadPrice">+ PPA-Preis</button>
+          </div>
+          <div>
+            <label>Baseload-Level (MW) – min. 1</label>
+            <div id="ppaBaseloadLevelList" class="list"></div>
+            <button class="ghost" id="btnAddPpaBaseloadLevel">+ Level</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 3: Project -->
+    <section class="card" data-step="3" aria-labelledby="step3-title">
+      <div class="section-title" id="step3-title">Projekt-Einstellungen</div>
+      <div class="grid cols-3">
+        <div><label>Lebensdauer (Jahre) *</label><input id="project_settings.lifetime_years" type="number" min="1" step="1" required /></div>
+        <div><label>Inbetriebnahme-Jahr *</label><input id="project_settings.commissioning_year" type="number" min="2020" step="1" required /></div>
+        <div><label>Diskontsatz *</label><input id="project_settings.discount_rate" type="number" min="0" step="any" required /></div>
+        <div>
+          <label>Betriebsmodus *</label>
+          <select id="project_settings.operating_mode" required>
+            <option value="">– auswählen –</option>
+            <option value="green">green</option>
+            <option value="grey">grey</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="section-title">Standort *</div>
+      <div class="grid cols-3">
+        <div><label>Latitude</label><input id="project_settings.location.latitude" type="number" step="any" min="-90" max="90" required /></div>
+        <div><label>Longitude</label><input id="project_settings.location.longitude" type="number" step="any" min="-180" max="180" required /></div>
+        <div><label>PVGIS Datenbank</label><input id="project_settings.location.pvgis_database" type="text" required /></div>
+      </div>
+    </section>
+
+    <!-- STEP 4: Technology → PV -->
+    <section class="card" data-step="4" aria-labelledby="step4-title">
+      <div class="section-title" id="step4-title">Technologie: PV</div>
+
+      <div class="card">
+        <div class="section-title">Design *</div>
+        <div class="grid cols-3">
+          <div><label>Peak Power (kWp)</label><input id="project_settings.technology.pv.design.peak_power_kwp" type="number" min="0" step="any" required /></div>
+          <div>
+            <label>Montageart</label>
+            <select id="project_settings.technology.pv.design.mounting_type" required>
+              <option value="">– auswählen –</option>
+              <option value="free">free</option>
+              <option value="building">building</option>
+            </select>
+          </div>
+          <div><label>Azimut (°)</label><input id="project_settings.technology.pv.design.azimuth_deg" type="number" min="-180" max="180" step="any" required /></div>
+          <div><label>Neigung (°)</label><input id="project_settings.technology.pv.design.tilt_deg" type="number" min="0" max="90" step="any" required /></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Performance *</div>
+        <div class="grid cols-3">
+          <div><label>Degradation (%/Jahr)</label><input id="project_settings.technology.pv.performance.degradation_rate_pct_per_year" type="number" min="0" max="100" step="any" required /></div>
+          <div><label>PV Verfügbarkeit (%)</label><input id="project_settings.technology.pv.performance.pv_availability_pct" type="number" min="0" max="100" step="any" required /></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Kosten (CAPEX/OPEX)</div>
+        <div class="grid cols-3">
+          <div><label>CAPEX fixed (EUR)</label><input id="project_settings.technology.pv.costs.capex.fixed_eur" type="number" min="0" step="any" /></div>
+          <div><label>CAPEX EUR/kW</label><input id="project_settings.technology.pv.costs.capex.eur_per_kw" type="number" min="0" step="any" /></div>
+          <div><label>CAPEX EUR/kWh</label><input id="project_settings.technology.pv.costs.capex.eur_per_kwh" type="number" min="0" step="any" /></div>
+          <div><label>CAPEX % of CAPEX (0..1)</label><input id="project_settings.technology.pv.costs.capex.pct_of_capex" type="number" min="0" max="1" step="any" /></div>
+
+          <div><label>OPEX fixed (EUR)</label><input id="project_settings.technology.pv.costs.opex.fixed_eur" type="number" min="0" step="any" /></div>
+          <div><label>OPEX EUR/kW</label><input id="project_settings.technology.pv.costs.opex.eur_per_kw" type="number" min="0" step="any" /></div>
+          <div><label>OPEX EUR/kWh</label><input id="project_settings.technology.pv.costs.opex.eur_per_kwh" type="number" min="0" step="any" /></div>
+          <div><label>OPEX % of CAPEX (0..1)</label><input id="project_settings.technology.pv.costs.opex.pct_of_capex" type="number" min="0" max="1" step="any" /></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 5: Technology → BESS -->
+    <section class="card" data-step="5" aria-labelledby="step5-title">
+      <div class="section-title" id="step5-title">Technologie: BESS</div>
+
+      <div class="card">
+        <div class="section-title">Design Space *</div>
+        <div class="grid cols-3">
+          <div>
+            <label>Skalierung (% von PV) – min. 1</label>
+            <div id="bessScaleList" class="list"></div>
+            <button class="ghost" id="btnAddBessScale">+ Skalierung</button>
+          </div>
+          <div>
+            <label>E/P Ratio (h) – min. 1</label>
+            <div id="bessEPRatioList" class="list"></div>
+            <button class="ghost" id="btnAddBessEPRatio">+ Ratio</button>
+          </div>
+        </div>
+        <div class="grid cols-3">
+          <div><label>Absolute Leistung (kW)</label><input id="project_settings.technology.bess.design_space.absolute_power_kw" type="number" min="0" step="any" /></div>
+          <div><label>Absolute Kapazität (kWh)</label><input id="project_settings.technology.bess.design_space.absolute_capacity_kwh" type="number" min="0" step="any" /></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Performance *</div>
+        <div class="grid cols-3">
+          <div><label>Round-Trip Effizienz (%)</label><input id="project_settings.technology.bess.performance.round_trip_efficiency_pct" type="number" min="0" max="100" step="any" required /></div>
+          <div><label>Min SoC (%)</label><input id="project_settings.technology.bess.performance.min_soc_pct" type="number" min="0" max="100" step="any" required /></div>
+          <div><label>Max SoC (%)</label><input id="project_settings.technology.bess.performance.max_soc_pct" type="number" min="0" max="100" step="any" required /></div>
+          <div><label>Degradation (%/Jahr)</label><input id="project_settings.technology.bess.performance.degradation_rate_pct_per_year" type="number" min="0" max="100" step="any" required /></div>
+          <div><label>BESS Verfügbarkeit (%)</label><input id="project_settings.technology.bess.performance.bess_availability_pct" type="number" min="0" max="100" step="any" required /></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Kosten</div>
+        <div class="grid cols-3">
+          <div><label>CAPEX fixed (EUR)</label><input id="project_settings.technology.bess.costs.capex.fixed_eur" type="number" min="0" step="any" /></div>
+          <div><label>CAPEX EUR/kW</label><input id="project_settings.technology.bess.costs.capex.eur_per_kw" type="number" min="0" step="any" /></div>
+          <div><label>CAPEX EUR/kWh</label><input id="project_settings.technology.bess.costs.capex.eur_per_kwh" type="number" min="0" step="any" /></div>
+          <div><label>CAPEX % of CAPEX (0..1)</label><input id="project_settings.technology.bess.costs.capex.pct_of_capex" type="number" min="0" max="1" step="any" /></div>
+
+          <div><label>OPEX fixed (EUR)</label><input id="project_settings.technology.bess.costs.opex.fixed_eur" type="number" min="0" step="any" /></div>
+          <div><label>OPEX EUR/kW</label><input id="project_settings.technology.bess.costs.opex.eur_per_kw" type="number" min="0" step="any" /></div>
+          <div><label>OPEX EUR/kWh</label><input id="project_settings.technology.bess.costs.opex.eur_per_kwh" type="number" min="0" step="any" /></div>
+          <div><label>OPEX % of CAPEX (0..1)</label><input id="project_settings.technology.bess.costs.opex.pct_of_capex" type="number" min="0" max="1" step="any" /></div>
+
+          <div><label>Optimierungsgebühr (%)</label><input id="project_settings.technology.bess.costs.optimization_fee_pct" type="number" min="0" max="100" step="any" /></div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <div class="flex-between">
+            <div class="section-title">Ersatzinvest (Replacement)</div>
+            <label class="switch"><input type="checkbox" id="project_settings.technology.bess.costs.replacement.enabled" /> aktiv</label>
+          </div>
+          <div class="grid cols-3">
+            <div><label>Jahr</label><input id="project_settings.technology.bess.costs.replacement.year" type="number" min="1" step="1" /></div>
+            <div><label>fixed (EUR)</label><input id="project_settings.technology.bess.costs.replacement.fixed_eur" type="number" min="0" step="any" /></div>
+            <div><label>EUR/kW</label><input id="project_settings.technology.bess.costs.replacement.eur_per_kw" type="number" min="0" step="any" /></div>
+            <div><label>EUR/kWh</label><input id="project_settings.technology.bess.costs.replacement.eur_per_kwh" type="number" min="0" step="any" /></div>
+            <div><label>% of CAPEX (0..1)</label><input id="project_settings.technology.bess.costs.replacement.pct_of_capex" type="number" min="0" max="1" step="any" /></div>
+            <div><label>Capacity Factor (%)</label><input id="project_settings.technology.bess.costs.replacement.capacity_factor_pct" type="number" min="0" step="any" /></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 6: Grid Connection -->
+    <section class="card" data-step="6" aria-labelledby="step6-title">
+      <div class="section-title" id="step6-title">Netzanschluss</div>
+      <div class="grid cols-3">
+        <div><label>Max Export (kW) *</label><input id="project_settings.technology.grid_connection.max_export_kw" type="number" min="0.0000001" step="any" required /></div>
+        <div><label>Systemverluste (%)</label><input id="project_settings.technology.grid_connection.system_loss_pct" type="number" min="0" max="100" step="any" /></div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="section-title">Kosten</div>
+        <div class="grid cols-3">
+          <div><label>CAPEX fixed (EUR)</label><input id="project_settings.technology.grid_connection.costs.capex.fixed_eur" type="number" min="0" step="any" /></div>
+          <div><label>CAPEX EUR/kW</label><input id="project_settings.technology.grid_connection.costs.capex.eur_per_kw" type="number" min="0" step="any" /></div>
+          <div><label>CAPEX EUR/kWh</label><input id="project_settings.technology.grid_connection.costs.capex.eur_per_kwh" type="number" min="0" step="any" /></div>
+          <div><label>CAPEX % of CAPEX (0..1)</label><input id="project_settings.technology.grid_connection.costs.capex.pct_of_capex" type="number" min="0" max="1" step="any" /></div>
+
+          <div><label>OPEX fixed (EUR)</label><input id="project_settings.technology.grid_connection.costs.opex.fixed_eur" type="number" min="0" step="any" /></div>
+          <div><label>OPEX EUR/kW</label><input id="project_settings.technology.grid_connection.costs.opex.eur_per_kw" type="number" min="0" step="any" /></div>
+          <div><label>OPEX EUR/kWh</label><input id="project_settings.technology.grid_connection.costs.opex.eur_per_kwh" type="number" min="0" step="any" /></div>
+          <div><label>OPEX % of CAPEX (0..1)</label><input id="project_settings.technology.grid_connection.costs.opex.pct_of_capex" type="number" min="0" max="1" step="any" /></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 7: Finance -->
+    <section class="card" data-step="7" aria-labelledby="step7-title">
+      <div class="section-title" id="step7-title">Finance</div>
+      <div class="grid cols-3">
+        <div><label>Leverage (%)</label><input id="project_settings.finance.leverage_pct" type="number" min="0" max="100" step="any" required /></div>
+        <div><label>Zinssatz (%)</label><input id="project_settings.finance.interest_rate_pct" type="number" min="0" step="any" required /></div>
+        <div><label>Loan Tenor (Jahre)</label><input id="project_settings.finance.loan_tenor_years" type="number" min="1" step="1" required /></div>
+        <div><label>Equity IRR Target</label><input id="project_settings.finance.equity_irr_target" type="number" step="any" placeholder="leer = null" /></div>
+        <label class="switch"><input type="checkbox" id="project_settings.finance.debt_uses_p90" /> Debt uses P90</label>
+        <div><label>Debt Sizing Downside (%)</label><input id="project_settings.finance.debt_sizing_downside_pct" type="number" min="0" max="100" step="any" /></div>
+        <div><label>Inflationsrate</label><input id="project_settings.finance.inflation_rate" type="number" min="0" step="any" required /></div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Revenue Streams</div>
+        <div class="card" style="margin-bottom:12px">
+          <div class="section-title">Marketing *</div>
+          <div class="grid cols-3">
+            <div>
+              <label>Typ</label>
+              <select id="project_settings.finance.revenue_streams.marketing.type" required>
+                <option value="">– auswählen –</option>
+                <option value="eeg">eeg</option>
+                <option value="ppa">ppa</option>
+                <option value="market">market</option>
+              </select>
+            </div>
+            <div><label>Floor (EUR/kWh)</label><input id="project_settings.finance.revenue_streams.marketing.floor_price_eur_per_kwh" type="number" min="0" step="any" /></div>
+            <div><label>Fixed Price (Jahre)</label><input id="project_settings.finance.revenue_streams.marketing.fixed_price_years" type="number" min="1" step="1" /></div>
+            <label class="switch"><input type="checkbox" id="project_settings.finance.revenue_streams.marketing.eeg_inflation" /> EEG Inflation</label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-title">PPA (optional)</div>
+          <div class="grid cols-3">
+            <div>
+              <label>Typ</label>
+              <select id="project_settings.finance.revenue_streams.ppa.type">
+                <option value="">– auswählen –</option>
+                <option value="none">none</option>
+                <option value="ppa_pay_as_produced">ppa_pay_as_produced</option>
+                <option value="ppa_baseload">ppa_baseload</option>
+                <option value="ppa_floor">ppa_floor</option>
+                <option value="ppa_collar">ppa_collar</option>
+              </select>
+            </div>
+            <div><label>Pay-as-produced (EUR/kWh)</label><input id="project_settings.finance.revenue_streams.ppa.pay_as_produced_price_eur_per_kwh" type="number" min="0" step="any" /></div>
+            <div><label>Baseload (MW)</label><input id="project_settings.finance.revenue_streams.ppa.baseload_mw" type="number" min="0" step="any" /></div>
+            <div><label>Floor (EUR/kWh)</label><input id="project_settings.finance.revenue_streams.ppa.floor_price_eur_per_kwh" type="number" min="0" step="any" /></div>
+            <div><label>Cap (EUR/kWh)</label><input id="project_settings.finance.revenue_streams.ppa.cap_price_eur_per_kwh" type="number" min="0" step="any" /></div>
+            <div><label>Dauer (Jahre)</label><input id="project_settings.finance.revenue_streams.ppa.duration_years" type="number" min="1" step="1" /></div>
+            <label class="switch"><input type="checkbox" id="project_settings.finance.revenue_streams.ppa.inflation_on_ppa" /> Inflation auf PPA</label>
+            <div><label>GOO (EUR/kWh)</label><input id="project_settings.finance.revenue_streams.ppa.guarantee_of_origin_eur_per_kwh" type="number" min="0" step="any" /></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Price Inputs *</div>
+        <div class="grid cols-3">
+          <div><label>Day-Ahead CSV *</label><input id="project_settings.finance.price_inputs.day_ahead_csv" type="text" required /></div>
+          <div>
+            <label>Preis-Einheit *</label>
+            <select id="project_settings.finance.price_inputs.price_unit" required>
+              <option value="">– auswählen –</option>
+              <option value="eur_per_mwh">eur_per_mwh</option>
+              <option value="eur_per_kwh">eur_per_kwh</option>
+            </select>
+          </div>
+          <label class="switch"><input type="checkbox" id="project_settings.finance.price_inputs.inflation_on_input_data" /> Inflation auf Inputdaten</label>
+          <div><label>CSV Trennzeichen</label><input id="project_settings.finance.price_inputs.csv_separator" type="text" /></div>
+          <div><label>CSV Dezimaltrennzeichen</label><input id="project_settings.finance.price_inputs.csv_decimal" type="text" /></div>
+          <div><label>CSV Zeitstempel-Spalte</label><input id="project_settings.finance.price_inputs.csv_timestamp_column" type="text" /></div>
+          <div><label>CSV Zeitstempel-Format</label><input id="project_settings.finance.price_inputs.csv_timestamp_format" type="text" /></div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <div class="flex-between">
+            <div class="section-title">Szenarien (min. 1)</div>
+            <button class="ghost" id="btnAddPriceScenario">+ Szenario</button>
+          </div>
+          <div id="priceScenarioList" class="list"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Steuern *</div>
+        <div class="grid cols-3">
+          <div><label>AfA Jahre PV *</label><input id="project_settings.finance.tax.afa_years_pv" type="number" min="1" step="1" required /></div>
+          <div><label>AfA Jahre BESS *</label><input id="project_settings.finance.tax.afa_years_bess" type="number" min="1" step="1" required /></div>
+          <div><label>GewSt Hebesatz *</label><input id="project_settings.finance.tax.gewerbesteuer_hebesatz" type="number" min="0" step="any" required /></div>
+          <div><label>GewSt Messzahl (0..1) *</label><input id="project_settings.finance.tax.gewerbesteuer_messzahl" type="number" min="0" max="1" step="any" required /></div>
+          <div><label>KSt (%)</label><input id="project_settings.finance.tax.koerperschaftsteuer_pct" type="number" min="0" max="100" step="any" /></div>
+          <div><label>SolZ (%)</label><input id="project_settings.finance.tax.solidaritaetszuschlag_pct" type="number" min="0" max="100" step="any" /></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 8: Review & Export -->
+    <section class="card" data-step="8" aria-labelledby="step8-title">
+      <div class="section-title" id="step8-title">Review & Export</div>
+      <div class="muted small">Prüfe die Zusammenfassung. Klicke anschließend auf <b>JSON exportieren</b>.</div>
+      <pre id="preview" style="background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px; overflow:auto; max-height:50vh;"></pre>
+    </section>
+
+    <!-- Sticky actions -->
+    <div class="actions">
+      <div class="row">
+        <div>
+          <button id="btnPrev">← Zurück</button>
+          <button id="btnNext" class="primary">Weiter →</button>
+        </div>
+        <div class="muted small">Tastatur: <span class="kbd">Alt + ←/→</span> für Navigation</div>
+      </div>
+      <footer>
+        Co-Location Analyse Version 0.0.1 • Keine externen Abhängigkeiten • Created by Niels
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      // ====== Utilities ======
+      const $ = (sel, el=document) => el.querySelector(sel);
+      const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+      const byId = id => document.getElementById(id.replaceAll(':','\\:'));
+      const app = $('#app');
+      const banner = $('#banner');
+
+      const PERSIST_KEY = 'pvbess_wizard_state_v1';
+      const isNumber = v => typeof v === 'number' && !Number.isNaN(v);
+      const isNonEmpty = v => v !== undefined && v !== null && String(v).trim() !== '';
+      const asNumber = (el) => {
+        const v = el.value;
+        if (!isNonEmpty(v)) return undefined;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : undefined;
+      };
+      const asInteger = (el) => {
+        const v = el.value;
+        if (!isNonEmpty(v)) return undefined;
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.trunc(n) : undefined;
+      };
+      const asString = (el) => {
+        const v = el.value;
+        return isNonEmpty(v) ? v : undefined;
+      };
+      const asBoolean = (el) => !!el.checked;
+
+      const showBanner = (msg, type='info') => {
+        banner.textContent = msg;
+        banner.className = 'banner show ' + (type==='error' ? 'error' : (type==='success' ? 'success' : ''));
+      };
+      const hideBanner = () => { banner.className = 'banner'; banner.textContent = ''; };
+
+      // ====== Stepper ======
+      let currentStep = 1;
+      const maxStep = 8;
+      const markStepper = () => {
+        $$('.stepper .step').forEach(stepEl => {
+          const n = Number(stepEl.dataset.step);
+          stepEl.classList.toggle('active', n === currentStep);
+          stepEl.classList.toggle('done', n < currentStep);
+        });
+        // Buttons
+        $('#btnPrev').disabled = currentStep === 1;
+        $('#btnNext').textContent = currentStep === maxStep ? 'Fertig' : 'Weiter →';
+      };
+      const showStep = (n) => {
+        currentStep = Math.min(Math.max(1, n), maxStep);
+        $$('section[data-step]').forEach(s => s.style.display = (Number(s.dataset.step) === currentStep ? '' : 'none'));
+        markStepper();
+        updatePreviewIfNeeded();
+      };
+      // keyboard navigation
+      window.addEventListener('keydown', (e) => {
+        if (e.altKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+          e.preventDefault();
+          if (e.key === 'ArrowRight') $('#btnNext').click();
+          if (e.key === 'ArrowLeft') $('#btnPrev').click();
+        }
+      });
+
+      // ====== Dark Mode & Persist ======
+      const toggleDark = $('#toggleDark');
+      const togglePersist = $('#togglePersist');
+      toggleDark.addEventListener('change', () => {
+        document.body.setAttribute('data-theme', toggleDark.checked ? 'dark' : 'light');
+      });
+      togglePersist.addEventListener('change', () => {
+        if (!togglePersist.checked) {
+          localStorage.removeItem(PERSIST_KEY);
+          showBanner('Lokale Speicherung deaktiviert (Daten im Browser wurden gelöscht).', 'success');
+        } else {
+          showBanner('Lokale Speicherung aktiviert. Eingaben werden im Browser gespeichert.', 'success');
+          persistState();
+        }
+      });
+
+      // ====== Dynamic list helpers ======
+      function addNumberItem(listEl, value) {
+        const item = document.createElement('div');
+        item.className = 'item';
+        const input = document.createElement('input');
+        input.type = 'number'; input.step = 'any';
+        if (value !== undefined) input.value = value;
+        const btn = document.createElement('button');
+        btn.textContent = 'Entfernen';
+        btn.addEventListener('click', () => item.remove());
+        item.appendChild(input);
+        item.appendChild(btn);
+        listEl.appendChild(item);
+      }
+      function addTextItem(listEl, value, placeholder='') {
+        const item = document.createElement('div');
+        item.className = 'item';
+        const input = document.createElement('input');
+        input.type = 'text'; input.placeholder = placeholder;
+        if (value !== undefined) input.value = value;
+        const btn = document.createElement('button');
+        btn.textContent = 'Entfernen';
+        btn.addEventListener('click', () => item.remove());
+        item.appendChild(input);
+        item.appendChild(btn);
+        listEl.appendChild(item);
+      }
+      function getNumberArray(listEl, {min, max, exclusiveMin}={}) {
+        const arr = [];
+        for (const item of $$('.item', listEl)) {
+          const inp = $('input', item);
+          if (!inp) continue;
+          const v = Number(inp.value);
+          if (!Number.isFinite(v)) continue;
+          if (exclusiveMin !== undefined && !(v > exclusiveMin)) continue;
+          if (min !== undefined && v < min) continue;
+          if (max !== undefined && v > max) continue;
+          arr.push(v);
+        }
+        return arr;
+      }
+
+      // ====== Monte Carlo Price Scenarios (object with dynamic keys) ======
+      const mcPriceList = $('#mcPriceList');
+      function addMCPriceRow(row = { name:'', csv_column:'', weight:'' }) {
+        const item = document.createElement('div');
+        item.className = 'item cols-3';
+        const name = document.createElement('input'); name.type = 'text'; name.placeholder = 'Name (Key)'; name.value = row.name || '';
+        const col  = document.createElement('input'); col.type = 'text'; col.placeholder = 'CSV Spaltenname'; col.value = row.csv_column || '';
+        const w    = document.createElement('input'); w.type = 'number'; w.step = 'any'; w.min = '0'; w.max = '1'; w.placeholder = 'Gewicht (0..1)'; w.value = row.weight ?? '';
+        const btn  = document.createElement('button'); btn.textContent = 'Entfernen'; btn.addEventListener('click', () => item.remove());
+        item.append(name, col, w, btn);
+        mcPriceList.appendChild(item);
+      }
+      function exportMCPriceObject() {
+        const obj = {};
+        for (const item of $$('.item', mcPriceList)) {
+          const [nameEl, colEl, wEl] = $$('input', item);
+          const name = (nameEl.value || '').trim();
+          const csv_column = (colEl.value || '').trim();
+          const weight = Number(wEl.value);
+          if (!name || !csv_column || !Number.isFinite(weight) || weight < 0 || weight > 1) continue;
+          obj[name] = { csv_column, weight };
+        }
+        return Object.keys(obj).length ? obj : undefined;
+      }
+
+      // ====== Finance Price Scenarios (array of objects) ======
+      const priceScenarioList = $('#priceScenarioList');
+      function addPriceScenarioRow(row = {}) {
+        const item = document.createElement('div');
+        item.className = 'item cols-4';
+        const name = document.createElement('input'); name.type = 'text'; name.placeholder = 'Name *'; name.value = row.name || '';
+        const col  = document.createElement('input'); col.type = 'text'; col.placeholder = 'CSV Spalte *'; col.value = row.csv_column || '';
+        const year = document.createElement('input'); year.type = 'number'; year.step = '1'; year.min = '1900'; year.placeholder = 'Wetterjahr *'; year.value = row.weather_year ?? '';
+        const w    = document.createElement('input'); w.type = 'number'; w.step = 'any'; w.min = '0'; w.max = '1'; w.placeholder = 'Gewicht *'; w.value = row.weight ?? '';
+
+        // optional fields row 2
+        const row2 = document.createElement('div');
+        row2.className = 'grid cols-4';
+        const label = document.createElement('input'); label.type = 'text'; label.placeholder = 'Label'; label.value = row.label || '';
+        const price_csv = document.createElement('input'); price_csv.type = 'text'; price_csv.placeholder = 'Price CSV'; price_csv.value = row.price_csv || '';
+        const price_unit = document.createElement('select');
+        price_unit.innerHTML = '<option value="">Preis-Einheit</option><option value="eur_per_mwh">eur_per_mwh</option><option value="eur_per_kwh">eur_per_kwh</option>';
+        price_unit.value = row.price_unit || '';
+        const central = document.createElement('label'); central.className = 'switch';
+        const centralBox = document.createElement('input'); centralBox.type = 'checkbox'; centralBox.checked = !!row.is_central;
+        central.append(centralBox, document.createTextNode('Central'));
+        const infl = document.createElement('label'); infl.className = 'switch';
+        const inflBox = document.createElement('input'); inflBox.type = 'checkbox'; inflBox.checked = !!row.inflation_on_input_data;
+        infl.append(inflBox, document.createTextNode('Inflation auf Input'));
+        const sep = document.createElement('input'); sep.type = 'text'; sep.placeholder = 'CSV Sep'; sep.value = row.csv_separator || '';
+        const dec = document.createElement('input'); dec.type = 'text'; dec.placeholder = 'CSV Dez'; dec.value = row.csv_decimal || '';
+        const tcol = document.createElement('input'); tcol.type = 'text'; tcol.placeholder = 'Zeitspalte'; tcol.value = row.csv_timestamp_column || '';
+        const tfmt = document.createElement('input'); tfmt.type = 'text'; tfmt.placeholder = 'Zeit-Format'; tfmt.value = row.csv_timestamp_format || '';
+
+        const btn = document.createElement('button'); btn.textContent = 'Entfernen'; btn.addEventListener('click', () => item.remove());
+
+        const row1Wrap = document.createElement('div'); row1Wrap.className = 'grid cols-4';
+        row1Wrap.append(name, col, year, w, btn);
+        item.append(row1Wrap);
+        row2.append(label, price_csv, price_unit, central);
+        const row3 = document.createElement('div'); row3.className = 'grid cols-4';
+        row3.append(infl, sep, dec, tcol, tfmt);
+        item.append(row2, row3);
+        priceScenarioList.appendChild(item);
+      }
+
+      function exportPriceScenariosArray() {
+        const arr = [];
+        for (const item of $$('.item', priceScenarioList)) {
+          const inputs = $$('input, select', item);
+          // row1: name, csv_column, year, weight, [btn]
+          const name = inputs[0].value.trim();
+          const csv_column = inputs[1].value.trim();
+          const weather_year = Number(inputs[2].value);
+          const weight = Number(inputs[3].value);
+          if (!name || !csv_column || !Number.isFinite(weather_year) || weather_year < 1900 || !Number.isFinite(weight) || weight < 0 || weight > 1) {
+            continue;
+          }
+          const o = { name, csv_column, weather_year, weight };
+
+          // row2: label, price_csv, price_unit, is_central (checkbox)
+          const label = inputs[4].value.trim(); if (label) o.label = label;
+          const price_csv = inputs[5].value.trim(); if (price_csv) o.price_csv = price_csv;
+          const price_unit = inputs[6].value; if (price_unit) o.price_unit = price_unit;
+          const is_central = inputs[7].checked; if (is_central) o.is_central = true;
+
+          // row3: inflation_on_input_data (checkbox), sep, dec, tcol, tfmt
+          const infl = inputs[8].checked; if (infl) o.inflation_on_input_data = true;
+          const sep = inputs[9].value.trim(); if (sep) o.csv_separator = sep;
+          const dec = inputs[10].value.trim(); if (dec) o.csv_decimal = dec;
+          const tcol = inputs[11].value.trim(); if (tcol) o.csv_timestamp_column = tcol;
+          const tfmt = inputs[12].value.trim(); if (tfmt) o.csv_timestamp_format = tfmt;
+
+          arr.push(o);
+        }
+        return arr.length ? arr : undefined;
+      }
+
+      // ====== DOM Elements for lists ======
+      const eegFloorList = $('#eegFloorList');
+      const ppaCollarFloorList = $('#ppaCollarFloorList');
+      const ppaCollarCapList = $('#ppaCollarCapList');
+      const ppaBaseloadPriceList = $('#ppaBaseloadPriceList');
+      const ppaBaseloadLevelList = $('#ppaBaseloadLevelList');
+      const bessScaleList = $('#bessScaleList');
+      const bessEPRatioList = $('#bessEPRatioList');
+
+      // Buttons add list items
+      $('#btnAddMCPrice').addEventListener('click', () => addMCPriceRow());
+      $('#btnAddEegFloor').addEventListener('click', () => addNumberItem(eegFloorList, ''));
+      $('#btnAddPpaCollarFloor').addEventListener('click', () => addNumberItem(ppaCollarFloorList, ''));
+      $('#btnAddPpaCollarCap').addEventListener('click', () => addNumberItem(ppaCollarCapList, ''));
+      $('#btnAddPpaBaseloadPrice').addEventListener('click', () => addNumberItem(ppaBaseloadPriceList, ''));
+      $('#btnAddPpaBaseloadLevel').addEventListener('click', () => addNumberItem(ppaBaseloadLevelList, ''));
+      $('#btnAddBessScale').addEventListener('click', () => addNumberItem(bessScaleList, ''));
+      $('#btnAddBessEPRatio').addEventListener('click', () => addNumberItem(bessEPRatioList, ''));
+      $('#btnAddPriceScenario').addEventListener('click', () => addPriceScenarioRow());
+
+      // ====== Build JSON per Schema ======
+      function buildJSON() {
+        // Helper: include field only if has value
+        const get = (id) => document.getElementById(id) || document.querySelector(`#${CSS.escape(id)}`);
+
+        // SCENARIO
+        const scenario = {};
+        // name (required)
+        const scName = asString(get('scenario.name'));
+        if (isNonEmpty(scName)) scenario.name = scName;
+
+        // skip_baseline
+        if (asBoolean(get('scenario.skip_baseline'))) scenario.skip_baseline = true;
+
+        // monte_carlo
+        (function() {
+          const enabled = asBoolean(get('scenario.monte_carlo.enabled'));
+          if (!enabled) return;
+          const mc = { enabled: true };
+          const iter = asInteger(get('scenario.monte_carlo.iterations')); if (isNumber(iter) && iter >= 1) mc.iterations = iter;
+
+          const s1 = asNumber(get('scenario.monte_carlo.sigma_capex_pv_pct')); if (isNumber(s1) && s1 >= 0) mc.sigma_capex_pv_pct = s1;
+          const s2 = asNumber(get('scenario.monte_carlo.sigma_capex_bess_pct')); if (isNumber(s2) && s2 >= 0) mc.sigma_capex_bess_pct = s2;
+          const s3 = asNumber(get('scenario.monte_carlo.sigma_opex_pv_pct')); if (isNumber(s3) && s3 >= 0) mc.sigma_opex_pv_pct = s3;
+          const s4 = asNumber(get('scenario.monte_carlo.sigma_opex_bess_pct')); if (isNumber(s4) && s4 >= 0) mc.sigma_opex_bess_pct = s4;
+          const s5 = asNumber(get('scenario.monte_carlo.sigma_pv_availability_pct')); if (isNumber(s5) && s5 >= 0) mc.sigma_pv_availability_pct = s5;
+          const s6 = asNumber(get('scenario.monte_carlo.sigma_bess_availability_pct')); if (isNumber(s6) && s6 >= 0) mc.sigma_bess_availability_pct = s6;
+
+          const priceObj = exportMCPriceObject(); if (priceObj) mc.price_scenarios = priceObj;
+          scenario.monte_carlo = mc;
+        })();
+
+        // output (required.directory)
+        (function() {
+          const out = {};
+          const dir = asString(get('scenario.output.directory')); if (isNonEmpty(dir)) out.directory = dir;
+          const exportDisp = asBoolean(get('scenario.output.export_dispatch_sample')); if (exportDisp) out.export_dispatch_sample = true;
+          const cs = asString(get('scenario.output.csv_separator')); if (isNonEmpty(cs)) out.csv_separator = cs;
+          const cd = asString(get('scenario.output.csv_decimal')); if (isNonEmpty(cd)) out.csv_decimal = cd;
+          const tc = asString(get('scenario.output.csv_timestamp_column')); if (isNonEmpty(tc)) out.csv_timestamp_column = tc;
+          const tf = asString(get('scenario.output.csv_timestamp_format')); if (isNonEmpty(tf)) out.csv_timestamp_format = tf;
+
+          // report
+          (function() {
+            const repEnabled = asBoolean(get('scenario.output.report.enabled'));
+            if (!repEnabled &&
+                !isNonEmpty(asString(get('scenario.output.report.company_name'))) &&
+                !isNonEmpty(asString(get('scenario.output.report.logo_path'))) &&
+                !isNonEmpty(asString(get('scenario.output.report.llm_api_key_env'))) &&
+                !isNonEmpty(asString(get('scenario.output.report.llm_model')))) return;
+            const rep = {};
+            if (repEnabled) rep.enabled = true;
+            const cn = asString(get('scenario.output.report.company_name')); if (isNonEmpty(cn)) rep.company_name = cn;
+            const lp = asString(get('scenario.output.report.logo_path')); if (isNonEmpty(lp)) rep.logo_path = lp;
+            const ka = asString(get('scenario.output.report.llm_api_key_env')); if (isNonEmpty(ka)) rep.llm_api_key_env = ka;
+            const lm = asString(get('scenario.output.report.llm_model')); if (isNonEmpty(lm)) rep.llm_model = lm;
+            out.report = rep;
+          })();
+
+          scenario.output = out;
+        })();
+
+        // analyses (optional)
+        (function() {
+          const analyses = {};
+          // eeg_sensitivity
+          (function() {
+            const ena = asBoolean(get('scenario.analyses.eeg_sensitivity.enabled'));
+            const prices = getNumberArray(eegFloorList, {min:0});
+            if (!ena && (!prices || prices.length === 0)) return;
+            const obj = { enabled: !!ena };
+            if (prices && prices.length) obj.floor_prices_eur_per_kwh = prices;
+            analyses.eeg_sensitivity = obj;
+          })();
+          // ppa_collar
+          (function() {
+            const ena = asBoolean(get('scenario.analyses.ppa_collar.enabled'));
+            const floors = getNumberArray(ppaCollarFloorList, {min:0});
+            const caps = getNumberArray(ppaCollarCapList, {min:0});
+            const dur = asInteger(get('scenario.analyses.ppa_collar.duration_years'));
+            const infl = asBoolean(get('scenario.analyses.ppa_collar.inflation_on_ppa'));
+            const goo = asNumber(get('scenario.analyses.ppa_collar.goo_premium_eur_per_kwh'));
+            if (!ena && (!floors?.length) && (!caps?.length) && !isNumber(dur) && !infl && !isNumber(goo)) return;
+            const obj = { enabled: !!ena };
+            if (floors?.length) obj.floor_prices_eur_per_mwh = floors;
+            if (caps?.length) obj.cap_spreads_eur_per_mwh = caps;
+            if (isNumber(dur) && dur >= 1) obj.duration_years = dur;
+            if (infl) obj.inflation_on_ppa = true;
+            if (isNumber(goo) && goo >= 0) obj.goo_premium_eur_per_kwh = goo;
+            analyses.ppa_collar = obj;
+          })();
+          // ppa_baseload
+          (function() {
+            const ena = asBoolean(get('scenario.analyses.ppa_baseload.enabled'));
+            const prices = getNumberArray(ppaBaseloadPriceList, {min:0});
+            const levels = getNumberArray(ppaBaseloadLevelList, {min:0});
+            const dur = asInteger(get('scenario.analyses.ppa_baseload.duration_years'));
+            const infl = asBoolean(get('scenario.analyses.ppa_baseload.inflation_on_ppa'));
+            const goo = asNumber(get('scenario.analyses.ppa_baseload.goo_premium_eur_per_kwh'));
+            if (!ena && (!prices?.length) && (!levels?.length) && !isNumber(dur) && !infl && !isNumber(goo)) return;
+            const obj = { enabled: !!ena };
+            if (prices?.length) obj.ppa_prices_eur_per_mwh = prices;
+            if (levels?.length) obj.baseload_levels_mw = levels;
+            if (isNumber(dur) && dur >= 1) obj.duration_years = dur;
+            if (infl) obj.inflation_on_ppa = true;
+            if (isNumber(goo) && goo >= 0) obj.goo_premium_eur_per_kwh = goo;
+            analyses.ppa_baseload = obj;
+          })();
+          if (Object.keys(analyses).length) scenario.analyses = analyses;
+        })();
+
+        // PROJECT SETTINGS
+        const project_settings = {};
+        project_settings.lifetime_years = asInteger(byId('project_settings.lifetime_years'));
+        project_settings.commissioning_year = asInteger(byId('project_settings.commissioning_year'));
+        project_settings.discount_rate = asNumber(byId('project_settings.discount_rate'));
+        project_settings.operating_mode = byId('project_settings.operating_mode').value;
+
+        project_settings.location = {
+          latitude: asNumber(byId('project_settings.location.latitude')),
+          longitude: asNumber(byId('project_settings.location.longitude')),
+          pvgis_database: asString(byId('project_settings.location.pvgis_database'))
+        };
+
+        // TECHNOLOGY
+        const tech = {};
+        // PV
+        tech.pv = {
+          design: {
+            peak_power_kwp: asNumber(byId('project_settings.technology.pv.design.peak_power_kwp')),
+            mounting_type: byId('project_settings.technology.pv.design.mounting_type').value,
+            azimuth_deg: asNumber(byId('project_settings.technology.pv.design.azimuth_deg')),
+            tilt_deg: asNumber(byId('project_settings.technology.pv.design.tilt_deg')),
+          },
+          performance: {
+            degradation_rate_pct_per_year: asNumber(byId('project_settings.technology.pv.performance.degradation_rate_pct_per_year')),
+            pv_availability_pct: asNumber(byId('project_settings.technology.pv.performance.pv_availability_pct')),
+          },
+          costs: {
+            capex: {},
+            opex: {}
+          }
+        };
+        // optional PV capex/opex props
+        (function() {
+          const pv_capex = tech.pv.costs.capex;
+          const pv_opex = tech.pv.costs.opex;
+          const idsCapex = ['fixed_eur','eur_per_kw','eur_per_kwh','pct_of_capex'];
+          idsCapex.forEach(k => {
+            const el = byId(`project_settings.technology.pv.costs.capex.${k}`);
+            const v = asNumber(el);
+            if (isNumber(v)) pv_capex[k] = v;
+          });
+          const idsOpex = ['fixed_eur','eur_per_kw','eur_per_kwh','pct_of_capex'];
+          idsOpex.forEach(k => {
+            const el = byId(`project_settings.technology.pv.costs.opex.${k}`);
+            const v = asNumber(el);
+            if (isNumber(v)) pv_opex[k] = v;
+          });
+        })();
+
+        // BESS
+        tech.bess = {
+          design_space: {
+            scale_pct_of_pv: getNumberArray(bessScaleList, {min:0, max:200}),
+            e_to_p_ratio_hours: getNumberArray(bessEPRatioList, {exclusiveMin:0}),
+          },
+          performance: {
+            round_trip_efficiency_pct: asNumber(byId('project_settings.technology.bess.performance.round_trip_efficiency_pct')),
+            min_soc_pct: asNumber(byId('project_settings.technology.bess.performance.min_soc_pct')),
+            max_soc_pct: asNumber(byId('project_settings.technology.bess.performance.max_soc_pct')),
+            degradation_rate_pct_per_year: asNumber(byId('project_settings.technology.bess.performance.degradation_rate_pct_per_year')),
+            bess_availability_pct: asNumber(byId('project_settings.technology.bess.performance.bess_availability_pct')),
+          },
+          costs: {
+            capex: {},
+            opex: {},
+          }
+        };
+        (function() {
+          const ds = tech.bess.design_space;
+          const ap = asNumber(byId('project_settings.technology.bess.design_space.absolute_power_kw')); if (isNumber(ap)) ds.absolute_power_kw = ap;
+          const ac = asNumber(byId('project_settings.technology.bess.design_space.absolute_capacity_kwh')); if (isNumber(ac)) ds.absolute_capacity_kwh = ac;
+          const capex = tech.bess.costs.capex;
+          const opex = tech.bess.costs.opex;
+          ['fixed_eur','eur_per_kw','eur_per_kwh','pct_of_capex'].forEach(k => {
+            const v = asNumber(byId(`project_settings.technology.bess.costs.capex.${k}`)); if (isNumber(v)) capex[k] = v;
+          });
+          ['fixed_eur','eur_per_kw','eur_per_kwh','pct_of_capex'].forEach(k => {
+            const v = asNumber(byId(`project_settings.technology.bess.costs.opex.${k}`)); if (isNumber(v)) opex[k] = v;
+          });
+          const optFee = asNumber(byId('project_settings.technology.bess.costs.optimization_fee_pct')); if (isNumber(optFee)) tech.bess.costs.optimization_fee_pct = optFee;
+
+          const repEnabled = asBoolean(byId('project_settings.technology.bess.costs.replacement.enabled'));
+          const rep = {};
+          if (repEnabled) rep.enabled = true;
+          const rYear = asInteger(byId('project_settings.technology.bess.costs.replacement.year')); if (isNumber(rYear) && rYear >= 1) rep.year = rYear;
+          const rfe = asNumber(byId('project_settings.technology.bess.costs.replacement.fixed_eur')); if (isNumber(rfe)) rep.fixed_eur = rfe;
+          const rkw = asNumber(byId('project_settings.technology.bess.costs.replacement.eur_per_kw')); if (isNumber(rkw)) rep.eur_per_kw = rkw;
+          const rkh = asNumber(byId('project_settings.technology.bess.costs.replacement.eur_per_kwh')); if (isNumber(rkh)) rep.eur_per_kwh = rkh;
+          const rpct = asNumber(byId('project_settings.technology.bess.costs.replacement.pct_of_capex')); if (isNumber(rpct)) rep.pct_of_capex = rpct;
+          const rcf = asNumber(byId('project_settings.technology.bess.costs.replacement.capacity_factor_pct')); if (isNumber(rcf)) rep.capacity_factor_pct = rcf;
+          if (repEnabled || Object.keys(rep).length) tech.bess.costs.replacement = rep;
+        })();
+
+        // GRID
+        tech.grid_connection = {
+          max_export_kw: asNumber(byId('project_settings.technology.grid_connection.max_export_kw')),
+          costs: { capex: {}, opex: {} }
+        };
+        const slp = asNumber(byId('project_settings.technology.grid_connection.system_loss_pct')); if (isNumber(slp)) tech.grid_connection.system_loss_pct = slp;
+        (function(){
+          const capex = tech.grid_connection.costs.capex;
+          const opex = tech.grid_connection.costs.opex;
+          ['fixed_eur','eur_per_kw','eur_per_kwh','pct_of_capex'].forEach(k => {
+            const v = asNumber(byId(`project_settings.technology.grid_connection.costs.capex.${k}`)); if (isNumber(v)) capex[k] = v;
+          });
+          ['fixed_eur','eur_per_kw','eur_per_kwh','pct_of_capex'].forEach(k => {
+            const v = asNumber(byId(`project_settings.technology.grid_connection.costs.opex.${k}`)); if (isNumber(v)) opex[k] = v;
+          });
+        })();
+
+        project_settings.technology = tech;
+
+        // FINANCE
+        const fin = {};
+        fin.leverage_pct = asNumber(byId('project_settings.finance.leverage_pct'));
+        fin.interest_rate_pct = asNumber(byId('project_settings.finance.interest_rate_pct'));
+        fin.loan_tenor_years = asInteger(byId('project_settings.finance.loan_tenor_years'));
+        const eqIrr = asNumber(byId('project_settings.finance.equity_irr_target')); fin.equity_irr_target = isNumber(eqIrr) ? eqIrr : null;
+        if (asBoolean(byId('project_settings.finance.debt_uses_p90'))) fin.debt_uses_p90 = true;
+        const dsd = asNumber(byId('project_settings.finance.debt_sizing_downside_pct')); if (isNumber(dsd)) fin.debt_sizing_downside_pct = dsd;
+        fin.inflation_rate = asNumber(byId('project_settings.finance.inflation_rate'));
+
+        // revenue_streams
+        const rev = {};
+        const mk = {};
+        mk.type = byId('project_settings.finance.revenue_streams.marketing.type').value;
+        const mkFloor = asNumber(byId('project_settings.finance.revenue_streams.marketing.floor_price_eur_per_kwh')); if (isNumber(mkFloor)) mk.floor_price_eur_per_kwh = mkFloor;
+        const mkFixY = asInteger(byId('project_settings.finance.revenue_streams.marketing.fixed_price_years')); if (isNumber(mkFixY) && mkFixY >=1) mk.fixed_price_years = mkFixY;
+        if (asBoolean(byId('project_settings.finance.revenue_streams.marketing.eeg_inflation'))) mk.eeg_inflation = true;
+        rev.marketing = mk;
+
+        // optional PPA
+        (function() {
+          const type = byId('project_settings.finance.revenue_streams.ppa.type').value;
+          if (!type) return;
+          const p = { type };
+          const p1 = asNumber(byId('project_settings.finance.revenue_streams.ppa.pay_as_produced_price_eur_per_kwh')); if (isNumber(p1)) p.pay_as_produced_price_eur_per_kwh = p1;
+          const p2 = asNumber(byId('project_settings.finance.revenue_streams.ppa.baseload_mw')); if (isNumber(p2)) p.baseload_mw = p2;
+          const p3 = asNumber(byId('project_settings.finance.revenue_streams.ppa.floor_price_eur_per_kwh')); if (isNumber(p3)) p.floor_price_eur_per_kwh = p3;
+          const p4 = asNumber(byId('project_settings.finance.revenue_streams.ppa.cap_price_eur_per_kwh')); if (isNumber(p4)) p.cap_price_eur_per_kwh = p4;
+          const p5 = asInteger(byId('project_settings.finance.revenue_streams.ppa.duration_years')); if (isNumber(p5) && p5 >=1) p.duration_years = p5;
+          if (asBoolean(byId('project_settings.finance.revenue_streams.ppa.inflation_on_ppa'))) p.inflation_on_ppa = true;
+          const p6 = asNumber(byId('project_settings.finance.revenue_streams.ppa.guarantee_of_origin_eur_per_kwh')); if (isNumber(p6)) p.guarantee_of_origin_eur_per_kwh = p6;
+          rev.ppa = p;
+        })();
+        fin.revenue_streams = rev;
+
+        // price_inputs
+        const pin = {};
+        pin.day_ahead_csv = asString(byId('project_settings.finance.price_inputs.day_ahead_csv'));
+        pin.price_unit = byId('project_settings.finance.price_inputs.price_unit').value;
+        if (asBoolean(byId('project_settings.finance.price_inputs.inflation_on_input_data'))) pin.inflation_on_input_data = true;
+        const pSep = asString(byId('project_settings.finance.price_inputs.csv_separator')); if (isNonEmpty(pSep)) pin.csv_separator = pSep;
+        const pDec = asString(byId('project_settings.finance.price_inputs.csv_decimal')); if (isNonEmpty(pDec)) pin.csv_decimal = pDec;
+        const pCol = asString(byId('project_settings.finance.price_inputs.csv_timestamp_column')); if (isNonEmpty(pCol)) pin.csv_timestamp_column = pCol;
+        const pFmt = asString(byId('project_settings.finance.price_inputs.csv_timestamp_format')); if (isNonEmpty(pFmt)) pin.csv_timestamp_format = pFmt;
+        const scenArr = exportPriceScenariosArray(); if (scenArr) pin.scenarios = scenArr;
+        fin.price_inputs = pin;
+
+        // tax
+        const tax = {};
+        tax.afa_years_pv = asInteger(byId('project_settings.finance.tax.afa_years_pv'));
+        tax.afa_years_bess = asInteger(byId('project_settings.finance.tax.afa_years_bess'));
+        tax.gewerbesteuer_hebesatz = asNumber(byId('project_settings.finance.tax.gewerbesteuer_hebesatz'));
+        tax.gewerbesteuer_messzahl = asNumber(byId('project_settings.finance.tax.gewerbesteuer_messzahl'));
+        const kst = asNumber(byId('project_settings.finance.tax.koerperschaftsteuer_pct')); if (isNumber(kst)) tax.koerperschaftsteuer_pct = kst;
+        const soz = asNumber(byId('project_settings.finance.tax.solidaritaetszuschlag_pct')); if (isNumber(soz)) tax.solidaritaetszuschlag_pct = soz;
+        fin.tax = tax;
+
+        project_settings.finance = fin;
+
+        // Final object
+        return { scenario, project_settings };
+      }
+
+      // ====== Validation per Step ======
+      function addError(errors, fieldLabel, msg) {
+        errors.push(`${fieldLabel}: ${msg}`);
+      }
+      function validateStep(step) {
+        const errors = [];
+        const J = buildJSON();
+
+        const has = (path) => {
+          const parts = path.split('.');
+          let cur = J;
+          for (const p of parts) {
+            if (cur == null || !(p in cur)) return false;
+            cur = cur[p];
+          }
+          return cur !== undefined && cur !== null && (typeof cur !== 'string' || cur.trim() !== '');
+        };
+        const get = (path) => {
+          const parts = path.split('.');
+          let cur = J;
+          for (const p of parts) {
+            if (cur == null) return undefined;
+            cur = cur[p];
+          }
+          return cur;
+        };
+
+        // Step-specific checks (subset of full schema; fokussiert auf required + Kerngrenzen)
+        if (step === 1) {
+          if (!has('scenario.name')) addError(errors, 'Szenario-Name', 'Pflichtfeld');
+          if (!has('scenario.output.directory')) addError(errors, 'Output-Verzeichnis', 'Pflichtfeld');
+
+          if (get('scenario.monte_carlo')?.enabled) {
+            const it = get('scenario.monte_carlo.iterations');
+            if (!(Number.isInteger(it) && it >= 1)) addError(errors, 'Monte-Carlo Iterationen', '≥ 1');
+            // price_scenarios weights 0..1 (werden beim Build gefiltert)
+          }
+        }
+
+        if (step === 2) {
+          const eega = get('scenario.analyses.eeg_sensitivity');
+          if (eega?.enabled) {
+            if (!Array.isArray(eega.floor_prices_eur_per_kwh) || eega.floor_prices_eur_per_kwh.length < 1) {
+              addError(errors, 'EEG Floor-Preise', 'mind. 1 Wert erforderlich');
+            }
+          }
+          const ppaCol = get('scenario.analyses.ppa_collar');
+          if (ppaCol?.enabled) {
+            if (!Array.isArray(ppaCol.floor_prices_eur_per_mwh) || ppaCol.floor_prices_eur_per_mwh.length < 1)
+              addError(errors, 'PPA Collar Floors', 'mind. 1 erforderlich');
+            if (!Array.isArray(ppaCol.cap_spreads_eur_per_mwh) || ppaCol.cap_spreads_eur_per_mwh.length < 1)
+              addError(errors, 'PPA Collar Caps', 'mind. 1 erforderlich');
+            if (!(Number.isInteger(ppaCol.duration_years) && ppaCol.duration_years >= 1))
+              addError(errors, 'PPA Collar Dauer', '≥ 1');
+            if (!(get('scenario.analyses.ppa_collar.goo_premium_eur_per_kwh') === undefined) && !(get('scenario.analyses.ppa_collar.goo_premium_eur_per_kwh') >= 0))
+              addError(errors, 'PPA Collar GOO', '≥ 0');
+          }
+          const ppaBase = get('scenario.analyses.ppa_baseload');
+          if (ppaBase?.enabled) {
+            if (!Array.isArray(ppaBase.ppa_prices_eur_per_mwh) || ppaBase.ppa_prices_eur_per_mwh.length < 1)
+              addError(errors, 'PPA Baseload Preise', 'mind. 1 erforderlich');
+            if (!Array.isArray(ppaBase.baseload_levels_mw) || ppaBase.baseload_levels_mw.length < 1)
+              addError(errors, 'PPA Baseload Level', 'mind. 1 erforderlich');
+            if (!(Number.isInteger(ppaBase.duration_years) && ppaBase.duration_years >= 1))
+              addError(errors, 'PPA Baseload Dauer', '≥ 1');
+            if (!(get('scenario.analyses.ppa_baseload.goo_premium_eur_per_kwh') === undefined) && !(get('scenario.analyses.ppa_baseload.goo_premium_eur_per_kwh') >= 0))
+              addError(errors, 'PPA Baseload GOO', '≥ 0');
+          }
+        }
+
+        if (step === 3) {
+          if (!(Number.isInteger(get('project_settings.lifetime_years')) && get('project_settings.lifetime_years') >= 1))
+            addError(errors, 'Lebensdauer', '≥ 1');
+          if (!(Number.isInteger(get('project_settings.commissioning_year')) && get('project_settings.commissioning_year') >= 2020))
+            addError(errors, 'Inbetriebnahme-Jahr', '≥ 2020');
+          if (!(isNumber(get('project_settings.discount_rate')) && get('project_settings.discount_rate') >= 0))
+            addError(errors, 'Diskontsatz', '≥ 0');
+          if (!get('project_settings.operating_mode'))
+            addError(errors, 'Betriebsmodus', 'erforderlich');
+          if (!(isNumber(get('project_settings.location.latitude')) && get('project_settings.location.latitude') >= -90 && get('project_settings.location.latitude') <= 90))
+            addError(errors, 'Latitude', 'zwischen -90 und 90');
+          if (!(isNumber(get('project_settings.location.longitude')) && get('project_settings.location.longitude') >= -180 && get('project_settings.location.longitude') <= 180))
+            addError(errors, 'Longitude', 'zwischen -180 und 180');
+          if (!isNonEmpty(get('project_settings.location.pvgis_database')))
+            addError(errors, 'PVGIS Datenbank', 'erforderlich');
+        }
+
+        if (step === 4) {
+          const d = get('project_settings.technology.pv.design') || {};
+          if (!(isNumber(d.peak_power_kwp) && d.peak_power_kwp >= 0)) addError(errors, 'PV Peak Power', '≥ 0');
+          if (!d.mounting_type) addError(errors, 'PV Montageart', 'erforderlich');
+          if (!(isNumber(d.azimuth_deg) && d.azimuth_deg >= -180 && d.azimuth_deg <= 180)) addError(errors, 'PV Azimut', '−180..180');
+          if (!(isNumber(d.tilt_deg) && d.tilt_deg >= 0 && d.tilt_deg <= 90)) addError(errors, 'PV Neigung', '0..90');
+
+          const p = get('project_settings.technology.pv.performance') || {};
+          if (!(isNumber(p.degradation_rate_pct_per_year) && p.degradation_rate_pct_per_year >= 0 && p.degradation_rate_pct_per_year <= 100))
+            addError(errors, 'PV Degradation', '0..100');
+          if (!(isNumber(p.pv_availability_pct) && p.pv_availability_pct >= 0 && p.pv_availability_pct <= 100))
+            addError(errors, 'PV Verfügbarkeit', '0..100');
+        }
+
+        if (step === 5) {
+          const ds = get('project_settings.technology.bess.design_space') || {};
+          if (!Array.isArray(ds.scale_pct_of_pv) || ds.scale_pct_of_pv.length < 1)
+            addError(errors, 'BESS Skalierung', 'mind. 1 Wert');
+          if (!Array.isArray(ds.e_to_p_ratio_hours) || ds.e_to_p_ratio_hours.length < 1)
+            addError(errors, 'BESS E/P Ratio', 'mind. 1 Wert');
+
+          const bp = get('project_settings.technology.bess.performance') || {};
+          const reqNum01 = (v) => isNumber(v) && v >= 0 && v <= 100;
+          if (!reqNum01(bp.round_trip_efficiency_pct)) addError(errors, 'BESS Round-Trip', '0..100');
+          if (!reqNum01(bp.min_soc_pct)) addError(errors, 'BESS Min SoC', '0..100');
+          if (!reqNum01(bp.max_soc_pct)) addError(errors, 'BESS Max SoC', '0..100');
+          if (!reqNum01(bp.degradation_rate_pct_per_year)) addError(errors, 'BESS Degradation', '0..100');
+          if (!reqNum01(bp.bess_availability_pct)) addError(errors, 'BESS Verfügbarkeit', '0..100');
+        }
+
+        if (step === 6) {
+          const maxExp = get('project_settings.technology.grid_connection.max_export_kw');
+          if (!(isNumber(maxExp) && maxExp > 0)) addError(errors, 'Max Export kW', '> 0');
+          const slp = get('project_settings.technology.grid_connection.system_loss_pct');
+          if (!(slp === undefined || (isNumber(slp) && slp >= 0 && slp <= 100)))
+            addError(errors, 'Systemverluste', '0..100');
+        }
+
+        if (step === 7) {
+          const fin = get('project_settings.finance') || {};
+          if (!(isNumber(fin.leverage_pct) && fin.leverage_pct >= 0 && fin.leverage_pct <= 100))
+            addError(errors, 'Leverage', '0..100');
+          if (!(isNumber(fin.interest_rate_pct) && fin.interest_rate_pct >= 0))
+            addError(errors, 'Zinssatz', '≥ 0');
+          if (!(Number.isInteger(fin.loan_tenor_years) && fin.loan_tenor_years >= 1))
+            addError(errors, 'Loan Tenor', '≥ 1');
+          if (!(isNumber(fin.inflation_rate) && fin.inflation_rate >= 0))
+            addError(errors, 'Inflation', '≥ 0');
+          if (!fin.revenue_streams?.marketing?.type)
+            addError(errors, 'Marketing Typ', 'erforderlich');
+
+          const pin = fin.price_inputs || {};
+          if (!isNonEmpty(pin.day_ahead_csv))
+            addError(errors, 'Day-Ahead CSV', 'erforderlich');
+          if (!pin.price_unit)
+            addError(errors, 'Preis-Einheit', 'erforderlich');
+          const scenArr = pin.scenarios || [];
+          if (!Array.isArray(scenArr) || scenArr.length < 1)
+            addError(errors, 'Price Scenarios', 'mind. 1 Szenario');
+        }
+
+        return errors;
+      }
+
+      // ====== Preview ======
+      function updatePreviewIfNeeded() {
+        if (currentStep === 8) {
+          const J = buildJSON();
+          $('#preview').textContent = JSON.stringify(J, null, 2);
+        }
+      }
+
+      // ====== Import / Export ======
+      function download(filename, content) {
+        const blob = new Blob([content], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function sanitizeFilename(name) {
+        return (name || '').trim().toLowerCase()
+          .replace(/\s+/g, '-')
+          .replace(/[^a-z0-9._-]/g, '')
+          .replace(/-+/g, '-')
+          .substring(0, 80);
+      }
+
+      function exportJSON() {
+        // Full validation across all steps
+        for (let s = 1; s <= maxStep; s++) {
+          const errs = validateStep(s);
+          if (errs.length) {
+            showBanner(`Bitte korrigiere Schritt ${s}: \n• ` + errs.join('\n• '), 'error');
+            showStep(s);
+            return;
+          }
+        }
+        hideBanner();
+        const J = buildJSON();
+        const scenName = J.scenario?.name || 'scenario';
+        const filename = `input-${sanitizeFilename(scenName)}-${new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,14)}.json`;
+        download(filename, JSON.stringify(J, null, 2));
+        showBanner('JSON exportiert. Speichere die Datei in deinem OneDrive‑Input‑Ordner.', 'success');
+      }
+
+      // Import handler
+      $('#btnImport').addEventListener('click', () => $('#importFile').click());
+      $('#importFile').addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+          const txt = await file.text();
+          const data = JSON.parse(txt);
+          loadJSONIntoForm(data);
+          showBanner('JSON erfolgreich importiert.', 'success');
+        } catch (err) {
+          console.error(err);
+          showBanner('Fehler beim Import: Ungültige JSON-Datei.', 'error');
+        } finally {
+          e.target.value = '';
+        }
+      });
+
+      // ====== Load JSON → Form ======
+      function setVal(id, val) {
+        const el = byId(id);
+        if (!el) return;
+        if (el.type === 'checkbox') {
+          el.checked = !!val;
+        } else if (el.tagName === 'SELECT') {
+          el.value = (val ?? '').toString();
+        } else {
+          el.value = (val ?? '').toString();
+        }
+      }
+      function loadJSONIntoForm(J) {
+        // Reset lists
+        [mcPriceList, eegFloorList, ppaCollarFloorList, ppaCollarCapList, ppaBaseloadPriceList, ppaBaseloadLevelList, bessScaleList, bessEPRatioList, priceScenarioList]
+          .forEach(el => el.innerHTML = '');
+
+        // SCENARIO
+        setVal('scenario.name', J.scenario?.name);
+        setVal('scenario.skip_baseline', J.scenario?.skip_baseline);
+
+        // output
+        const out = J.scenario?.output || {};
+        setVal('scenario.output.directory', out.directory);
+        setVal('scenario.output.export_dispatch_sample', out.export_dispatch_sample);
+        setVal('scenario.output.csv_separator', out.csv_separator);
+        setVal('scenario.output.csv_decimal', out.csv_decimal);
+        setVal('scenario.output.csv_timestamp_column', out.csv_timestamp_column);
+        setVal('scenario.output.csv_timestamp_format', out.csv_timestamp_format);
+        const rep = out.report || {};
+        setVal('scenario.output.report.enabled', rep.enabled);
+        setVal('scenario.output.report.company_name', rep.company_name);
+        setVal('scenario.output.report.logo_path', rep.logo_path);
+        setVal('scenario.output.report.llm_api_key_env', rep.llm_api_key_env);
+        setVal('scenario.output.report.llm_model', rep.llm_model);
+
+        // monte_carlo
+        const mc = J.scenario?.monte_carlo || {};
+        setVal('scenario.monte_carlo.enabled', mc.enabled);
+        setVal('scenario.monte_carlo.iterations', mc.iterations);
+        setVal('scenario.monte_carlo.sigma_capex_pv_pct', mc.sigma_capex_pv_pct);
+        setVal('scenario.monte_carlo.sigma_capex_bess_pct', mc.sigma_capex_bess_pct);
+        setVal('scenario.monte_carlo.sigma_opex_pv_pct', mc.sigma_opex_pv_pct);
+        setVal('scenario.monte_carlo.sigma_opex_bess_pct', mc.sigma_opex_bess_pct);
+        setVal('scenario.monte_carlo.sigma_pv_availability_pct', mc.sigma_pv_availability_pct);
+        setVal('scenario.monte_carlo.sigma_bess_availability_pct', mc.sigma_bess_availability_pct);
+        if (mc.price_scenarios && typeof mc.price_scenarios === 'object') {
+          Object.entries(mc.price_scenarios).forEach(([name, v]) => addMCPriceRow({ name, csv_column: v.csv_column, weight: v.weight }));
+        }
+
+        // analyses
+        const ana = J.scenario?.analyses || {};
+        if (ana.eeg_sensitivity) {
+          setVal('scenario.analyses.eeg_sensitivity.enabled', ana.eeg_sensitivity.enabled);
+          (ana.eeg_sensitivity.floor_prices_eur_per_kwh || []).forEach(v => addNumberItem(eegFloorList, v));
+        }
+        if (ana.ppa_collar) {
+          setVal('scenario.analyses.ppa_collar.enabled', ana.ppa_collar.enabled);
+          (ana.ppa_collar.floor_prices_eur_per_mwh || []).forEach(v => addNumberItem(ppaCollarFloorList, v));
+          (ana.ppa_collar.cap_spreads_eur_per_mwh || []).forEach(v => addNumberItem(ppaCollarCapList, v));
+          setVal('scenario.analyses.ppa_collar.duration_years', ana.ppa_collar.duration_years);
+          setVal('scenario.analyses.ppa_collar.inflation_on_ppa', ana.ppa_collar.inflation_on_ppa);
+          setVal('scenario.analyses.ppa_collar.goo_premium_eur_per_kwh', ana.ppa_collar.goo_premium_eur_per_kwh);
+        }
+        if (ana.ppa_baseload) {
+          setVal('scenario.analyses.ppa_baseload.enabled', ana.ppa_baseload.enabled);
+          (ana.ppa_baseload.ppa_prices_eur_per_mwh || []).forEach(v => addNumberItem(ppaBaseloadPriceList, v));
+          (ana.ppa_baseload.baseload_levels_mw || []).forEach(v => addNumberItem(ppaBaseloadLevelList, v));
+          setVal('scenario.analyses.ppa_baseload.duration_years', ana.ppa_baseload.duration_years);
+          setVal('scenario.analyses.ppa_baseload.inflation_on_ppa', ana.ppa_baseload.inflation_on_ppa);
+          setVal('scenario.analyses.ppa_baseload.goo_premium_eur_per_kwh', ana.ppa_baseload.goo_premium_eur_per_kwh);
+        }
+
+        // PROJECT SETTINGS
+        const PS = J.project_settings || {};
+        setVal('project_settings.lifetime_years', PS.lifetime_years);
+        setVal('project_settings.commissioning_year', PS.commissioning_year);
+        setVal('project_settings.discount_rate', PS.discount_rate);
+        setVal('project_settings.operating_mode', PS.operating_mode);
+
+        const L = PS.location || {};
+        setVal('project_settings.location.latitude', L.latitude);
+        setVal('project_settings.location.longitude', L.longitude);
+        setVal('project_settings.location.pvgis_database', L.pvgis_database);
+
+        // PV
+        const PV = PS.technology?.pv || {};
+        const PVD = PV.design || {};
+        setVal('project_settings.technology.pv.design.peak_power_kwp', PVD.peak_power_kwp);
+        setVal('project_settings.technology.pv.design.mounting_type', PVD.mounting_type);
+        setVal('project_settings.technology.pv.design.azimuth_deg', PVD.azimuth_deg);
+        setVal('project_settings.technology.pv.design.tilt_deg', PVD.tilt_deg);
+
+        const PVP = PV.performance || {};
+        setVal('project_settings.technology.pv.performance.degradation_rate_pct_per_year', PVP.degradation_rate_pct_per_year);
+        setVal('project_settings.technology.pv.performance.pv_availability_pct', PVP.pv_availability_pct);
+
+        const PVCX = PV.costs?.capex || {};
+        const PVOX = PV.costs?.opex || {};
+        ['fixed_eur','eur_per_kw','eur_per_kwh','pct_of_capex'].forEach(k => {
+          setVal(`project_settings.technology.pv.costs.capex.${k}`, PVCX[k]);
+          setVal(`project_settings.technology.pv.costs.opex.${k}`, PVOX[k]);
+        });
+
+        // BESS
+        const BESS = PS.technology?.bess || {};
+        const BSD = BESS.design_space || {};
+        (BSD.scale_pct_of_pv || []).forEach(v => addNumberItem(bessScaleList, v));
+        (BSD.e_to_p_ratio_hours || []).forEach(v => addNumberItem(bessEPRatioList, v));
+        setVal('project_settings.technology.bess.design_space.absolute_power_kw', BSD.absolute_power_kw);
+        setVal('project_settings.technology.bess.design_space.absolute_capacity_kwh', BSD.absolute_capacity_kwh);
+
+        const BSP = BESS.performance || {};
+        setVal('project_settings.technology.bess.performance.round_trip_efficiency_pct', BSP.round_trip_efficiency_pct);
+        setVal('project_settings.technology.bess.performance.min_soc_pct', BSP.min_soc_pct);
+        setVal('project_settings.technology.bess.performance.max_soc_pct', BSP.max_soc_pct);
+        setVal('project_settings.technology.bess.performance.degradation_rate_pct_per_year', BSP.degradation_rate_pct_per_year);
+        setVal('project_settings.technology.bess.performance.bess_availability_pct', BSP.bess_availability_pct);
+
+        const BECX = BESS.costs?.capex || {};
+        const BEOX = BESS.costs?.opex || {};
+        ['fixed_eur','eur_per_kw','eur_per_kwh','pct_of_capex'].forEach(k => {
+          setVal(`project_settings.technology.bess.costs.capex.${k}`, BECX[k]);
+          setVal(`project_settings.technology.bess.costs.opex.${k}`, BEOX[k]);
+        });
+        setVal('project_settings.technology.bess.costs.optimization_fee_pct', BESS.costs?.optimization_fee_pct);
+        const REP = BESS.costs?.replacement || {};
+        setVal('project_settings.technology.bess.costs.replacement.enabled', REP.enabled);
+        setVal('project_settings.technology.bess.costs.replacement.year', REP.year);
+        setVal('project_settings.technology.bess.costs.replacement.fixed_eur', REP.fixed_eur);
+        setVal('project_settings.technology.bess.costs.replacement.eur_per_kw', REP.eur_per_kw);
+        setVal('project_settings.technology.bess.costs.replacement.eur_per_kwh', REP.eur_per_kwh);
+        setVal('project_settings.technology.bess.costs.replacement.pct_of_capex', REP.pct_of_capex);
+        setVal('project_settings.technology.bess.costs.replacement.capacity_factor_pct', REP.capacity_factor_pct);
+
+        // GRID
+        const GRID = PS.technology?.grid_connection || {};
+        setVal('project_settings.technology.grid_connection.max_export_kw', GRID.max_export_kw);
+        setVal('project_settings.technology.grid_connection.system_loss_pct', GRID.system_loss_pct);
+        const GCX = GRID.costs?.capex || {};
+        const GOX = GRID.costs?.opex || {};
+        ['fixed_eur','eur_per_kw','eur_per_kwh','pct_of_capex'].forEach(k => {
+          setVal(`project_settings.technology.grid_connection.costs.capex.${k}`, GCX[k]);
+          setVal(`project_settings.technology.grid_connection.costs.opex.${k}`, GOX[k]);
+        });
+
+        // FINANCE
+        const FIN = PS.finance || {};
+        setVal('project_settings.finance.leverage_pct', FIN.leverage_pct);
+        setVal('project_settings.finance.interest_rate_pct', FIN.interest_rate_pct);
+        setVal('project_settings.finance.loan_tenor_years', FIN.loan_tenor_years);
+        // equity_irr_target: null → leer
+        if (FIN.equity_irr_target !== null && FIN.equity_irr_target !== undefined) setVal('project_settings.finance.equity_irr_target', FIN.equity_irr_target);
+        else setVal('project_settings.finance.equity_irr_target', '');
+        setVal('project_settings.finance.debt_uses_p90', FIN.debt_uses_p90);
+        setVal('project_settings.finance.debt_sizing_downside_pct', FIN.debt_sizing_downside_pct);
+        setVal('project_settings.finance.inflation_rate', FIN.inflation_rate);
+
+        const RM = FIN.revenue_streams?.marketing || {};
+        setVal('project_settings.finance.revenue_streams.marketing.type', RM.type);
+        setVal('project_settings.finance.revenue_streams.marketing.floor_price_eur_per_kwh', RM.floor_price_eur_per_kwh);
+        setVal('project_settings.finance.revenue_streams.marketing.fixed_price_years', RM.fixed_price_years);
+        setVal('project_settings.finance.revenue_streams.marketing.eeg_inflation', RM.eeg_inflation);
+
+        const RP = FIN.revenue_streams?.ppa || {};
+        setVal('project_settings.finance.revenue_streams.ppa.type', RP.type);
+        setVal('project_settings.finance.revenue_streams.ppa.pay_as_produced_price_eur_per_kwh', RP.pay_as_produced_price_eur_per_kwh);
+        setVal('project_settings.finance.revenue_streams.ppa.baseload_mw', RP.baseload_mw);
+        setVal('project_settings.finance.revenue_streams.ppa.floor_price_eur_per_kwh', RP.floor_price_eur_per_kwh);
+        setVal('project_settings.finance.revenue_streams.ppa.cap_price_eur_per_kwh', RP.cap_price_eur_per_kwh);
+        setVal('project_settings.finance.revenue_streams.ppa.duration_years', RP.duration_years);
+        setVal('project_settings.finance.revenue_streams.ppa.inflation_on_ppa', RP.inflation_on_ppa);
+        setVal('project_settings.finance.revenue_streams.ppa.guarantee_of_origin_eur_per_kwh', RP.guarantee_of_origin_eur_per_kwh);
+
+        const PI = FIN.price_inputs || {};
+        setVal('project_settings.finance.price_inputs.day_ahead_csv', PI.day_ahead_csv);
+        setVal('project_settings.finance.price_inputs.price_unit', PI.price_unit);
+        setVal('project_settings.finance.price_inputs.inflation_on_input_data', PI.inflation_on_input_data);
+        setVal('project_settings.finance.price_inputs.csv_separator', PI.csv_separator);
+        setVal('project_settings.finance.price_inputs.csv_decimal', PI.csv_decimal);
+        setVal('project_settings.finance.price_inputs.csv_timestamp_column', PI.csv_timestamp_column);
+        setVal('project_settings.finance.price_inputs.csv_timestamp_format', PI.csv_timestamp_format);
+        (PI.scenarios || []).forEach(row => addPriceScenarioRow(row));
+
+        const TAX = FIN.tax || {};
+        setVal('project_settings.finance.tax.afa_years_pv', TAX.afa_years_pv);
+        setVal('project_settings.finance.tax.afa_years_bess', TAX.afa_years_bess);
+        setVal('project_settings.finance.tax.gewerbesteuer_hebesatz', TAX.gewerbesteuer_hebesatz);
+        setVal('project_settings.finance.tax.gewerbesteuer_messzahl', TAX.gewerbesteuer_messzahl);
+        setVal('project_settings.finance.tax.koerperschaftsteuer_pct', TAX.koerperschaftsteuer_pct);
+        setVal('project_settings.finance.tax.solidaritaetszuschlag_pct', TAX.solidaritaetszuschlag_pct);
+
+        // Preview ggf. updaten
+        updatePreviewIfNeeded();
+      }
+
+      // ====== Persist (localStorage) ======
+      function persistState() {
+        if (!togglePersist.checked) return;
+        try {
+          const J = buildJSON();
+          localStorage.setItem(PERSIST_KEY, JSON.stringify(J));
+        } catch (e) {
+          console.warn('Persist failed', e);
+        }
+      }
+      function tryLoadPersisted() {
+        try {
+          const txt = localStorage.getItem(PERSIST_KEY);
+          if (!txt) return;
+          const data = JSON.parse(txt);
+          loadJSONIntoForm(data);
+          togglePersist.checked = true;
+        } catch {}
+      }
+
+      // ====== Navigation buttons ======
+      $('#btnNext').addEventListener('click', () => {
+        if (currentStep <= maxStep) {
+          const errs = validateStep(currentStep);
+          if (errs.length) {
+            showBanner('Bitte korrigiere:\n• ' + errs.join('\n• '), 'error');
+            return;
+          }
+          hideBanner();
+          if (currentStep === maxStep) {
+            exportJSON();
+          } else {
+            showStep(currentStep + 1);
+          }
+        }
+      });
+      $('#btnPrev').addEventListener('click', () => {
+        if (currentStep > 1) showStep(currentStep - 1);
+      });
+      // Allow clicking done/active steps to navigate back
+      $$('.stepper .step').forEach(el => {
+        el.addEventListener('click', () => {
+          const n = Number(el.dataset.step);
+          if (n <= currentStep) showStep(n);
+        });
+      });
+
+      // ====== Export button in toolbar ======
+      $('#btnExport').addEventListener('click', exportJSON);
+
+      // Persist on input change
+      app.addEventListener('input', () => { persistState(); });
+      app.addEventListener('change', () => { persistState(); });
+
+      // ====== Init ======
+      tryLoadPersisted();
+      // Start with one default item for certain required arrays (UX)
+      if (!bessScaleList.children.length) addNumberItem(bessScaleList, '');
+      if (!bessEPRatioList.children.length) addNumberItem(bessEPRatioList, '');
+      if (!priceScenarioList.children.length) addPriceScenarioRow();
+      showStep(1);
+    })();
+  </script>
+</body>
+</html>

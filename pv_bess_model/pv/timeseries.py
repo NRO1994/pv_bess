@@ -155,12 +155,12 @@ def align_weather_to_forecast_year(
     dow_weather = datetime.date(weather_year, 1, 1).weekday()
     dow_forecast = datetime.date(forecast_year, 1, 1).weekday()
     shift_days = (dow_forecast - dow_weather) % 7
-    shift_hours = shift_days * INTERVALS_PER_DAY
+    shift_timesteps = shift_days * INTERVALS_PER_DAY
 
-    if shift_hours == 0:
+    if shift_timesteps == 0:
         return weather_ts.copy()
 
-    return np.concatenate([weather_ts[shift_hours:], weather_ts[:shift_hours]])
+    return np.concatenate([weather_ts[shift_timesteps:], weather_ts[:shift_timesteps]])
 
 
 # ---------------------------------------------------------------------------

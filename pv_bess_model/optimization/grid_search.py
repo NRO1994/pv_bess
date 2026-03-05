@@ -121,7 +121,7 @@ class GridSearchConfig:
     fixed_prices_yearly:
         Per-year EEG/PPA floor prices (€/kWh). 0.0 after the fixed-price
         period. Length must equal ``lifetime_years``.
-    baseload_kw:
+    baseload_mw:
         in PPA agreed baseload level
     lifetime_years:
         Project lifetime in years.
@@ -207,7 +207,7 @@ class GridSearchConfig:
     # Pre-computed per-year prices (€/kWh)
     spot_prices_yearly: list[np.ndarray]
     fixed_prices_yearly: list[float]
-    baseload_kw: float
+    baseload_mw: float
 
     # Finance
     lifetime_years: int
@@ -376,7 +376,7 @@ class _GridPointArgs:
     cap_prices_yearly: list  # list[float]
     offline_days_bess_yearly: list  # list[set[int]]
     offline_days_pv_yearly: list  # list[set[int]]
-    baseload_kw: float  # Baseload level defined for ppa
+    baseload_mw: float  # Baseload level defined for ppa
 
     # Pre-computed costs
     capex_pv: float
@@ -469,7 +469,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         pv_base_timeseries_year=args.pv_base_timeseries_year,
         spot_prices_yearly=args.spot_prices_yearly,
         fixed_prices_yearly=args.fixed_prices_yearly,
-        baseload_kw=args.baseload_kw,
+        baseload_kw=args.baseload_mw,
         offline_days_yearly=args.offline_days_bess_yearly,
         pv_offline_days_yearly=args.offline_days_pv_yearly,
         goo_prices_yearly=args.goo_prices_yearly,
@@ -698,7 +698,7 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     pv_base_timeseries_year=config.pv_base_timeseries_year,
                     spot_prices_yearly=config.spot_prices_yearly,
                     fixed_prices_yearly=config.fixed_prices_yearly,
-                    baseload_kw=100,
+                    baseload_mw=config.baseload_mw,
                     goo_prices_yearly=config.goo_prices_yearly if config.goo_prices_yearly else [0.0] * config.lifetime_years,
                     cap_prices_yearly=config.cap_prices_yearly if config.cap_prices_yearly else [0.0] * config.lifetime_years,
                     offline_days_bess_yearly=offline_days_bess_yearly,
