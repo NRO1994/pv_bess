@@ -42,13 +42,20 @@
           erzeugt, es sind also alle Daten bereits dafür aufgearbeitet. Es bedarf jedoch KEINER Backward-Compatibility,
           deswegen kannst du den Code direkt so ändern, dass er für die neue Ausgabe im Rahmen dieser interaktiven
           HTML-Dashboards passend ist:
-            - Tab 1: Link zum Input. Fokus auf relevante Größen (PV Kapazität, BESS design space,
-              Vermarktungsstrategien), Test der LLM, Datum
+            - Tab 1: Darstellung des Szenarioinputs. Fokus auf relevante Größen (PV Kapazität, BESS design space,
+              Vermarktungsstrategien), Datum der Erstellung/Simulation. Wenn Internet verfügbar, Einblendung einer
+              OpenStreetMap-Karte, in der eine Markierung auf den Standort der PV-Anlage gesetzt ist. Ansonsten der LLM
+              Text, in dem Schlüsselparameter fett gedruckt sind
             - Tab 2: Darstellen der Inputzeitreihen aus den CSV. Nutze dafür die bereits vorhandenen charts zur PV
               Energie, sowie Strompreisszenarien. Ebenfalls soll der Input durch einen LLM Text erklärt werden
             - Tab 3: Analyse der EEG (Falls im Input angefragt). Diagramm, plus erklärenden Text.
             - Tab 4: Analyse der PPA-Collar (Falls im Input angefragt). Diagramm, plus erklärenden Text.
             - Tab 5: Analyse des PPA-Baseload (Falls im Input angefragt). Diagramm, plus erklärenden Text.
+            - Tab 6: Cashflow Analyse des Grid-Search Optimums. Dies stellt den Case bei dem Central-Preis Szenario dar.
+              Das Diagramm soll ein gestapeltes Säulendiagramm sein, bei dem der PV-, BESS-Green- und BESS Grau-Revenue
+              positiv dargestellt ist, und alle Ausgaben (Capex, OPEX, Debt, Tax, sowie gegebenenfalls auch grid costs
+              und ppa-balance costs) als negative Säulen. Der Text der LLM soll dabei alle KPI's des "metric" objects
+              beinhalten, und beschreiben, wie der Cashflow einzuschätzen ist.
 - [ ] Die höchste Priorität hat es, den Code auf ein Level zu bringen, in dem alle Unit-Tests erfolgreich laufen. Ich
   habe durch die Integration Test Suite manuell viele kleinere Fehler behoben, aber nicht die Unit Tests-angepasst.
   Deine Aufgabe ist es, die Unit-Tests so anzupassen, dass sie alle wieder erfolgreich sind. Verändere nicht die Logik!
