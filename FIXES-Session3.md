@@ -4,17 +4,17 @@
 
 - [ ] Einbettung in den User Flow stellt ein komplett neues Feature dar. Im Allgemeinen soll es eine stand-alone offline
   HTML Datei sein, die die Input JSON auf basis des Schemas (siehe .docs.input_schema.json) erstellt. Die HTML-Datei
-  stelle ich allen KollegInnen zur Verfügung, die mit dem Tool arbeiten sollen. Sobald sie das Template ausgefüllt
-  haben, lassen sie mir die resultierende JSON Datei zukommen. Ich führe die Simulation lokal durch, und teile den
+  stelle ich allen KollegInnen zur Verfügung, die mit dem Tool arbeiten sollen. Sobald sie das HTML-Template ausgefüllt
+  haben, erstellt dieses das valide Input JSON, dass lassen sie mir dann manuell (zB über E-Mail) zukommen. Ich führe die Simulation lokal durch, und teile den
   Report mit ihnen. Dieser Report soll ebenfalls eine einzelne HTML-Datei sein, die ein interaktives Dashboard enthält,
   in dem alle Ergebnisse einzusehen sind. Beide HTML-Dateien sollen kein Backend, keine Ports, keine externen
-  Abhängigkeiten haben. Keine Azure App Registration. Es soll ein reiner Offline-Betrieb im Browser sein. Kompatibilität
+  Abhängigkeiten haben. Keine Azure App Registration. Es soll ein reiner single-file Offline-Betrieb im Browser sein. Kompatibilität
   zu aktuellen Edge/Chrome/Firefox, Sprache Deutsch. Das Layout für beide HTML-Dateien soll professionell im corporate
   design (siehe .docs.features.08_pdf_report.md) gehalten sein. Keine Emojis, aber das Logo des Tools
   (.data/tool_logo.png) sowie das Unternehmenslogo (.data.stadtwerke_luebeck.png) sollen sichtbar sein.
     - Input HTML (Ein gutes Beispiel findest du hier: pv_bess_model.output.report.templates.copilot_sample.html): Die
       Input-Datei soll intuitiv, Nutzer zentriert und leicht in der Bedienung sein, es soll Spaß machen,
-      sich mit diesem Thema zu beschäftigen. Gruppiere alle Inputparameter sinnvoll in verschiedene naheliegende
+      sich mit dieser Eingabe zu beschäftigen. Gruppiere alle Inputparameter sinnvoll in verschiedene naheliegende
       Cluster. Diese Datei sollst du einmalig erstellen, ich verteile sie dann manuell weiter. Folgende Parameter werden
       direkt im Code gesetzt, auf diese soll der User keinen Zugriff haben:
         - `scenario.output`: Da die Simulation bei mir lokal läuft, sollen sie kein Output relevanten Felder ausfüllen.
