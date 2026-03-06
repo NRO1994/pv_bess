@@ -319,14 +319,37 @@ Die bestehende Funktion `_generate_report()` (main.py:1146) wird umgebaut:
 2. LLM-Texte via Anthropic API (optional)
 3. `build_report()` → PDF via weasyprint
 
-**Neuer Flow:**
-1. `collect_report_data()` → `HtmlReportData` Objekt
-2. `save_rendered_prompt()` → `{scenario}_llm_prompt.md` im Output-Dir
-3. `load_llm_response()` → Versuche `{scenario}_llm_response.json` zu laden
-4. `build_html_report()` → `{scenario}_report.html`
+**Neuer Flow (interaktiver Einzellauf):**
+1. `collect_report_data()` → `HtmlReportData` Objekt (ohne LLM-Texte)
+2. `create_all_charts()` → PNG-Dateien (optional, weiterhin fuer standalone-Nutzung)
+3. `render_prompt(data)` → befuellter Prompt-String
+4. `save_rendered_prompt()` → `{scenario}_llm_prompt.md` im Output-Dir
+5. **Programm pausiert** mit interaktivem Konsolen-Prompt:
+   ```
+   ════════════════════════════════════════════════════════════
+     LLM-Prompt gespeichert: .data/outputs/my_scenario/my_scenario_llm_prompt.md
+
+     Bitte kopieren Sie den Prompt in Copilot und speichern
+     Sie die Antwort als JSON-Datei.
+
+     Pfad zur LLM-Antwort-Datei (Enter zum Ueberspringen): _
+   ════════════════════════════════════════════════════════════
+   ```
+6. **User gibt Pfad ein** → `load_llm_response(path)` → LLM-Texte in `data.llm_texts`
+   **User drueckt Enter ohne Eingabe** → Platzhalter-Texte bleiben
+7. `build_html_report(data)` → `{scenario}_report.html`
+
+Die `input()`-Abfrage blockiert den Prozess, bis der User antwortet. Da die
+Simulation zu diesem Zeitpunkt bereits abgeschlossen ist, gehen keine Daten
+verloren. Der Prozess haelt lediglich die aggregierten Ergebnisse im Speicher
+und wartet auf die LLM-Response.
 
 **Aufgaben:**
-- [ ] `_generate_report()` auf neuen Flow umbauen
+- [ ] `_generate_report()` auf neuen Flow umbauen mit `input()`-Pause
+- [ ] `input()`-Prompt mit klarer Anleitung (Pfad zum Prompt, erwartetes Format)
+- [ ] Pfad-Validierung: Pruefen ob Datei existiert, ob JSON valide ist
+- [ ] Bei ungueltigem Pfad: Fehlermeldung + erneute Eingabe-Aufforderung
+      (max. 3 Versuche, danach Fallback auf Platzhalter-Texte)
 - [ ] `charts.py` weiterhin fuer PNG-Export nutzen (Charts werden weiterhin als
       PNG gespeichert, zusaetzlich zum interaktiven HTML)
 - [ ] `pdf_builder.py` entfernen (keine Backward-Compatibility noetig)
@@ -335,8 +358,10 @@ Die bestehende Funktion `_generate_report()` (main.py:1146) wird umgebaut:
 - [ ] CLI-Flags anpassen:
   - `--no-report`: Kein HTML-Report (wie bisher kein PDF)
   - `--no-llm` entfernen (nicht mehr relevant, da kein API-Zugriff)
-  - Neues optionales Flag: `--llm-response <path>` fuer explizite Angabe der
-    LLM-Response-Datei (default: auto-detect im Output-Dir)
+  - `--skip-llm-prompt`: Ueberspringt die interaktive Pause, erzeugt Report
+    direkt mit Platzhalter-Texten (nuetzlich fuer Batch-/Testlaeufe)
+  - `--llm-response <path>`: Pfad zur LLM-Response-Datei direkt als CLI-Argument
+    angeben (ueberspringt die interaktive Pause ebenfalls)
 
 ### 3.3 Aufraeum-Arbeiten
 
@@ -379,16 +404,22 @@ Darstellung.
 
 ### 4.2 LLM-Workflow testen
 
-Manueller Test des vollstaendigen LLM-Workflows:
-1. Simulation laeuft → `{scenario}_llm_prompt.md` wird erzeugt
-2. Prompt manuell in Copilot Chat einfuegen
-3. Copilot-Antwort als `{scenario}_llm_response.json` speichern
-4. Simulation erneut laufen (oder separates Skript) → HTML-Report mit LLM-Texten
+Manueller Test des interaktiven LLM-Workflows im selben Prozess:
+1. Simulation laeuft bis zur Konsolen-Pause
+2. `{scenario}_llm_prompt.md` oeffnen, Inhalt in Copilot Chat einfuegen
+3. Copilot-Antwort als JSON-Datei speichern
+4. Pfad in der Konsole eingeben → HTML-Report mit LLM-Texten wird erzeugt
 
 **Aufgaben:**
 - [ ] Workflow-Dokumentation in README oder separater .md-Datei
+- [ ] Test: User gibt gueltigen Pfad ein → Texte werden korrekt eingebunden
+- [ ] Test: User gibt ungueltigen Pfad ein → Fehlermeldung, erneute Eingabe
+- [ ] Test: User drueckt Enter ohne Eingabe → Platzhalter-Texte
+- [ ] Test: `--skip-llm-prompt` Flag → keine Pause, Platzhalter-Texte
+- [ ] Test: `--llm-response <path>` Flag → keine Pause, Texte aus Datei
 - [ ] Validierung: Was passiert bei fehlerhafter/unvollstaendiger LLM-Response?
-- [ ] Fallback-Texte fuer alle Tabs wenn keine LLM-Response vorhanden
+      (fehlende Keys → Fallback-Text fuer betroffene Tabs)
+- [ ] Validierung: Was passiert bei nicht-JSON-Inhalt? (Fehlermeldung + Fallback)
 
 ### 4.3 Cashflow-Saeulendiagramm Feinschliff
 
@@ -452,38 +483,51 @@ Aufmerksamkeit:
 1. User fuehrt Simulation aus:
    $ python -m pv_bess_model.main --scenario my_scenario.json
 
-2. Output-Directory enthaelt:
+2. Simulation laeuft (Grid Search, ggf. Monte Carlo, CSV-Output, ...)
+
+3. Programm pausiert mit Konsolen-Prompt:
+   ════════════════════════════════════════════════════════════
+     LLM-Prompt gespeichert:
+     .data/outputs/my_scenario/my_scenario_llm_prompt.md
+
+     Bitte kopieren Sie den Prompt in Copilot und speichern
+     Sie die Antwort als JSON-Datei.
+
+     Pfad zur LLM-Antwort-Datei (Enter zum Ueberspringen): _
+   ════════════════════════════════════════════════════════════
+
+4a. User oeffnet my_scenario_llm_prompt.md, kopiert in Copilot,
+    speichert die JSON-Antwort, gibt den Pfad ein → Enter
+
+4b. User drueckt direkt Enter → Report wird ohne LLM-Texte erzeugt
+
+5. Output-Directory enthaelt:
    - my_scenario_summary.csv
    - my_scenario_cashflows.csv
    - my_scenario_grid_search.csv
    - my_scenario_dispatch_sample.csv
-   - my_scenario_llm_prompt.md          ← NEU
-   - my_scenario_report.html            ← NEU (ohne LLM-Texte, mit Platzhaltern)
-   - charts/*.png                       ← wie bisher
-
-3. User kopiert Inhalt von my_scenario_llm_prompt.md in Copilot Chat
-
-4. User speichert Copilot-Antwort als my_scenario_llm_response.json im Output-Dir
-
-5. User fuehrt erneut aus (oder separates Kommando):
-   $ python -m pv_bess_model.main --scenario my_scenario.json
-   → HTML-Report wird mit LLM-Texten neu generiert
-
-Alternative: Beim ersten Lauf wird der Report mit Platzhalter-Texten erzeugt,
-der User kann die LLM-Response nachtraeglich hinzufuegen und den Report
-separat neu bauen lassen.
+   - my_scenario_llm_prompt.md
+   - my_scenario_report.html            ← Interaktives Dashboard
+   - charts/*.png
 ```
 
-## Offene Design-Entscheidungen
+**Batch-Modus (ohne interaktive Pause):**
+```bash
+# Report ohne LLM-Texte (Platzhalter)
+python -m pv_bess_model.main --scenario my.json --skip-llm-prompt
 
-1. **Soll der HTML-Report auch ohne LLM-Texte vollstaendig nutzbar sein?**
-   → Ja, Platzhalter-Texte wie "Beschreibung folgt nach LLM-Auswertung" anzeigen.
+# Report mit vorbereiteter LLM-Antwort
+python -m pv_bess_model.main --scenario my.json --llm-response antwort.json
+```
 
-2. **Separates CLI-Kommando fuer Report-Rebuild?**
-   → Optional: `--rebuild-report` Flag, das nur den HTML-Report neu generiert
-   (ohne Simulation), nuetzlich nach Einfuegen der LLM-Response.
+## Design-Entscheidungen
 
-3. **Charts: matplotlib-PNG oder rein Canvas-basiert?**
-   → Beides: matplotlib-PNGs werden weiterhin erzeugt (fuer standalone-Nutzung),
-   die HTML-Datei rendert alle Charts interaktiv via Canvas/JavaScript.
-   Die matplotlib-Charts sind damit optional und koennen mit `--no-charts` unterdrueckt werden.
+1. **HTML-Report ohne LLM-Texte:** Vollstaendig nutzbar mit Platzhalter-Texten
+   ("Beschreibung nicht verfuegbar – LLM-Prompt-Workflow nicht durchgefuehrt").
+
+2. **Kein erneuter Simulationslauf noetig:** Die `input()`-Pause haelt alle
+   Ergebnisse im Speicher. Der HTML-Report wird im selben Prozess finalisiert.
+
+3. **Charts: matplotlib-PNG + Canvas-basiert:** matplotlib-PNGs werden weiterhin
+   erzeugt (standalone-Nutzung). Die HTML-Datei rendert alle Charts interaktiv
+   via Canvas/JavaScript.
