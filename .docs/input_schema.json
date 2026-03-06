@@ -53,28 +53,6 @@
             "sigma_bess_availability_pct": {
               "type": "number",
               "minimum": 0
-            },
-            "price_scenarios": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object",
-                "required": [
-                  "csv_column",
-                  "weight"
-                ],
-                "properties": {
-                  "csv_column": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "weight": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
-                  }
-                },
-                "additionalProperties": false
-              }
             }
           },
           "additionalProperties": false
@@ -163,8 +141,8 @@
               "type": "object",
               "required": [
                 "enabled",
-                "floor_prices_eur_per_mwh",
-                "cap_spreads_eur_per_mwh",
+                "floor_prices_eur_per_kwh",
+                "cap_spreads_eur_per_kwh",
                 "duration_years",
                 "goo_premium_eur_per_kwh"
               ],
@@ -172,7 +150,7 @@
                 "enabled": {
                   "type": "boolean"
                 },
-                "floor_prices_eur_per_mwh": {
+                "floor_prices_eur_per_kwh": {
                   "type": "array",
                   "items": {
                     "type": "number",
@@ -180,7 +158,7 @@
                   },
                   "minItems": 1
                 },
-                "cap_spreads_eur_per_mwh": {
+                "cap_spreads_eur_per_kwh": {
                   "type": "array",
                   "items": {
                     "type": "number",
@@ -206,7 +184,7 @@
               "type": "object",
               "required": [
                 "enabled",
-                "ppa_prices_eur_per_mwh",
+                "ppa_prices_eur_per_kwh",
                 "baseload_levels_mw",
                 "duration_years",
                 "goo_premium_eur_per_kwh"
@@ -215,7 +193,7 @@
                 "enabled": {
                   "type": "boolean"
                 },
-                "ppa_prices_eur_per_mwh": {
+                "ppa_prices_eur_per_kwh": {
                   "type": "array",
                   "items": {
                     "type": "number",
@@ -565,14 +543,14 @@
                           "type": "number",
                           "minimum": 0,
                           "maximum": 1
+                        },
+                        "optimization_fee_pct": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
                         }
                       },
                       "additionalProperties": false
-                    },
-                    "optimization_fee_pct": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 100
                     },
                     "replacement": {
                       "type": "object",
@@ -842,40 +820,9 @@
             "price_inputs": {
               "type": "object",
               "required": [
-                "day_ahead_csv",
-                "price_unit"
+                "scenarios"
               ],
               "properties": {
-                "day_ahead_csv": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "price_unit": {
-                  "type": "string",
-                  "enum": [
-                    "eur_per_mwh",
-                    "eur_per_kwh"
-                  ]
-                },
-                "inflation_on_input_data": {
-                  "type": "boolean"
-                },
-                "csv_separator": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "csv_decimal": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "csv_timestamp_column": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "csv_timestamp_format": {
-                  "type": "string",
-                  "minLength": 1
-                },
                 "scenarios": {
                   "type": "array",
                   "items": {
@@ -884,7 +831,12 @@
                       "name",
                       "csv_column",
                       "weather_year",
-                      "weight"
+                      "weight",
+                      "price_csv",
+                      "csv_separator",
+                      "csv_decimal",
+                      "csv_timestamp_column",
+                      "csv_timestamp_format"
                     ],
                     "properties": {
                       "name": {
@@ -913,13 +865,6 @@
                       "price_csv": {
                         "type": "string",
                         "minLength": 1
-                      },
-                      "price_unit": {
-                        "type": "string",
-                        "enum": [
-                          "eur_per_mwh",
-                          "eur_per_kwh"
-                        ]
                       },
                       "inflation_on_input_data": {
                         "type": "boolean"
