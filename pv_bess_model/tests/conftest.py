@@ -51,7 +51,7 @@ import pytest
 def data_dir() -> Path:
     """Absolute path to the project-level ``.data/`` reference data directory.
 
-    Contains static reference files (e.g. ``reference_prices.csv``) that are
+    Contains static reference files (e.g. ``integration_suite_prices.csv``) that are
     shared across integration tests. Unit tests should use ``tmp_path`` for
     ephemeral synthetic data instead.
 

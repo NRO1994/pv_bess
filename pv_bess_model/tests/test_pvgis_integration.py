@@ -182,7 +182,7 @@ class TestPVGISClientIntegration:
         """The reference_prices.csv in .data/ can be loaded by load_price_csv."""
         from pv_bess_model.config.loader import load_price_csv
 
-        csv_path = data_dir / "reference_prices.csv"
+        csv_path = data_dir / "integration_test_inputs" / "suite" / "integration_suite_prices.csv"
         assert csv_path.exists(), f"Reference CSV not found: {csv_path}"
 
         price_data = load_price_csv(
