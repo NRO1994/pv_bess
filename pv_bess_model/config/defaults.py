@@ -334,5 +334,17 @@ REPORT_LLM_CACHE_FILENAME: str = "llm_cache.json"
 REPORT_PDF_FILENAME_SUFFIX: str = "_report.pdf"
 """Suffix appended to the scenario name for the PDF report file."""
 
+REPORT_HTML_FILENAME_SUFFIX: str = "_report.html"
+"""Suffix appended to the scenario name for the HTML report file."""
+
+REPORT_LLM_PROMPT_FILENAME: str = "_llm_prompt.md"
+"""Suffix for the rendered LLM prompt file saved in the output directory."""
+
+REPORT_LLM_RESPONSE_FILENAME: str = "_llm_response.json"
+"""Suffix for the LLM response JSON file expected in the output directory."""
+
 REPORT_MODEL_VERSION: str = "0.1.0"
 """Version string displayed on the report cover page."""
+
+PRICE_DATA_ORIGIN: str = "Prognos 2026"
+"""Source attribution for the price input data."""

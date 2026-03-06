@@ -54,7 +54,7 @@ die im Browser (Edge/Chrome/Firefox) offline funktioniert.
 ## Phase 1: Datenaufbereitung und LLM-Prompt-Template
 
 ### Ziel
-Alle Simulationsergebnisse in eine JSON-Struktur ueberfu ehren, die als Datenbasis
+Alle Simulationsergebnisse in eine JSON-Struktur ueberfuehren, die als Datenbasis
 fuer den HTML-Report dient. Ausserdem das LLM-Prompt-Template erstellen, das spaeter
 manuell an Copilot uebergeben wird.
 
@@ -94,7 +94,9 @@ class HtmlReportData:
 
     # Zeitreihen-Daten (Tab 2)
     pv_monthly_by_year: dict[int, list[float]]  # {weather_year: [jan..dec in GWh]}
+    pv_production_model: str # wert aus pvgis_database des input json
     price_scenario_annual_means: list[dict]  # [{name, weather_year, means: [y1..yn]}]
+    price_origin: str # wert aus config/defaults.py: PRICE_DATA_ORIGIN ist zu setzen als: "Prognos 2026"
 
     # Sensitivity-Ergebnisse (Tab 3-5, optional)
     eeg_sensitivity: list[dict] | None  # [{floor_ct_kwh, irr_mean, irr_std}]
@@ -131,7 +133,7 @@ class HtmlReportData:
       `AnnualResult`, Szenario-Config, etc.) die Daten extrahiert
 - [ ] Base64-Encoding der Logo-PNGs (`.data/tool_logo.png`, `.data/logo_stadtwerke_luebeck.png`)
 - [ ] Cashflow-Daten aufbereiten: Revenue-Breakdown (PV, BESS-Green, BESS-Grey) als positive
-      Werte, Kosten (CAPEX, OPEX, Debt, Tax, Grid-Import, Baseload-Matching) als negative Werte
+      Werte, Kosten (CAPEX, OPEX, Debt, Tax, Depreciation, Grid-Import, Baseload-Matching) als negative Werte
       – passend fuer das gestapelte Saeulendiagramm
 - [ ] `HtmlReportData` als JSON serialisierbar machen (fuer Einbettung in HTML)
 
