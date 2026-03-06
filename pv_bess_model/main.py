@@ -551,7 +551,8 @@ def run(args: argparse.Namespace) -> int:
     bess_availability_pct = float(bess_perf.get("bess_availability_pct", DEFAULT_BESS_AVAILABILITY_PCT))
 
     bess_costs = bess.get("costs", {})
-    optimization_fee_pct = float(bess_costs.get("optimization_fee_pct", 0.0))
+    bess_opex = bess_costs.get("opex", {})
+    optimization_fee_pct = float(bess_opex.get("optimization_fee_pct", 0.0))
     replacement_cfg = bess_costs.get("replacement", {})
     replacement_enabled = bool(replacement_cfg.get("enabled", False))
     replacement_year = int(replacement_cfg.get("year", 0))
@@ -735,7 +736,6 @@ def run(args: argparse.Namespace) -> int:
             price_data = load_price_csv(
                 path=sc.price_csv,
                 required_columns=[sc.csv_column],
-                price_unit=sc.price_unit,
                 commissioning_year=commissioning_year,
                 delimiter=sc.csv_separator,
                 decimal=sc.csv_decimal,
@@ -930,18 +930,18 @@ def run(args: argparse.Namespace) -> int:
             collar_cfg = analyses_cfg["ppa_collar"]
             logger.info(
                 "Running PPA Collar analysis (%d × %d = %d combinations)",
-                len(collar_cfg["floor_prices_eur_per_mwh"]),
-                len(collar_cfg["cap_spreads_eur_per_mwh"]),
-                len(collar_cfg["floor_prices_eur_per_mwh"])
-                * len(collar_cfg["cap_spreads_eur_per_mwh"]),
+                len(collar_cfg["floor_prices_eur_per_kwh"]),
+                len(collar_cfg["cap_spreads_eur_per_kwh"]),
+                len(collar_cfg["floor_prices_eur_per_kwh"])
+                * len(collar_cfg["cap_spreads_eur_per_kwh"]),
             )
             collar_result = run_ppa_collar_analysis(
                 base_config=grid_search_config,
                 optimal=optimal_setup,
                 mc_params=mc_params,
                 scenario_prices=scenarios_list,
-                floor_prices_eur_per_mwh=collar_cfg["floor_prices_eur_per_mwh"],
-                cap_spreads_eur_per_mwh=collar_cfg["cap_spreads_eur_per_mwh"],
+                floor_prices_eur_per_kwh=collar_cfg["floor_prices_eur_per_kwh"],
+                cap_spreads_eur_per_kwh=collar_cfg["cap_spreads_eur_per_kwh"],
                 duration_years=collar_cfg["duration_years"],
                 inflation_on_ppa=collar_cfg.get("inflation_on_ppa", False),
                 goo_premium_eur_per_kwh=collar_cfg["goo_premium_eur_per_kwh"],
@@ -952,9 +952,9 @@ def run(args: argparse.Namespace) -> int:
             bl_cfg = analyses_cfg["ppa_baseload"]
             logger.info(
                 "Running PPA Baseload analysis (%d × %d = %d combinations)",
-                len(bl_cfg["ppa_prices_eur_per_mwh"]),
+                len(bl_cfg["ppa_prices_eur_per_kwh"]),
                 len(bl_cfg["baseload_levels_mw"]),
-                len(bl_cfg["ppa_prices_eur_per_mwh"])
+                len(bl_cfg["ppa_prices_eur_per_kwh"])
                 * len(bl_cfg["baseload_levels_mw"]),
             )
             baseload_result = run_ppa_baseload_analysis(
@@ -962,7 +962,7 @@ def run(args: argparse.Namespace) -> int:
                 optimal=optimal_setup,
                 mc_params=mc_params,
                 scenario_prices=scenarios_list,
-                ppa_prices_eur_per_mwh=bl_cfg["ppa_prices_eur_per_mwh"],
+                ppa_prices_eur_per_kwh=bl_cfg["ppa_prices_eur_per_kwh"],
                 baseload_levels_mw=bl_cfg["baseload_levels_mw"],
                 duration_years=bl_cfg["duration_years"],
                 inflation_on_ppa=bl_cfg.get("inflation_on_ppa", False),

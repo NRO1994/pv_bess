@@ -115,7 +115,6 @@ class MarketPrices:
 def load_market_prices(
     csv_path: str | Path,
     required_columns: list[str],
-    price_unit: str,
     lifetime_years: int,
     commissioning_year: int | None = None,
     delimiter: str = CSV_DELIMITER,
@@ -130,14 +129,14 @@ def load_market_prices(
     and extends every required column to ``lifetime_years`` full years using
     :func:`config.loader.extend_price_timeseries`.
 
+    All price values are expected in €/kWh.
+
     Parameters
     ----------
     csv_path:
         Path to the day-ahead price CSV file.
     required_columns:
         Column names to load (e.g. ``["MID"]`` or ``["LOW", "MID", "HIGH"]``).
-    price_unit:
-        Unit of the price values in the CSV (``"eur_per_mwh"`` or ``"eur_per_kwh"``).
     lifetime_years:
         Number of project years to cover.
     commissioning_year:
@@ -162,7 +161,6 @@ def load_market_prices(
     price_data: PriceData = load_price_csv(
         path=csv_path,
         required_columns=required_columns,
-        price_unit=price_unit,
         commissioning_year=commissioning_year,
         delimiter=delimiter,
         decimal=decimal,
@@ -218,21 +216,3 @@ def get_year_prices(
     return prices[start:end]
 
 
-def collect_scenario_columns(
-    price_scenarios: dict[str, dict[str, Any]],
-) -> list[str]:
-    """Extract the list of CSV column names from the MC price_scenarios block.
-
-    Parameters
-    ----------
-    price_scenarios:
-        The ``scenario.monte_carlo.price_scenarios`` dict, e.g.::
-
-            {"low": {"csv_column": "LOW", "weight": 0.25}, ...}
-
-    Returns
-    -------
-    list[str]
-        Sorted, deduplicated list of CSV column names to load.
-    """
-    return sorted({v["csv_column"] for v in price_scenarios.values()})

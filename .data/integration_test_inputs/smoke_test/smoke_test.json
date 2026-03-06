@@ -9,21 +9,7 @@
       "sigma_opex_pv_pct": 3.0,
       "sigma_opex_bess_pct": 8.0,
       "sigma_pv_availability_pct": 2.0,
-      "sigma_bess_availability_pct": 2.0,
-      "price_scenarios": {
-        "low": {
-          "csv_column": "LOW",
-          "weight": 0.25
-        },
-        "mid": {
-          "csv_column": "MID",
-          "weight": 0.5
-        },
-        "high": {
-          "csv_column": "HIGH",
-          "weight": 0.25
-        }
-      }
+      "sigma_bess_availability_pct": 2.0
     },
     "output": {
       "directory": ".data/output/",
@@ -138,9 +124,47 @@
         }
       },
       "price_inputs": {
-        "day_ahead_csv": "data/smoke_test_prices.csv",
-        "price_unit": "eur_per_mwh",
-        "inflation_on_input_data": false
+        "scenarios": [
+          {
+            "name": "Low",
+            "csv_column": "LOW",
+            "weather_year": 2018,
+            "weight": 0.25,
+            "is_central": false,
+            "price_csv": "data/smoke_test_prices.csv",
+            "inflation_on_input_data": false,
+            "csv_separator": ";",
+            "csv_decimal": ",",
+            "csv_timestamp_column": "timestamp",
+            "csv_timestamp_format": "%Y-%m-%dT%H:%M:%S"
+          },
+          {
+            "name": "Mid",
+            "csv_column": "MID",
+            "weather_year": 2016,
+            "weight": 0.50,
+            "is_central": true,
+            "price_csv": "data/smoke_test_prices.csv",
+            "inflation_on_input_data": false,
+            "csv_separator": ";",
+            "csv_decimal": ",",
+            "csv_timestamp_column": "timestamp",
+            "csv_timestamp_format": "%Y-%m-%dT%H:%M:%S"
+          },
+          {
+            "name": "High",
+            "csv_column": "HIGH",
+            "weather_year": 2015,
+            "weight": 0.25,
+            "is_central": false,
+            "price_csv": "data/smoke_test_prices.csv",
+            "inflation_on_input_data": false,
+            "csv_separator": ";",
+            "csv_decimal": ",",
+            "csv_timestamp_column": "timestamp",
+            "csv_timestamp_format": "%Y-%m-%dT%H:%M:%S"
+          }
+        ]
       },
       "tax": {
         "afa_years_pv": 20,

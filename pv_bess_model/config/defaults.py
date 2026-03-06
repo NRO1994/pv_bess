@@ -169,12 +169,6 @@ DEFAULT_GEWERBESTEUER_MESSZAHL: float = 0.035
 # Price / market defaults
 # ---------------------------------------------------------------------------
 
-PRICE_UNIT_EUR_PER_MWH: str = "eur_per_mwh"
-"""Identifier for electricity prices denominated in €/MWh."""
-
-PRICE_UNIT_EUR_PER_KWH: str = "eur_per_kwh"
-"""Identifier for electricity prices denominated in €/kWh."""
-
 MWH_TO_KWH: float = 1000.0
 """Conversion factor from MWh to kWh (multiply MWh value by this)."""
 

@@ -51,18 +51,6 @@ _MONTE_CARLO = {
         "sigma_opex_bess_pct": {"type": "number", "minimum": 0},
         "sigma_pv_availability_pct": {"type": "number", "minimum": 0},
         "sigma_bess_availability_pct": {"type": "number", "minimum": 0},
-        "price_scenarios": {
-            "type": "object",
-            "additionalProperties": {
-                "type": "object",
-                "required": ["csv_column", "weight"],
-                "properties": {
-                    "csv_column": {"type": "string", "minLength": 1},
-                    "weight": {"type": "number", "minimum": 0, "maximum": 1},
-                },
-                "additionalProperties": False,
-            },
-        },
     },
     "additionalProperties": False,
 }
@@ -112,19 +100,19 @@ _PPA_COLLAR = {
     "type": "object",
     "required": [
         "enabled",
-        "floor_prices_eur_per_mwh",
-        "cap_spreads_eur_per_mwh",
+        "floor_prices_eur_per_kwh",
+        "cap_spreads_eur_per_kwh",
         "duration_years",
         "goo_premium_eur_per_kwh",
     ],
     "properties": {
         "enabled": {"type": "boolean"},
-        "floor_prices_eur_per_mwh": {
+        "floor_prices_eur_per_kwh": {
             "type": "array",
             "items": {"type": "number", "minimum": 0},
             "minItems": 1,
         },
-        "cap_spreads_eur_per_mwh": {
+        "cap_spreads_eur_per_kwh": {
             "type": "array",
             "items": {"type": "number", "minimum": 0},
             "minItems": 1,
@@ -140,14 +128,14 @@ _PPA_BASELOAD = {
     "type": "object",
     "required": [
         "enabled",
-        "ppa_prices_eur_per_mwh",
+        "ppa_prices_eur_per_kwh",
         "baseload_levels_mw",
         "duration_years",
         "goo_premium_eur_per_kwh",
     ],
     "properties": {
         "enabled": {"type": "boolean"},
-        "ppa_prices_eur_per_mwh": {
+        "ppa_prices_eur_per_kwh": {
             "type": "array",
             "items": {"type": "number", "minimum": 0},
             "minItems": 1,
@@ -300,13 +288,24 @@ _BESS_REPLACEMENT = {
     "additionalProperties": False,
 }
 
+_BESS_OPEX_COMPONENT = {
+    "type": "object",
+    "properties": {
+        "fixed_eur": _NON_NEGATIVE_NUMBER,
+        "eur_per_kw": _NON_NEGATIVE_NUMBER,
+        "eur_per_kwh": _NON_NEGATIVE_NUMBER,
+        "pct_of_capex": {"type": "number", "minimum": 0, "maximum": 1},
+        "optimization_fee_pct": {"type": "number", "minimum": 0, "maximum": 100},
+    },
+    "additionalProperties": False,
+}
+
 _BESS_COSTS = {
     "type": "object",
     "required": ["capex", "opex"],
     "properties": {
         "capex": _COST_COMPONENT,
-        "opex": _COST_COMPONENT,
-        "optimization_fee_pct": {"type": "number", "minimum": 0, "maximum": 100},
+        "opex": _BESS_OPEX_COMPONENT,
         "replacement": _BESS_REPLACEMENT,
     },
     "additionalProperties": False,
@@ -410,7 +409,17 @@ _REVENUE_STREAMS = {
 
 _PRICE_WEATHER_SCENARIO = {
     "type": "object",
-    "required": ["name", "csv_column", "weather_year", "weight"],
+    "required": [
+        "name",
+        "csv_column",
+        "weather_year",
+        "weight",
+        "price_csv",
+        "csv_separator",
+        "csv_decimal",
+        "csv_timestamp_column",
+        "csv_timestamp_format",
+    ],
     "properties": {
         "name": {"type": "string", "minLength": 1},
         "label": {"type": "string"},
@@ -418,12 +427,7 @@ _PRICE_WEATHER_SCENARIO = {
         "weather_year": {"type": "integer", "minimum": 1900},
         "weight": {"type": "number", "minimum": 0, "maximum": 1},
         "is_central": {"type": "boolean"},
-        # Per-scenario overrides (inherited from parent block if absent)
         "price_csv": {"type": "string", "minLength": 1},
-        "price_unit": {
-            "type": "string",
-            "enum": ["eur_per_mwh", "eur_per_kwh"],
-        },
         "inflation_on_input_data": {"type": "boolean"},
         "csv_separator": {"type": "string", "minLength": 1},
         "csv_decimal": {"type": "string", "minLength": 1},
@@ -435,18 +439,8 @@ _PRICE_WEATHER_SCENARIO = {
 
 _PRICE_INPUTS = {
     "type": "object",
-    "required": ["day_ahead_csv", "price_unit"],
+    "required": ["scenarios"],
     "properties": {
-        "day_ahead_csv": {"type": "string", "minLength": 1},
-        "price_unit": {
-            "type": "string",
-            "enum": ["eur_per_mwh", "eur_per_kwh"],
-        },
-        "inflation_on_input_data": {"type": "boolean"},
-        "csv_separator": {"type": "string", "minLength": 1},
-        "csv_decimal": {"type": "string", "minLength": 1},
-        "csv_timestamp_column": {"type": "string", "minLength": 1},
-        "csv_timestamp_format": {"type": "string", "minLength": 1},
         "scenarios": {
             "type": "array",
             "items": _PRICE_WEATHER_SCENARIO,
@@ -608,7 +602,6 @@ def validate_scenario(data: dict) -> None:
     # Cross-field semantic validation
     # ------------------------------------------------------------------
     _validate_scenarios(data)
-    _validate_mc_weights(data)
     _validate_soc_limits(data)
     _validate_baseload_ppa(data)
     _validate_bess_only(data)
@@ -651,23 +644,6 @@ def _validate_scenarios(data: dict) -> None:
             f"project_settings.finance.price_inputs.scenarios."
         )
 
-
-def _validate_mc_weights(data: dict) -> None:
-    """Validate MC price_scenarios weights sum to 1.0 (legacy format)."""
-    from pv_bess_model.config.defaults import MC_WEIGHT_TOLERANCE
-
-    mc = data.get("scenario", {}).get("monte_carlo", {})
-    if not mc.get("enabled", False):
-        return
-    price_scenarios = mc.get("price_scenarios", {})
-    if not price_scenarios:
-        return
-
-    total_weight = sum(v.get("weight", 0.0) for v in price_scenarios.values())
-    if abs(total_weight - 1.0) > MC_WEIGHT_TOLERANCE:
-        raise ValueError(
-            f"MC price_scenarios weights must sum to 1.0, got {total_weight:.6f}."
-        )
 
 
 def _validate_soc_limits(data: dict) -> None:

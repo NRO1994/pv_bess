@@ -132,8 +132,8 @@ MASTER_SCENARIO: dict = {
                     "opex": {
                         "fixed_eur": 5_000.0,
                         "pct_of_capex": 0.015,
+                        "optimization_fee_pct": 3.0,
                     },
-                    "optimization_fee_pct": 3.0,
                     "replacement": {
                         "enabled": True,
                         "year": 12,
@@ -178,8 +178,6 @@ MASTER_SCENARIO: dict = {
                 },
             },
             "price_inputs": {
-                "day_ahead_csv": "PLACEHOLDER",
-                "price_unit": "eur_per_mwh",
                 "scenarios": [
                     {
                         "name": "Low",
@@ -189,7 +187,6 @@ MASTER_SCENARIO: dict = {
                         "weight": 0.33,
                         "is_central": False,
                         "price_csv": "PLACEHOLDER",
-                        "price_unit": "eur_per_mwh",
                         "inflation_on_input_data": False,
                         "csv_separator": ";",
                         "csv_decimal": ",",
@@ -204,7 +201,6 @@ MASTER_SCENARIO: dict = {
                         "weight": 0.34,
                         "is_central": False,
                         "price_csv": "PLACEHOLDER",
-                        "price_unit": "eur_per_mwh",
                         "inflation_on_input_data": False,
                         "csv_separator": ";",
                         "csv_decimal": ",",
@@ -219,7 +215,6 @@ MASTER_SCENARIO: dict = {
                         "weight": 0.33,
                         "is_central": True,
                         "price_csv": "PLACEHOLDER",
-                        "price_unit": "eur_per_mwh",
                         "inflation_on_input_data": False,
                         "csv_separator": ";",
                         "csv_decimal": ",",

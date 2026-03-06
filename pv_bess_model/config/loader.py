@@ -25,10 +25,7 @@ from pv_bess_model.config.defaults import (
     CSV_INPUT_DECIMAL_SEPARATOR,
     CSV_TIMESTAMP_COLUMN,
     DEFAULT_DEBT_SIZING_DOWNSIDE_PCT,
-    KWH_TO_MWH,
     MIN_PRICE_TIMESERIES_HOURS,
-    PRICE_UNIT_EUR_PER_KWH,
-    PRICE_UNIT_EUR_PER_MWH,
 )
 from pv_bess_model.config.schema import validate_scenario
 
@@ -112,16 +109,6 @@ class ScenarioConfig:
         return bool(self.monte_carlo.get("enabled", False))
 
     @property
-    def price_csv_path(self) -> str:
-        """Relative or absolute path to the day-ahead price CSV file."""
-        return self.finance["price_inputs"]["day_ahead_csv"]
-
-    @property
-    def price_unit(self) -> str:
-        """Price unit string: ``"eur_per_mwh"`` or ``"eur_per_kwh"``."""
-        return self.finance["price_inputs"]["price_unit"]
-
-    @property
     def pv_peak_kwp(self) -> float:
         """PV peak power in kWp."""
         return float(self.pv["design"]["peak_power_kwp"])
@@ -151,18 +138,15 @@ class PriceData:
     Attributes
     ----------
     columns:
-        Mapping of column name → numpy array (€/kWh, regardless of input unit).
+        Mapping of column name → numpy array (€/kWh).
         The ``"timestamp"`` column is excluded; only numeric price columns are
         included.
     n_hours:
         Number of hourly rows loaded.
-    price_unit_input:
-        Original price unit string from the scenario JSON (before conversion).
     """
 
     columns: dict[str, np.ndarray]
     n_hours: int
-    price_unit_input: str
 
     def get_column(self, name: str) -> np.ndarray:
         """Return the price array for *name* (€/kWh).
@@ -203,19 +187,17 @@ class PriceWeatherScenario:
     is_central:
         Whether this is the central scenario used for grid search.
     price_csv:
-        Path to the price CSV file (inherited from parent if not set).
-    price_unit:
-        Unit of prices in CSV (inherited from parent if not set).
+        Path to the price CSV file.
     inflation_on_input_data:
-        Whether to apply inflation to price data (inherited if not set).
+        Whether to apply inflation to price data.
     csv_separator:
-        CSV delimiter (inherited from parent if not set).
+        CSV delimiter.
     csv_decimal:
-        CSV decimal separator (inherited from parent if not set).
+        CSV decimal separator.
     csv_timestamp_column:
-        Timestamp column name (inherited from parent if not set).
+        Timestamp column name.
     csv_timestamp_format:
-        Timestamp format string (inherited from parent if not set).
+        Timestamp format string.
     pv_timeseries_15min:
         Quarter-hourly PV production array (35 040 values), set after
         PVGIS fetch + alignment + conversion.
@@ -231,7 +213,6 @@ class PriceWeatherScenario:
     weight: float
     is_central: bool = False
     price_csv: str | None = None
-    price_unit: str | None = None
     inflation_on_input_data: bool | None = None
     csv_separator: str | None = None
     csv_decimal: str | None = None
@@ -377,15 +358,6 @@ def parse_scenarios(scenario_config: ScenarioConfig) -> list[PriceWeatherScenari
             "At least one scenario is required."
         )
 
-    # Parent-level defaults
-    parent_csv = price_inputs.get("day_ahead_csv")
-    parent_unit = price_inputs.get("price_unit")
-    parent_inflation = price_inputs.get("inflation_on_input_data", False)
-    parent_sep = price_inputs.get("csv_separator")
-    parent_dec = price_inputs.get("csv_decimal")
-    parent_ts_col = price_inputs.get("csv_timestamp_column")
-    parent_ts_fmt = price_inputs.get("csv_timestamp_format")
-
     result: list[PriceWeatherScenario] = []
     for s in scenarios_raw:
         result.append(
@@ -396,13 +368,12 @@ def parse_scenarios(scenario_config: ScenarioConfig) -> list[PriceWeatherScenari
                 weather_year=int(s["weather_year"]),
                 weight=float(s["weight"]),
                 is_central=bool(s.get("is_central", False)),
-                price_csv=s.get("price_csv", parent_csv),
-                price_unit=s.get("price_unit", parent_unit),
-                inflation_on_input_data=s.get("inflation_on_input_data", parent_inflation),
-                csv_separator=s.get("csv_separator", parent_sep),
-                csv_decimal=s.get("csv_decimal", parent_dec),
-                csv_timestamp_column=s.get("csv_timestamp_column", parent_ts_col),
-                csv_timestamp_format=s.get("csv_timestamp_format", parent_ts_fmt),
+                price_csv=s["price_csv"],
+                inflation_on_input_data=s.get("inflation_on_input_data", False),
+                csv_separator=s["csv_separator"],
+                csv_decimal=s["csv_decimal"],
+                csv_timestamp_column=s["csv_timestamp_column"],
+                csv_timestamp_format=s["csv_timestamp_format"],
             )
         )
 
@@ -417,7 +388,6 @@ def parse_scenarios(scenario_config: ScenarioConfig) -> list[PriceWeatherScenari
 def load_price_csv(
     path: str | Path,
     required_columns: list[str],
-    price_unit: str,
     commissioning_year: int | None = None,
     delimiter: str = CSV_DELIMITER,
     decimal: str = CSV_INPUT_DECIMAL_SEPARATOR,
@@ -427,8 +397,7 @@ def load_price_csv(
     """Load and validate an electricity price CSV file.
 
     The CSV must contain a timestamp column (ISO 8601) and at least one
-    numeric price column. The function converts all price values to **€/kWh**
-    regardless of the input unit declared in *price_unit*.
+    numeric price column. All price values are expected in **€/kWh**.
 
     Parameters
     ----------
@@ -438,9 +407,6 @@ def load_price_csv(
         List of column names that must be present (e.g. ``["MID"]``).
         The timestamp column is always required implicitly when
         *commissioning_year* is set.
-    price_unit:
-        Unit of the price values in the CSV: ``"eur_per_mwh"`` or
-        ``"eur_per_kwh"``.
     commissioning_year:
         If provided, rows with timestamps before January 1st of the
         commissioning year are discarded before validation and conversion.
@@ -468,23 +434,17 @@ def load_price_csv(
         When *path* does not exist.
     ValueError
         When the CSV fails any validation check (too few rows, NaN values,
-        missing columns, unknown price unit, or no timestamp column
-        when *commissioning_year* is set).
+        missing columns, or no timestamp column when *commissioning_year*
+        is set).
     """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(
             f"Price CSV file not found: '{path}'. "
-            "Check the 'day_ahead_csv' path in the scenario JSON."
+            "Check the 'price_csv' path in the scenario JSON."
         )
 
-    if price_unit not in (PRICE_UNIT_EUR_PER_MWH, PRICE_UNIT_EUR_PER_KWH):
-        raise ValueError(
-            f"Unknown price_unit '{price_unit}'. "
-            f"Must be '{PRICE_UNIT_EUR_PER_MWH}' or '{PRICE_UNIT_EUR_PER_KWH}'."
-        )
-
-    logger.debug("Loading price CSV from '%s' (unit=%s)", path, price_unit)
+    logger.debug("Loading price CSV from '%s'", path)
 
     try:
         df = pd.read_csv(path, sep=delimiter, decimal=decimal)
@@ -515,28 +475,20 @@ def load_price_csv(
     price_cols = [c for c in required_columns]
     _check_no_nan(df, path, price_cols)
 
-    # --- unit conversion ---------------------------------------------------
-    if price_unit == PRICE_UNIT_EUR_PER_MWH:
-        conversion_factor = KWH_TO_MWH  # €/MWh → €/kWh : divide by 1000
-    else:
-        conversion_factor = 1.0  # already €/kWh
-
+    # --- read values (already in €/kWh, no conversion needed) --------------
     columns_out: dict[str, np.ndarray] = {}
     for col in required_columns:
-        values = df[col].to_numpy(dtype=float)
-        columns_out[col] = values * conversion_factor
+        columns_out[col] = df[col].to_numpy(dtype=float)
 
     logger.info(
-        "Loaded price CSV '%s': %d rows, columns=%s, unit=%s",
+        "Loaded price CSV '%s': %d rows, columns=%s",
         path,
         n_rows,
         required_columns,
-        price_unit,
     )
     return PriceData(
         columns=columns_out,
         n_hours=n_rows,
-        price_unit_input=price_unit,
     )
 
 

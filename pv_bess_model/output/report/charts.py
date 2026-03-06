@@ -379,8 +379,8 @@ def create_ppa_collar_chart(
     # Group by cap_spread
     groups: dict[float, list[tuple[float, float]]] = {}
     for point in collar_result.points:
-        spread = point.params.get("cap_spread_eur_per_mwh", 0.0)
-        floor = point.params.get("floor_price_eur_per_mwh", 0.0)
+        spread = point.params.get("cap_spread_eur_per_kwh", 0.0)
+        floor = point.params.get("floor_price_eur_per_kwh", 0.0)
         eq_stats = point.mc_result.overall_stats.get("project_irr")
         if eq_stats is not None:
             groups.setdefault(spread, []).append((floor, eq_stats.mean * 100.0))
@@ -390,11 +390,11 @@ def create_ppa_collar_chart(
         floors = [d[0] for d in data_sorted]
         irrs = [d[1] for d in data_sorted]
         color = colors[i % len(colors)]
-        ax.plot(floors, irrs, marker="o", markersize=5, color=color, label=f"Cap-Spread = {spread:.0f} EUR/MWh")
+        ax.plot(floors, irrs, marker="o", markersize=5, color=color, label=f"Cap-Spread = {spread:.4f} EUR/kWh")
 
     ax.legend(fontsize=8)
     _apply_corporate_style(
-        fig, ax, "PPA Collar: Project IRR vs. Floor-Preis", "Floor-Preis (EUR/MWh)", "Project IRR (%)", colors
+        fig, ax, "PPA Collar: Project IRR vs. Floor-Preis", "Floor-Preis (EUR/kWh)", "Project IRR (%)", colors
     )
     return _save_chart(fig, output_path)
 
@@ -433,7 +433,7 @@ def create_ppa_baseload_chart(
     groups: dict[float, list[tuple[float, float]]] = {}
     for point in baseload_result.points:
         bl = point.params.get("baseload_mw", 0.0)
-        ppa_price = point.params.get("ppa_price_eur_per_mwh", 0.0)
+        ppa_price = point.params.get("ppa_price_eur_per_kwh", 0.0)
         eq_stats = point.mc_result.overall_stats.get("project_irr")
         if eq_stats is not None:
             groups.setdefault(bl, []).append((ppa_price, eq_stats.mean * 100.0))
@@ -447,7 +447,7 @@ def create_ppa_baseload_chart(
 
     ax.legend(fontsize=8)
     _apply_corporate_style(
-        fig, ax, "PPA Baseload: Project IRR vs. PPA-Preis", "PPA-Preis (EUR/MWh)", "Project IRR (%)", colors
+        fig, ax, "PPA Baseload: Project IRR vs. PPA-Preis", "PPA-Preis (EUR/kWh)", "Project IRR (%)", colors
     )
     return _save_chart(fig, output_path)
 

@@ -529,14 +529,14 @@ def write_ppa_collar_csv(
         npv_s = stats.get("npv")
 
         rows.append({
-            "floor_price_eur_per_mwh": fmt_float(
-                pt.params.get("floor_price_eur_per_mwh"), decimal=d
+            "floor_price_eur_per_kwh": fmt_float(
+                pt.params.get("floor_price_eur_per_kwh"), decimal=d
             ),
-            "cap_spread_eur_per_mwh": fmt_float(
-                pt.params.get("cap_spread_eur_per_mwh"), decimal=d
+            "cap_spread_eur_per_kwh": fmt_float(
+                pt.params.get("cap_spread_eur_per_kwh"), decimal=d
             ),
-            "cap_price_eur_per_mwh": fmt_float(
-                pt.params.get("cap_price_eur_per_mwh"), decimal=d
+            "cap_price_eur_per_kwh": fmt_float(
+                pt.params.get("cap_price_eur_per_kwh"), decimal=d
             ),
             "duration_years": str(duration_years),
             "equity_irr_mean": fmt_pct(eq.mean if eq else None, decimal=d),
@@ -586,8 +586,8 @@ def write_ppa_baseload_csv(
         npv_s = stats.get("npv")
 
         rows.append({
-            "ppa_price_eur_per_mwh": fmt_float(
-                pt.params.get("ppa_price_eur_per_mwh"), decimal=d
+            "ppa_price_eur_per_kwh": fmt_float(
+                pt.params.get("ppa_price_eur_per_kwh"), decimal=d
             ),
             "baseload_mw": fmt_float(
                 pt.params.get("baseload_mw"), decimal=d
