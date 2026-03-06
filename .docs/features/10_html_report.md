@@ -43,10 +43,11 @@ die im Browser (Edge/Chrome/Firefox) offline funktioniert.
 |-----|-------|-----------|----------|----------|
 | 1 | Szenario-Uebersicht | Immer | OpenStreetMap-Karte (wenn online) | Zusammenfassung der Schluesselparameter |
 | 2 | Eingangszeitreihen | Immer | PV-Ertrag + Strompreisszenarien | Erklaerung der Eingangsdaten |
-| 3 | EEG-Analyse | `marketing.type == "eeg"` | EEG-Sensitivitaet | Analyse der EEG-Ergebnisse |
-| 4 | PPA-Collar-Analyse | Collar-Result vorhanden | PPA-Collar-Chart | Analyse der Collar-Ergebnisse |
-| 5 | PPA-Baseload-Analyse | Baseload-Result vorhanden | PPA-Baseload-Chart | Analyse der Baseload-Ergebnisse |
-| 6 | Cashflow-Analyse | Immer | Gestapeltes Saeulendiagramm | KPIs + Cashflow-Einschaetzung |
+| 3 | Grid-Search-Ergebnis | `len(grid_search_points) > 1` | Kurvenschar: IRR vs. BESS-Scale pro E/P-Ratio | Analyse der Dimensionierungsoptimierung |
+| 4 | EEG-Analyse | `marketing.type == "eeg"` | EEG-Sensitivitaet | Analyse der EEG-Ergebnisse |
+| 5 | PPA-Collar-Analyse | Collar-Result vorhanden | PPA-Collar-Chart | Analyse der Collar-Ergebnisse |
+| 6 | PPA-Baseload-Analyse | Baseload-Result vorhanden | PPA-Baseload-Chart | Analyse der Baseload-Ergebnisse |
+| 7 | Cashflow-Analyse | Immer | Gestapeltes Saeulendiagramm | KPIs + Cashflow-Einschaetzung |
 
 ---
 
@@ -100,19 +101,19 @@ class HtmlReportData:
     ppa_collar: list[dict] | None       # [{spread, floor, irr_mean}]
     ppa_baseload: list[dict] | None     # [{baseload_mw, ppa_price, irr_mean}]
 
-    # Grid-Search (Tab 6 Kontext)
+    # Grid-Search (Tab 3)
     grid_search_points: list[dict]  # [{scale, ep, irr, is_optimal}]
     optimal_scale_pct: float
     optimal_ep_ratio: float
     optimal_bess_power_kw: float
     optimal_bess_capacity_kwh: float
 
-    # Cashflow (Tab 6)
+    # Cashflow (Tab 7)
     cashflow_years: list[dict]  # Pro Jahr: {year, rev_pv, rev_bess_green, rev_bess_grey,
                                 #            grid_import_cost, capex, opex, debt_service,
                                 #            tax_total, equity_cf, cumulative_equity_cf}
 
-    # KPIs (Tab 6)
+    # KPIs (Tab 7)
     metrics: dict  # {equity_irr, project_irr, npv, dscr_min, dscr_avg, lcoe, payback_year}
 
     # Logos (Base64-encoded)
@@ -148,10 +149,11 @@ JSON-Antwort, damit die Texte zuverlaessig den richtigen Tabs zugeordnet werden.
       {
         "tab_1_overview": "...",
         "tab_2_timeseries": "...",
-        "tab_3_eeg": "..." | null,
-        "tab_4_collar": "..." | null,
-        "tab_5_baseload": "..." | null,
-        "tab_6_cashflow": "..."
+        "tab_3_gridsearch": "..." | null,
+        "tab_4_eeg": "..." | null,
+        "tab_5_collar": "..." | null,
+        "tab_6_baseload": "..." | null,
+        "tab_7_cashflow": "..."
       }
       ```
 - [ ] Jeder Text-Key enthaelt Anweisungen, welche Schluesselbegriffe **fett** markiert
@@ -242,10 +244,11 @@ und erweitert.
 |-------|-----|-----|--------------|
 | PV-Ertrag | 2 | Multi-Line | Monatliche Produktion pro Wetterjahr (x: Monat, y: GWh) |
 | Strompreise | 2 | Multi-Line | Jahresmittelpreis pro Szenario ueber Projektlaufzeit |
-| EEG-Sensitivitaet | 3 | Line + Band | IRR vs. Gebotspreis mit Std.Abw.-Band |
-| PPA-Collar | 4 | Multi-Line | IRR vs. Floor-Preis, gruppiert nach Cap-Spread |
-| PPA-Baseload | 5 | Multi-Line | IRR vs. PPA-Preis, gruppiert nach Baseload-Level |
-| Cashflow | 6 | Stacked Bar | Gestapelte Saeulen (Revenue positiv, Kosten negativ) |
+| Grid-Search | 3 | Multi-Line + Marker | IRR vs. BESS-Scale, eine Kurve pro E/P-Ratio, Optimum markiert |
+| EEG-Sensitivitaet | 4 | Line + Band | IRR vs. Gebotspreis mit Std.Abw.-Band |
+| PPA-Collar | 5 | Multi-Line | IRR vs. Floor-Preis, gruppiert nach Cap-Spread |
+| PPA-Baseload | 6 | Multi-Line | IRR vs. PPA-Preis, gruppiert nach Baseload-Level |
+| Cashflow | 7 | Stacked Bar | Gestapelte Saeulen (Revenue positiv, Kosten negativ) |
 
 **Aufgaben:**
 - [ ] `InteractiveCartesianChart` aus `result_dashboard.html` uebernehmen und anpassen:
