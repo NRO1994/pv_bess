@@ -322,18 +322,6 @@ REPORT_CHART_HEIGHT_INCHES: float = 5.5
 REPORT_CHARTS_SUBDIR: str = "charts"
 """Sub-directory within the output directory for chart PNG files."""
 
-REPORT_LLM_MAX_TOKENS: int = 500
-"""Maximum output tokens per LLM text generation call."""
-
-REPORT_LLM_DEFAULT_MODEL: str = "claude-haiku-4-5-20251001"
-"""Default Anthropic model ID for report text generation."""
-
-REPORT_LLM_CACHE_FILENAME: str = "llm_cache.json"
-"""Filename for caching LLM-generated texts in the output directory."""
-
-REPORT_PDF_FILENAME_SUFFIX: str = "_report.pdf"
-"""Suffix appended to the scenario name for the PDF report file."""
-
 REPORT_HTML_FILENAME_SUFFIX: str = "_report.html"
 """Suffix appended to the scenario name for the HTML report file."""
 

@@ -169,16 +169,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Validate JSON and inputs, then exit without running simulation.",
     )
     p.add_argument(
-        "--no-llm",
-        action="store_true",
-        default=False,
-        help="Generate report without LLM-generated texts (placeholders only).",
-    )
-    p.add_argument(
         "--no-report",
         action="store_true",
         default=False,
-        help="Skip PDF report generation entirely.",
+        help="Skip HTML report generation entirely.",
+    )
+    p.add_argument(
+        "--skip-llm-prompt",
+        action="store_true",
+        default=False,
+        help="Skip the interactive LLM prompt pause; generate report with placeholder texts.",
+    )
+    p.add_argument(
+        "--llm-response",
+        metavar="PATH",
+        default=None,
+        help="Path to a pre-prepared LLM response JSON file (skips interactive pause).",
     )
     return p
 
@@ -1052,7 +1058,7 @@ def run(args: argparse.Namespace) -> int:
         )
 
     # ------------------------------------------------------------------
-    # Step 7b: PDF Report generation
+    # Step 7b: HTML Report generation
     # ------------------------------------------------------------------
     _generate_report(
         scenario=scenario,
@@ -1079,70 +1085,6 @@ def run(args: argparse.Namespace) -> int:
     return 0
 
 
-def _summarize_sensitivity(result) -> str:
-    """Build a short text summary of a sensitivity analysis result for LLM input.
-
-    Parameters
-    ----------
-    result:
-        ``SensitivityResult`` instance.
-
-    Returns
-    -------
-    str
-        Formatted key findings string.
-    """
-    lines: list[str] = []
-    for pt in result.points:
-        params_str = ", ".join(f"{k}={v}" for k, v in pt.params.items())
-        eq_stats = pt.mc_result.overall_stats.get("equity_irr")
-        if eq_stats is not None:
-            lines.append(f"- {params_str}: IRR mean={eq_stats.mean * 100:.2f}%, std={eq_stats.std * 100:.2f}%")
-    return "\n".join(lines) if lines else "Keine Ergebnisse verfügbar."
-
-
-def _build_results_summary(opt, metrics, mc_result) -> str:
-    """Build a comprehensive results summary for the LLM conclusion.
-
-    Parameters
-    ----------
-    opt:
-        ``GridPointResult`` optimal configuration.
-    metrics:
-        Computed financial metrics.
-    mc_result:
-        Monte Carlo result or None.
-
-    Returns
-    -------
-    str
-        Formatted summary string.
-    """
-    parts: list[str] = [
-        f"Optimale BESS-Skalierung: {opt.scale_pct:.0f}% der PV-Leistung",
-        f"E/P-Verhältnis: {opt.e_to_p_ratio:.1f}h",
-        f"BESS: {opt.bess_power_kw:.0f} kW / {opt.bess_capacity_kwh:.0f} kWh",
-        f"CAPEX: {opt.capex_total:,.0f} EUR",
-        f"Equity IRR: {(opt.equity_irr or 0.0) * 100:.2f}%",
-        f"Project IRR: {(metrics.project_irr or 0.0) * 100:.2f}%",
-        f"NPV: {metrics.npv:,.0f} EUR",
-    ]
-    if metrics.dscr_min is not None:
-        parts.append(f"Min DSCR: {metrics.dscr_min:.2f}")
-    if metrics.lcoe is not None:
-        parts.append(f"LCOE: {metrics.lcoe * 100:.3f} ct/kWh")
-
-    if mc_result is not None:
-        eq_stats = mc_result.overall_stats.get("equity_irr")
-        if eq_stats is not None:
-            import math
-            if not math.isnan(eq_stats.median):
-                parts.append(f"MC Equity IRR: median={eq_stats.median * 100:.2f}%, "
-                             f"P10={eq_stats.p10 * 100:.2f}%, P90={eq_stats.p90 * 100:.2f}%")
-
-    return "\n".join(f"- {p}" for p in parts)
-
-
 def _generate_report(
     scenario,
     output_dir: Path,
@@ -1159,11 +1101,15 @@ def _generate_report(
     collar_result,
     baseload_result,
 ) -> None:
-    """Generate the PDF report (Step 7b).
+    """Generate the interactive HTML report (Step 7b).
 
-    This function handles chart creation, optional LLM text generation,
-    and PDF rendering. All errors are caught and logged without
-    interrupting the main flow.
+    New flow:
+    1. Collect all data into ``HtmlReportData``.
+    2. Create matplotlib PNG charts (optional, for standalone use).
+    3. Save rendered LLM prompt to output directory.
+    4. Interactive pause for LLM response (unless ``--skip-llm-prompt``
+       or ``--llm-response`` is used).
+    5. Build and write the HTML report.
 
     Parameters
     ----------
@@ -1196,30 +1142,40 @@ def _generate_report(
     baseload_result:
         PPA Baseload result or None.
     """
-    import os
-
     report_cfg = _out_block.get("report", {})
     report_enabled = report_cfg.get("enabled", False)
 
-    # Import report modules with graceful degradation
-    try:
-        from pv_bess_model.output.report.charts import create_all_charts
-    except ImportError:
-        logger.warning("matplotlib not available. Skipping report generation.")
+    if not report_enabled or args.no_report:
         return
 
-    from pv_bess_model.output.report.pdf_builder import ReportConfig, build_report
+    from pv_bess_model.output.report.data_collector import collect_report_data
+    from pv_bess_model.output.report.html_builder import build_html_report
 
-    config = ReportConfig(
-        enabled=True,
-        company_name=report_cfg.get("company_name", ""),
-        logo_path=report_cfg.get("logo_path"),
-    )
-
-    # Create charts (always, even without LLM)
-    logger.info("Generating report charts…")
+    # Step 1: Collect all report data
+    logger.info("Collecting report data…")
     try:
-        chart_paths = create_all_charts(
+        report_data = collect_report_data(
+            scenario=scenario,
+            grid_result=grid_result,
+            opt=opt,
+            metrics=metrics,
+            weather_data_for_report=weather_data_for_report,
+            scenario_prices=scenario_prices,
+            commissioning_year=commissioning_year,
+            eeg_sens_result=eeg_sens_result,
+            collar_result=collar_result,
+            baseload_result=baseload_result,
+        )
+    except Exception:
+        logger.error("Report data collection failed.", exc_info=True)
+        return
+
+    # Step 2: Create matplotlib PNG charts (optional, for standalone use)
+    try:
+        from pv_bess_model.output.report.charts import create_all_charts
+
+        logger.info("Generating report charts…")
+        create_all_charts(
             output_dir=output_dir,
             grid_result=grid_result,
             weather_timeseries=weather_data_for_report,
@@ -1229,129 +1185,126 @@ def _generate_report(
             collar_result=collar_result,
             baseload_result=baseload_result,
         )
+    except ImportError:
+        logger.debug("matplotlib not available. Skipping PNG chart generation.")
     except Exception:
-        logger.error("Chart generation failed. Skipping report.", exc_info=True)
-        return
+        logger.warning("Chart generation failed.", exc_info=True)
 
-    # Generate LLM texts
-    texts: dict[str, str] = {}
+    # Step 3 + 4: LLM prompt workflow
+    llm_texts = _resolve_llm_texts(report_data, output_dir, args)
+    report_data.llm_texts = llm_texts
 
-    if not report_enabled or args.no_report:
-        return
+    # Step 5: Build HTML report
+    logger.info("Assembling HTML report…")
+    try:
+        html_path = build_html_report(report_data, output_dir)
+        print(f"  Report: {html_path}")
+    except Exception:
+        logger.error("HTML report generation failed.", exc_info=True)
 
-    if not args.no_llm:
-        api_key_env = report_cfg.get("llm_api_key_env", "ANTHROPIC_API_KEY")
-        api_key = os.environ.get(api_key_env, "")
 
-        if api_key:
-            try:
-                from pv_bess_model.output.report.llm_client import (
-                    LLMClient,
-                    generate_conclusion,
-                    generate_grid_search_text,
-                    generate_input_summary,
-                    generate_model_description,
-                    generate_price_scenario_text,
-                    generate_pv_yield_text,
-                    generate_sensitivity_text,
-                )
+_MAX_LLM_INPUT_RETRIES: int = 3
 
-                llm_model = report_cfg.get("llm_model", None)
-                client_kwargs: dict = {
-                    "api_key": api_key,
-                    "cache_dir": output_dir,
-                }
-                if llm_model:
-                    client_kwargs["model"] = llm_model
 
-                client = LLMClient(**client_kwargs)
+def _resolve_llm_texts(
+    report_data,
+    output_dir: Path,
+    args: argparse.Namespace,
+) -> dict[str, str]:
+    """Determine LLM texts via CLI flags or interactive prompt.
 
-                # Page 0: Model description
-                claude_md_path = Path(__file__).parent.parent / "CLAUDE.md"
-                claude_md_excerpt = ""
-                if claude_md_path.exists():
-                    claude_md_excerpt = claude_md_path.read_text(encoding="utf-8")[:2000]
-                texts["text_model_description"] = generate_model_description(client, claude_md_excerpt)
+    Parameters
+    ----------
+    report_data:
+        ``HtmlReportData`` instance for prompt rendering.
+    output_dir:
+        Output directory (for saving the prompt file).
+    args:
+        Parsed CLI arguments.
 
-                # Page 1: Input summary
-                input_params = {
-                    "PV-Leistung": f"{scenario.pv['design']['peak_power_kwp']:,.0f} kWp",
-                    "Projektlaufzeit": f"{scenario.lifetime_years} Jahre",
-                    "Betriebsmodus": scenario.operating_mode,
-                    "Fremdkapitalquote": f"{scenario.finance.get('leverage_pct', 0)}%",
-                    "Inflationsrate": f"{scenario.finance.get('inflation_rate', 0) * 100:.1f}%",
-                }
-                texts["text_input_summary"] = generate_input_summary(client, input_params)
-
-                # Page 2: PV yield
-                if weather_data_for_report:
-                    annual_kwh = {y: float(np.sum(ts)) for y, ts in weather_data_for_report.items()}
-                    texts["text_pv_yield"] = generate_pv_yield_text(client, annual_kwh)
-
-                # Page 3: Price scenarios
-                if scenario_prices and len(scenario_prices) > 1:
-                    scenario_means = {}
-                    for name, yearly in scenario_prices.items():
-                        all_vals = np.concatenate(yearly) if yearly else np.array([0.0])
-                        scenario_means[name] = float(np.mean(all_vals)) * 1000.0  # EUR/MWh
-                    texts["text_price_scenarios"] = generate_price_scenario_text(client, scenario_means)
-
-                # Page 4: Grid search
-                pv_only_irr = None
-                for pt in grid_result.points:
-                    if pt.scale_pct == 0.0 and pt.equity_irr is not None:
-                        pv_only_irr = pt.equity_irr * 100.0
-                        break
-                texts["text_grid_search"] = generate_grid_search_text(
-                    client,
-                    optimal_scale=opt.scale_pct,
-                    optimal_ep=opt.e_to_p_ratio,
-                    optimal_irr=(opt.equity_irr or 0.0) * 100.0,
-                    pv_only_irr=pv_only_irr,
-                )
-
-                # Pages 5-7: Sensitivity analyses
-                if eeg_sens_result is not None:
-                    texts["text_eeg_sensitivity"] = generate_sensitivity_text(
-                        client, "EEG-Sensitivität", _summarize_sensitivity(eeg_sens_result)
-                    )
-                if collar_result is not None:
-                    texts["text_ppa_collar"] = generate_sensitivity_text(
-                        client, "PPA Collar-Analyse", _summarize_sensitivity(collar_result)
-                    )
-                if baseload_result is not None:
-                    texts["text_ppa_baseload"] = generate_sensitivity_text(
-                        client, "PPA Baseload-Analyse", _summarize_sensitivity(baseload_result)
-                    )
-
-                # Page 8: Conclusion
-                texts["text_conclusion"] = generate_conclusion(
-                    client, _build_results_summary(opt, metrics, mc_result)
-                )
-
-                logger.info("LLM text generation complete.")
-            except ImportError:
-                logger.warning("anthropic package not available. Report will use placeholder texts.")
-            except Exception:
-                logger.warning("LLM text generation failed.", exc_info=True)
-        else:
-            logger.warning(
-                "No API key found in env var '%s'. Report will use placeholder texts.",
-                api_key_env,
-            )
-
-    # Build and render PDF
-    logger.info("Assembling PDF report…")
-    pdf_path = build_report(
-        scenario_name=scenario.name,
-        output_dir=output_dir,
-        chart_paths=chart_paths,
-        texts=texts,
-        config=config,
-        scenario=scenario,
+    Returns
+    -------
+    dict[str, str]
+        Tab key → text mapping.
+    """
+    from pv_bess_model.output.report.llm_prompt import (
+        get_fallback_texts,
+        load_llm_response,
+        save_rendered_prompt,
     )
-    if pdf_path is not None:
-        print(f"  Report: {pdf_path}")
+
+    # Save rendered prompt (always, for reference)
+    try:
+        prompt_path = save_rendered_prompt(report_data, output_dir)
+    except Exception:
+        logger.warning("Failed to save LLM prompt.", exc_info=True)
+        prompt_path = None
+
+    # Case 1: --llm-response <path> provided via CLI
+    if args.llm_response:
+        response_path = Path(args.llm_response)
+        if not response_path.exists():
+            logger.warning("LLM response file not found: %s. Using placeholder texts.", response_path)
+            return get_fallback_texts()
+        try:
+            return load_llm_response(response_path)
+        except (ValueError, OSError) as exc:
+            logger.warning("Failed to load LLM response: %s. Using placeholder texts.", exc)
+            return get_fallback_texts()
+
+    # Case 2: --skip-llm-prompt → no pause, use placeholders
+    if args.skip_llm_prompt:
+        logger.info("--skip-llm-prompt: Skipping LLM text integration.")
+        return get_fallback_texts()
+
+    # Case 3: Interactive pause
+    prompt_display = str(prompt_path) if prompt_path else "(Speicherung fehlgeschlagen)"
+    separator = "\u2550" * 60
+
+    print()
+    print(f"  {separator}")
+    print(f"    LLM-Prompt gespeichert: {prompt_display}")
+    print()
+    print("    Bitte kopieren Sie den Prompt in Copilot und speichern")
+    print("    Sie die Antwort als JSON-Datei.")
+    print()
+
+    for attempt in range(_MAX_LLM_INPUT_RETRIES):
+        try:
+            user_input = input("    Pfad zur LLM-Antwort-Datei (Enter zum Ueberspringen): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            logger.info("Input interrupted. Using placeholder texts.")
+            return get_fallback_texts()
+
+        # User pressed Enter without input → skip
+        if not user_input:
+            print(f"  {separator}")
+            print()
+            return get_fallback_texts()
+
+        response_path = Path(user_input)
+        if not response_path.exists():
+            print(f"    Datei nicht gefunden: {response_path}")
+            if attempt < _MAX_LLM_INPUT_RETRIES - 1:
+                print("    Bitte erneut versuchen.")
+            continue
+
+        try:
+            texts = load_llm_response(response_path)
+            print(f"    LLM-Texte erfolgreich geladen.")
+            print(f"  {separator}")
+            print()
+            return texts
+        except (ValueError, OSError) as exc:
+            print(f"    Fehler: {exc}")
+            if attempt < _MAX_LLM_INPUT_RETRIES - 1:
+                print("    Bitte erneut versuchen.")
+
+    print("    Maximale Versuche erreicht. Verwende Platzhalter-Texte.")
+    print(f"  {separator}")
+    print()
+    return get_fallback_texts()
 
 
 def _print_summary(
