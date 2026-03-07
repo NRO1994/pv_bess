@@ -640,6 +640,19 @@
               negY += h;
             }
 
+            // Year 1 highlight (CAPEX-dominated)
+            if (i === 0) {
+              const topY = Math.min(posY, y0px);
+              const botY = Math.max(negY, y0px);
+              ctx.save();
+              ctx.strokeStyle = cssVar('--corp-orange');
+              ctx.lineWidth = 2;
+              ctx.setLineDash([4, 3]);
+              ctx.strokeRect(xLeft - 2, topY - 2, barW + 4, botY - topY + 4);
+              ctx.setLineDash([]);
+              ctx.restore();
+            }
+
             // Hover detection
             if (mouseX != null && mouseX >= xLeft && mouseX <= xLeft + barW) {
               hoveredYear = i;

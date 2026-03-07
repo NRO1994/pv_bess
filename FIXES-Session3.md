@@ -2,7 +2,7 @@
 
 ## Integration
 
-- [ ] Einbettung in den User Flow stellt ein komplett neues Feature dar. Im Allgemeinen soll es eine stand-alone offline
+- [x] Einbettung in den User Flow stellt ein komplett neues Feature dar. Im Allgemeinen soll es eine stand-alone offline
   HTML Datei sein, die die Input JSON auf basis des Schemas (siehe .docs.input_schema.json) erstellt. Die HTML-Datei
   stelle ich allen KollegInnen zur Verfügung, die mit dem Tool arbeiten sollen. Sobald sie das HTML-Template ausgefüllt
   haben, erstellt dieses das valide Input JSON, dass lassen sie mir dann manuell (zB über E-Mail) zukommen. Ich führe die Simulation lokal durch, und teile den
@@ -92,15 +92,15 @@
 
 ## Kosmetik
 
-- [ ] BESS.costs.optimization_fee_pct soll in BESS.costs.opex.optimization_fee_pct verschoben werden
-- [ ] entferne die csv relevanten json attribute in project_settings.finance.price_inputs, da diese nun in den
+- [x] BESS.costs.optimization_fee_pct soll in BESS.costs.opex.optimization_fee_pct verschoben werden
+- [x] entferne die csv relevanten json attribute in project_settings.finance.price_inputs, da diese nun in den
   jeweiligen Szenarien direkt berücksichtigt werden, entferne ebenfalls die dazu passende Logik. Alle CSV-reads werden
   innerhalb der einzelnen Szenarien durchgeführt, es gibt keine weitere Notwendigkeit diese bestehende Logik
   beizubehalten.
-- [ ] Die MC Parameter für die Preisszenarien soll direkt aus project_settings.finance.price_input.scenario stammen. Es
+- [x] Die MC Parameter für die Preisszenarien soll direkt aus project_settings.finance.price_input.scenario stammen. Es
   bedarf keines extra Inputs in scenario.monte_carlo.price_scenario mehr
-- [ ] Die Preisangaben im Input sind immer unterschiedlich (einmal Euro pro MWh, ein anderes Mal Euro pro KWh).
+- [x] Die Preisangaben im Input sind immer unterschiedlich (einmal Euro pro MWh, ein anderes Mal Euro pro KWh).
   Vereinheitliche dies auf pro kWh, sodass jegliche Konvertierung im Programm unnötig wird. Entferne diese Konvertierung
   ebenfalls.
-- [ ] wenn im Output directory bereits die png Dateien enthalten sind, dann werden sie bei einem erneuten Durchlauf
+- [x] wenn im Output directory bereits die png Dateien enthalten sind, dann werden sie bei einem erneuten Durchlauf
   nicht ersetzt. Dies soll jedoch der Fall sein (So wie auch bei den CSV Outputs)
