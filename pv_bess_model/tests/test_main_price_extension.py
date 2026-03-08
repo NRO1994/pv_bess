@@ -35,7 +35,7 @@ def _make_price_data(
     """
     n_hours = n_years * HOURS_PER_YEAR
     cols = {name: np.full(n_hours, val) for name, val in columns.items()}
-    return PriceData(columns=cols, n_hours=n_hours, price_unit_input="eur_per_kwh")
+    return PriceData(columns=cols, n_hours=n_hours)
 
 
 def _make_price_data_per_year(
@@ -57,7 +57,7 @@ def _make_price_data_per_year(
         for y, val in enumerate(year_vals):
             arr[y * HOURS_PER_YEAR : (y + 1) * HOURS_PER_YEAR] = val
         cols[name] = arr
-    return PriceData(columns=cols, n_hours=n_hours, price_unit_input="eur_per_kwh")
+    return PriceData(columns=cols, n_hours=n_hours)
 
 
 # ---------------------------------------------------------------------------

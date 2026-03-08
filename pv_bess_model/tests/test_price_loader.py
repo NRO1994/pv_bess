@@ -12,7 +12,6 @@ import pytest
 from pv_bess_model.config.defaults import CSV_DELIMITER, HOURS_PER_YEAR
 from pv_bess_model.market.price_loader import (
     MarketPrices,
-    collect_scenario_columns,
     get_year_prices,
     load_market_prices,
 )
@@ -128,68 +127,49 @@ class TestMarketPrices:
 # ---------------------------------------------------------------------------
 
 
-class TestLoadMarketPricesConversion:
-    """Tests for price_unit conversion in load_market_prices()."""
+class TestLoadMarketPricesLoading:
+    """Tests for loading prices (all values in EUR/kWh, no conversion)."""
 
-    def test_eur_per_mwh_converted_to_eur_per_kwh(self, tmp_path: Path) -> None:
-        """€/MWh values must be divided by 1000 when price_unit='eur_per_mwh'."""
+    def test_values_loaded_as_is(self, tmp_path: Path) -> None:
+        """Values in EUR/kWh are loaded without conversion."""
         csv = tmp_path / "prices.csv"
-        _write_price_csv_constant(csv, n_rows=HOURS_PER_YEAR, columns={"MID": 50.0})
+        _write_price_csv_constant(csv, n_rows=HOURS_PER_YEAR, columns={"MID": 0.05})
 
         mp = load_market_prices(
             csv_path=csv,
             required_columns=["MID"],
-            price_unit="eur_per_mwh",
             lifetime_years=1,
         )
-        # 50 €/MWh → 0.05 €/kWh
         assert math.isclose(float(mp.get_column("MID")[0]), 0.05, rel_tol=1e-9)
 
-    def test_eur_per_kwh_no_conversion(self, tmp_path: Path) -> None:
-        """€/kWh values are used as-is (no division)."""
+    def test_all_values_loaded(self, tmp_path: Path) -> None:
+        """Every value in the column is loaded correctly."""
         csv = tmp_path / "prices.csv"
-        _write_price_csv_constant(csv, n_rows=HOURS_PER_YEAR, columns={"MID": 0.08})
-
-        mp = load_market_prices(
-            csv_path=csv,
-            required_columns=["MID"],
-            price_unit="eur_per_kwh",
-            lifetime_years=1,
-        )
-        assert math.isclose(float(mp.get_column("MID")[0]), 0.08, rel_tol=1e-9)
-
-    def test_all_values_converted(self, tmp_path: Path) -> None:
-        """Every value in the column is converted, not just the first."""
-        csv = tmp_path / "prices.csv"
-        # Write alternating 40 / 60 values
         timestamps = [f"2020-01-01T{h % 24:02d}:00:00" for h in range(HOURS_PER_YEAR)]
-        vals = [40.0 if i % 2 == 0 else 60.0 for i in range(HOURS_PER_YEAR)]
+        vals = [0.04 if i % 2 == 0 else 0.06 for i in range(HOURS_PER_YEAR)]
         pd.DataFrame({"timestamp": timestamps, "MID": vals}).to_csv(csv, index=False, sep=CSV_DELIMITER)
 
         mp = load_market_prices(
             csv_path=csv,
             required_columns=["MID"],
-            price_unit="eur_per_mwh",
             lifetime_years=1,
         )
         col = mp.get_column("MID")
-        # Odd indices should be 0.060, even 0.040
         np.testing.assert_allclose(col[0::2], 0.04, rtol=1e-9)
         np.testing.assert_allclose(col[1::2], 0.06, rtol=1e-9)
 
     def test_multiple_columns_loaded(self, tmp_path: Path) -> None:
-        """All requested columns are loaded and converted."""
+        """All requested columns are loaded."""
         csv = tmp_path / "prices.csv"
         _write_price_csv_constant(
             csv,
             n_rows=HOURS_PER_YEAR,
-            columns={"LOW": 30.0, "MID": 50.0, "HIGH": 80.0},
+            columns={"LOW": 0.03, "MID": 0.05, "HIGH": 0.08},
         )
 
         mp = load_market_prices(
             csv_path=csv,
             required_columns=["LOW", "MID", "HIGH"],
-            price_unit="eur_per_mwh",
             lifetime_years=1,
         )
         assert math.isclose(float(mp.get_column("LOW")[0]), 0.03)
@@ -197,16 +177,15 @@ class TestLoadMarketPricesConversion:
         assert math.isclose(float(mp.get_column("HIGH")[0]), 0.08)
 
     def test_negative_prices_preserved(self, tmp_path: Path) -> None:
-        """Negative spot prices are valid and must survive conversion."""
+        """Negative spot prices are valid and must be preserved."""
         csv = tmp_path / "prices.csv"
         timestamps = [f"2020-01-01T{h % 24:02d}:00:00" for h in range(HOURS_PER_YEAR)]
-        vals = [-20.0] * HOURS_PER_YEAR
+        vals = [-0.02] * HOURS_PER_YEAR
         pd.DataFrame({"timestamp": timestamps, "MID": vals}).to_csv(csv, index=False, sep=CSV_DELIMITER)
 
         mp = load_market_prices(
             csv_path=csv,
             required_columns=["MID"],
-            price_unit="eur_per_mwh",
             lifetime_years=1,
         )
         assert math.isclose(float(mp.get_column("MID")[0]), -0.02)
@@ -228,7 +207,7 @@ class TestLoadMarketPricesExtension:
         mp = load_market_prices(
             csv_path=csv,
             required_columns=["MID"],
-            price_unit="eur_per_mwh",
+
             lifetime_years=2,
         )
         assert len(mp.get_column("MID")) == 2 * HOURS_PER_YEAR
@@ -236,16 +215,16 @@ class TestLoadMarketPricesExtension:
     def test_extension_repeats_last_year(self, tmp_path: Path) -> None:
         """When lifetime > CSV years, the last full year in CSV is repeated."""
         csv = tmp_path / "prices.csv"
-        # Year 1: 50 €/MWh → 0.05 €/kWh; Year 2: 100 €/MWh → 0.10 €/kWh
-        _write_price_csv(csv, n_years=2, columns={"MID": 50.0}, year2_multiplier=2.0)
+        # Year 1: 0.05 €/kWh; Year 2: 0.10 €/kWh
+        _write_price_csv(csv, n_years=2, columns={"MID": 0.05}, year2_multiplier=2.0)
 
         mp = load_market_prices(
             csv_path=csv,
             required_columns=["MID"],
-            price_unit="eur_per_mwh",
+
             lifetime_years=5,
         )
-        # Years 3, 4, 5 should all equal year 2 values (0.10 €/kWh)
+        # Years 3, 4, 5 should all equal year 2 values (0.10)
         year2 = mp.get_year_prices("MID", year=2)
         for yr in [3, 4, 5]:
             np.testing.assert_array_equal(mp.get_year_prices("MID", year=yr), year2)
@@ -253,16 +232,14 @@ class TestLoadMarketPricesExtension:
     def test_extension_single_year_csv(self, tmp_path: Path) -> None:
         """A 1-year CSV is repeated for all project years."""
         csv = tmp_path / "prices.csv"
-        _write_price_csv_constant(csv, n_rows=HOURS_PER_YEAR, columns={"MID": 60.0})
+        _write_price_csv_constant(csv, n_rows=HOURS_PER_YEAR, columns={"MID": 0.06})
 
         mp = load_market_prices(
             csv_path=csv,
             required_columns=["MID"],
-            price_unit="eur_per_mwh",
             lifetime_years=25,
         )
         assert len(mp.get_column("MID")) == 25 * HOURS_PER_YEAR
-        # All values should be 0.06 €/kWh
         np.testing.assert_allclose(mp.get_column("MID"), 0.06, rtol=1e-9)
 
     def test_output_length_correct(self, tmp_path: Path) -> None:
@@ -274,7 +251,7 @@ class TestLoadMarketPricesExtension:
             mp = load_market_prices(
                 csv_path=csv,
                 required_columns=["MID"],
-                price_unit="eur_per_mwh",
+    
                 lifetime_years=lifetime,
             )
             assert len(mp.get_column("MID")) == lifetime * HOURS_PER_YEAR
@@ -282,12 +259,11 @@ class TestLoadMarketPricesExtension:
     def test_get_year_prices_year_1_values(self, tmp_path: Path) -> None:
         """Year 1 prices match the first year of the CSV."""
         csv = tmp_path / "prices.csv"
-        _write_price_csv_constant(csv, n_rows=HOURS_PER_YEAR, columns={"MID": 40.0})
+        _write_price_csv_constant(csv, n_rows=HOURS_PER_YEAR, columns={"MID": 0.04})
 
         mp = load_market_prices(
             csv_path=csv,
             required_columns=["MID"],
-            price_unit="eur_per_mwh",
             lifetime_years=3,
         )
         year1 = mp.get_year_prices("MID", year=1)
@@ -312,7 +288,7 @@ class TestLoadMarketPricesValidation:
             load_market_prices(
                 csv_path=csv,
                 required_columns=["MISSING_COL"],
-                price_unit="eur_per_mwh",
+    
                 lifetime_years=1,
             )
 
@@ -327,7 +303,7 @@ class TestLoadMarketPricesValidation:
             load_market_prices(
                 csv_path=csv,
                 required_columns=["MID"],
-                price_unit="eur_per_mwh",
+    
                 lifetime_years=1,
             )
 
@@ -343,7 +319,7 @@ class TestLoadMarketPricesValidation:
             load_market_prices(
                 csv_path=csv,
                 required_columns=["MID"],
-                price_unit="eur_per_mwh",
+    
                 lifetime_years=1,
             )
 
@@ -354,22 +330,10 @@ class TestLoadMarketPricesValidation:
             load_market_prices(
                 csv_path=csv,
                 required_columns=["MID"],
-                price_unit="eur_per_mwh",
+    
                 lifetime_years=1,
             )
 
-    def test_invalid_price_unit_raises(self, tmp_path: Path) -> None:
-        """An unknown price_unit raises ValueError."""
-        csv = tmp_path / "prices.csv"
-        _write_price_csv_constant(csv, n_rows=HOURS_PER_YEAR, columns={"MID": 50.0})
-
-        with pytest.raises(ValueError, match="price_unit"):
-            load_market_prices(
-                csv_path=csv,
-                required_columns=["MID"],
-                price_unit="eur_per_ton",
-                lifetime_years=1,
-            )
 
 
 # ---------------------------------------------------------------------------
@@ -412,50 +376,6 @@ class TestGetYearPricesStandalone:
 
 
 # ---------------------------------------------------------------------------
-# collect_scenario_columns()
-# ---------------------------------------------------------------------------
-
-
-class TestCollectScenarioColumns:
-    """Tests for collect_scenario_columns()."""
-
-    def test_single_scenario(self) -> None:
-        scenarios = {"mid": {"csv_column": "MID", "weight": 1.0}}
-        result = collect_scenario_columns(scenarios)
-        assert result == ["MID"]
-
-    def test_three_scenarios_sorted(self) -> None:
-        scenarios = {
-            "low": {"csv_column": "LOW", "weight": 0.25},
-            "mid": {"csv_column": "MID", "weight": 0.50},
-            "high": {"csv_column": "HIGH", "weight": 0.25},
-        }
-        result = collect_scenario_columns(scenarios)
-        assert result == ["HIGH", "LOW", "MID"]
-
-    def test_deduplication(self) -> None:
-        """Two scenario names mapping to same CSV column → one entry."""
-        scenarios = {
-            "base": {"csv_column": "MID", "weight": 0.60},
-            "alt": {"csv_column": "MID", "weight": 0.40},
-        }
-        result = collect_scenario_columns(scenarios)
-        assert result == ["MID"]
-
-    def test_empty_scenarios(self) -> None:
-        result = collect_scenario_columns({})
-        assert result == []
-
-    def test_returns_sorted_list(self) -> None:
-        scenarios = {
-            "z": {"csv_column": "ZZZ", "weight": 0.5},
-            "a": {"csv_column": "AAA", "weight": 0.5},
-        }
-        result = collect_scenario_columns(scenarios)
-        assert result == sorted(result)
-
-
-# ---------------------------------------------------------------------------
 # load_market_prices() – custom CSV format parameters
 # ---------------------------------------------------------------------------
 
@@ -485,25 +405,23 @@ class TestLoadMarketPricesCustomFormat:
         mp = load_market_prices(
             csv_path=csv,
             required_columns=["MID"],
-            price_unit="eur_per_mwh",
+
             lifetime_years=1,
             delimiter=",",
         )
         assert len(mp.get_column("MID")) == HOURS_PER_YEAR
 
     def test_custom_decimal_comma(self, tmp_path: Path) -> None:
-        """load_market_prices converts values written with comma decimal correctly."""
+        """load_market_prices reads values written with comma decimal correctly."""
         csv = tmp_path / "prices.csv"
-        _write_price_csv_custom_format(csv, decimal=",", value=1000.0)
+        _write_price_csv_custom_format(csv, decimal=",", value=0.05)
         mp = load_market_prices(
             csv_path=csv,
             required_columns=["MID"],
-            price_unit="eur_per_mwh",
             lifetime_years=1,
             decimal=",",
         )
-        # 1000 €/MWh → 1.0 €/kWh
-        assert math.isclose(float(mp.get_column("MID")[0]), 1.0, rel_tol=1e-6)
+        assert math.isclose(float(mp.get_column("MID")[0]), 0.05, rel_tol=1e-6)
 
     def test_custom_timestamp_column(self, tmp_path: Path) -> None:
         """load_market_prices reads a CSV with non-standard timestamp column name."""
@@ -512,7 +430,7 @@ class TestLoadMarketPricesCustomFormat:
         mp = load_market_prices(
             csv_path=csv,
             required_columns=["MID"],
-            price_unit="eur_per_mwh",
+
             lifetime_years=1,
             timestamp_column="time",
         )
@@ -521,11 +439,10 @@ class TestLoadMarketPricesCustomFormat:
     def test_lifetime_extension_with_custom_format(self, tmp_path: Path) -> None:
         """Year repetition still works when custom delimiter is used."""
         csv = tmp_path / "prices.csv"
-        _write_price_csv_custom_format(csv, delimiter=",", value=50.0)
+        _write_price_csv_custom_format(csv, delimiter=",", value=0.05)
         mp = load_market_prices(
             csv_path=csv,
             required_columns=["MID"],
-            price_unit="eur_per_mwh",
             lifetime_years=3,
             delimiter=",",
         )

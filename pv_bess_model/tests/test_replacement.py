@@ -216,7 +216,7 @@ def _minimal_scenario(replacement_extra: dict) -> dict:
                         "azimuth_deg": 0,
                         "tilt_deg": 30,
                     },
-                    "performance": {"degradation_rate_pct_per_year": 0.4},
+                    "performance": {"degradation_rate_pct_per_year": 0.4, "pv_availability_pct": 97.0},
                     "costs": {
                         "capex": {"eur_per_kw": 800.0},
                         "opex": {"pct_of_capex": 0.01},
@@ -256,8 +256,21 @@ def _minimal_scenario(replacement_extra: dict) -> dict:
                 "inflation_rate": 0.02,
                 "revenue_streams": {"marketing": {"type": "market"}},
                 "price_inputs": {
-                    "day_ahead_csv": "prices.csv",
-                    "price_unit": "eur_per_mwh",
+                    "scenarios": [
+                        {
+                            "name": "mid",
+                            "csv_column": "MID",
+                            "weather_year": 2017,
+                            "weight": 1.0,
+                            "is_central": True,
+                            "price_csv": "data/day_ahead_prices.csv",
+                            "inflation_on_input_data": True,
+                            "csv_separator": ";",
+                            "csv_decimal": ".",
+                            "csv_timestamp_column": "timestamp",
+                            "csv_timestamp_format": "ISO8601",
+                        },
+                    ],
                 },
                 "tax": {
                     "afa_years_pv": 20,
@@ -324,17 +337,21 @@ def _make_engine_config(
         pv_degradation_rate=0.0,
         replacement=replacement,
         lifetime_years=lifetime,
+        commissioning_year=2027,
         bess_power_kw=nameplate_kwh / 2.0,
     )
 
 
 def _flat_timeseries() -> np.ndarray:
-    """Return a constant 8760-h PV timeseries and price array."""
-    return np.full(8760, 10.0, dtype=float)
+    """Return a constant quarter-hourly PV timeseries (energy per interval)."""
+    from pv_bess_model.config.defaults import INTERVALS_PER_YEAR, INTERVALS_PER_HOUR
+    return np.full(INTERVALS_PER_YEAR, 10.0 / INTERVALS_PER_HOUR, dtype=float)
 
 
 def _flat_spot() -> np.ndarray:
-    return np.full(8760, 0.05, dtype=float)
+    """Return a constant quarter-hourly price array."""
+    from pv_bess_model.config.defaults import INTERVALS_PER_YEAR
+    return np.full(INTERVALS_PER_YEAR, 0.05, dtype=float)
 
 
 class TestEngineCapacityUpgrade:
@@ -353,6 +370,7 @@ class TestEngineCapacityUpgrade:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot] * 3,
             fixed_prices_yearly=[0.0] * 3,
             offline_days_yearly=[set()] * 3,
@@ -376,6 +394,7 @@ class TestEngineCapacityUpgrade:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot] * 3,
             fixed_prices_yearly=[0.0] * 3,
             offline_days_yearly=[set()] * 3,
@@ -399,6 +418,7 @@ class TestEngineCapacityUpgrade:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot] * 3,
             fixed_prices_yearly=[0.0] * 3,
             offline_days_yearly=[set()] * 3,
@@ -439,6 +459,7 @@ class TestEngineCapacityUpgrade:
             pv_degradation_rate=0.0,
             replacement=replacement,
             lifetime_years=3,
+            commissioning_year=2027,
             bess_power_kw=power,
         )
         pv = _flat_timeseries()
@@ -446,6 +467,7 @@ class TestEngineCapacityUpgrade:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot] * 3,
             fixed_prices_yearly=[0.0] * 3,
             offline_days_yearly=[set()] * 3,

@@ -118,7 +118,7 @@ class TestCalculateDscr:
         revenues = [500_000.0] * 5
         opex = [200_000.0] * 5
         debt_svc = [100_000.0] * 5
-        min_d, avg_d = calculate_dscr(revenues, opex, debt_svc)
+        min_d, avg_d, _ = calculate_dscr(revenues, opex, debt_svc)
         assert min_d is not None and avg_d is not None
         expected = (500_000 - 200_000) / 100_000  # 3.0
         assert math.isclose(min_d, expected)
@@ -129,31 +129,31 @@ class TestCalculateDscr:
         revenues = [300_000.0, 400_000.0, 500_000.0]
         opex = [200_000.0, 200_000.0, 200_000.0]
         debt_svc = [100_000.0, 100_000.0, 100_000.0]
-        min_d, avg_d = calculate_dscr(revenues, opex, debt_svc)
+        min_d, avg_d, _ = calculate_dscr(revenues, opex, debt_svc)
         assert min_d is not None and avg_d is not None
         # DSCRs: 1.0, 2.0, 3.0
         assert math.isclose(min_d, 1.0)
         assert math.isclose(avg_d, 2.0)
 
     def test_no_debt_returns_none(self) -> None:
-        """No debt service → (None, None)."""
-        min_d, avg_d = calculate_dscr([100_000.0], [50_000.0], [0.0])
+        """No debt service → (None, None, zeros)."""
+        min_d, avg_d, _ = calculate_dscr([100_000.0], [50_000.0], [0.0])
         assert min_d is None
         assert avg_d is None
 
     def test_empty_lists_returns_none(self) -> None:
-        """Empty lists → (None, None)."""
-        min_d, avg_d = calculate_dscr([], [], [])
+        """Empty lists → (None, None, zeros)."""
+        min_d, avg_d, _ = calculate_dscr([], [], [])
         assert min_d is None
         assert avg_d is None
 
     def test_dscr_below_one_warns(self, caplog: pytest.LogCaptureFixture) -> None:
-        """DSCR < 1 should log a warning."""
+        """DSCR < 1 should log a debug message."""
         revenues = [80_000.0]
         opex = [50_000.0]
         debt_svc = [100_000.0]
-        with caplog.at_level("WARNING"):
-            min_d, _ = calculate_dscr(revenues, opex, debt_svc)
+        with caplog.at_level("DEBUG"):
+            min_d, _, _ = calculate_dscr(revenues, opex, debt_svc)
         assert min_d is not None
         assert min_d < 1.0
         assert "below threshold" in caplog.text

@@ -180,18 +180,14 @@ class TestScenarioConfigAccessors:
     def test_mc_enabled_true(self, sample_scenario_config_green):
         data = copy.deepcopy(sample_scenario_config_green)
         data["scenario"].setdefault("monte_carlo", {})["enabled"] = True
-        # weight sum must be 1 → reuse single scenario with weight 1
-        data["scenario"]["monte_carlo"]["price_scenarios"] = {
-            "mid": {"csv_column": "MID", "weight": 1.0}
-        }
         cfg = load_scenario_dict(data)
         assert cfg.mc_enabled is True
 
-    def test_price_unit(self, cfg):
-        assert cfg.price_unit == "eur_per_mwh"
-
-    def test_price_csv_path(self, cfg):
-        assert "day_ahead_prices.csv" in cfg.price_csv_path
+    def test_price_scenarios_accessible(self, cfg):
+        """price_inputs.scenarios is accessible from the config."""
+        scenarios = cfg.finance["price_inputs"]["scenarios"]
+        assert len(scenarios) >= 1
+        assert "csv_column" in scenarios[0]
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +198,7 @@ class TestScenarioConfigAccessors:
 class TestLoadPriceCSVHappyPath:
     def test_basic_load_single_column(self, tmp_path):
         p = _make_price_csv(tmp_path, n_rows=HOURS_PER_YEAR, columns=["MID"])
-        data = load_price_csv(p, required_columns=["MID"], price_unit="eur_per_mwh")
+        data = load_price_csv(p, required_columns=["MID"])
         assert isinstance(data, PriceData)
         assert "MID" in data.columns
         assert len(data.columns["MID"]) == HOURS_PER_YEAR
@@ -213,19 +209,18 @@ class TestLoadPriceCSVHappyPath:
             tmp_path, n_rows=HOURS_PER_YEAR, columns=["LOW", "MID", "HIGH"]
         )
         data = load_price_csv(
-            p, required_columns=["LOW", "MID", "HIGH"], price_unit="eur_per_mwh"
-        )
+            p, required_columns=["LOW", "MID", "HIGH"]        )
         assert set(data.columns.keys()) == {"LOW", "MID", "HIGH"}
 
-    def test_unit_mwh_to_kwh_conversion(self, tmp_path):
-        """Prices in €/MWh must be divided by 1000 to yield €/kWh."""
+    def test_values_loaded_as_is(self, tmp_path):
+        """Values are loaded as-is (no unit conversion, all EUR/kWh)."""
         p = tmp_path / "prices.csv"
         rows = ["timestamp;MID"] + [
-            f"2023-01-01T{i:05d};1000.0" for i in range(HOURS_PER_YEAR)
+            f"2023-01-01T{i:05d};0.05" for i in range(HOURS_PER_YEAR)
         ]
         p.write_text("\n".join(rows))
-        data = load_price_csv(p, required_columns=["MID"], price_unit="eur_per_mwh")
-        assert math.isclose(data.columns["MID"][0], 1.0, rel_tol=1e-9)
+        data = load_price_csv(p, required_columns=["MID"])
+        assert math.isclose(data.columns["MID"][0], 0.05, rel_tol=1e-9)
 
     def test_unit_kwh_no_conversion(self, tmp_path):
         """Prices already in €/kWh must not be modified."""
@@ -234,12 +229,12 @@ class TestLoadPriceCSVHappyPath:
             f"2023-01-01T{i:05d};0.05" for i in range(HOURS_PER_YEAR)
         ]
         p.write_text("\n".join(rows))
-        data = load_price_csv(p, required_columns=["MID"], price_unit="eur_per_kwh")
+        data = load_price_csv(p, required_columns=["MID"])
         assert math.isclose(data.columns["MID"][0], 0.05, rel_tol=1e-9)
 
     def test_more_than_one_year_accepted(self, tmp_path):
         p = _make_price_csv(tmp_path, n_rows=2 * HOURS_PER_YEAR, columns=["MID"])
-        data = load_price_csv(p, required_columns=["MID"], price_unit="eur_per_mwh")
+        data = load_price_csv(p, required_columns=["MID"])
         assert data.n_hours == 2 * HOURS_PER_YEAR
 
     def test_extra_columns_in_csv_are_ignored(self, tmp_path):
@@ -247,7 +242,7 @@ class TestLoadPriceCSVHappyPath:
         p = _make_price_csv(
             tmp_path, n_rows=HOURS_PER_YEAR, columns=["LOW", "MID", "HIGH"]
         )
-        data = load_price_csv(p, required_columns=["MID"], price_unit="eur_per_mwh")
+        data = load_price_csv(p, required_columns=["MID"])
         assert list(data.columns.keys()) == ["MID"]
 
     def test_negative_prices_preserved(self, tmp_path):
@@ -256,18 +251,18 @@ class TestLoadPriceCSVHappyPath:
         rows = "timestamp;MID\n"
         rows += "2023-01-01T00:00:00;-50.0\n" * HOURS_PER_YEAR
         p.write_text(rows)
-        data = load_price_csv(p, required_columns=["MID"], price_unit="eur_per_mwh")
+        data = load_price_csv(p, required_columns=["MID"])
         assert data.columns["MID"][0] < 0
 
     def test_get_column(self, tmp_path):
         p = _make_price_csv(tmp_path, n_rows=HOURS_PER_YEAR, columns=["MID"])
-        data = load_price_csv(p, required_columns=["MID"], price_unit="eur_per_mwh")
+        data = load_price_csv(p, required_columns=["MID"])
         arr = data.get_column("MID")
         assert isinstance(arr, np.ndarray)
 
     def test_get_column_missing_raises_key_error(self, tmp_path):
         p = _make_price_csv(tmp_path, n_rows=HOURS_PER_YEAR, columns=["MID"])
-        data = load_price_csv(p, required_columns=["MID"], price_unit="eur_per_mwh")
+        data = load_price_csv(p, required_columns=["MID"])
         with pytest.raises(KeyError, match="HIGH"):
             data.get_column("HIGH")
 
@@ -283,29 +278,27 @@ class TestLoadPriceCSVErrors:
             load_price_csv(
                 tmp_path / "missing.csv",
                 required_columns=["MID"],
-                price_unit="eur_per_mwh",
-            )
+                            )
 
     def test_missing_required_column(self, tmp_path):
         p = _make_price_csv(tmp_path, n_rows=HOURS_PER_YEAR, columns=["MID"])
         with pytest.raises(ValueError, match="HIGH"):
             load_price_csv(
-                p, required_columns=["MID", "HIGH"], price_unit="eur_per_mwh"
-            )
+                p, required_columns=["MID", "HIGH"]            )
 
     def test_error_message_lists_available_columns(self, tmp_path):
         p = _make_price_csv(tmp_path, n_rows=HOURS_PER_YEAR, columns=["MID"])
         with pytest.raises(ValueError, match="MID"):
-            load_price_csv(p, required_columns=["MISSING"], price_unit="eur_per_mwh")
+            load_price_csv(p, required_columns=["MISSING"])
 
     def test_too_few_rows_raises(self, tmp_path):
         p = _make_price_csv(tmp_path, n_rows=100, columns=["MID"])
         with pytest.raises(ValueError, match=str(MIN_PRICE_TIMESERIES_HOURS)):
-            load_price_csv(p, required_columns=["MID"], price_unit="eur_per_mwh")
+            load_price_csv(p, required_columns=["MID"])
 
     def test_exactly_8760_rows_accepted(self, tmp_path):
         p = _make_price_csv(tmp_path, n_rows=8760, columns=["MID"])
-        data = load_price_csv(p, required_columns=["MID"], price_unit="eur_per_mwh")
+        data = load_price_csv(p, required_columns=["MID"])
         assert data.n_hours == 8760
 
     def test_nan_in_required_column_raises(self, tmp_path):
@@ -317,7 +310,7 @@ class TestLoadPriceCSVErrors:
             nan_row=42,
         )
         with pytest.raises(ValueError, match="NaN"):
-            load_price_csv(p, required_columns=["MID"], price_unit="eur_per_mwh")
+            load_price_csv(p, required_columns=["MID"])
 
     def test_nan_error_names_affected_column(self, tmp_path):
         p = _make_price_csv(
@@ -328,7 +321,7 @@ class TestLoadPriceCSVErrors:
             nan_row=0,
         )
         with pytest.raises(ValueError, match="MID"):
-            load_price_csv(p, required_columns=["LOW", "MID"], price_unit="eur_per_mwh")
+            load_price_csv(p, required_columns=["LOW", "MID"])
 
     def test_nan_error_mentions_row_index(self, tmp_path):
         p = _make_price_csv(
@@ -339,12 +332,7 @@ class TestLoadPriceCSVErrors:
             nan_row=100,
         )
         with pytest.raises(ValueError, match="100"):
-            load_price_csv(p, required_columns=["MID"], price_unit="eur_per_mwh")
-
-    def test_unknown_price_unit_raises(self, tmp_path):
-        p = _make_price_csv(tmp_path, n_rows=HOURS_PER_YEAR, columns=["MID"])
-        with pytest.raises(ValueError, match="eur_per_twh"):
-            load_price_csv(p, required_columns=["MID"], price_unit="eur_per_twh")
+            load_price_csv(p, required_columns=["MID"])
 
     def test_multiple_nan_columns_all_listed(self, tmp_path):
         """Both affected columns must appear in the error message."""
@@ -357,8 +345,7 @@ class TestLoadPriceCSVErrors:
         p.write_text("\n".join(rows))
         with pytest.raises(ValueError) as exc_info:
             load_price_csv(
-                p, required_columns=["LOW", "HIGH"], price_unit="eur_per_mwh"
-            )
+                p, required_columns=["LOW", "HIGH"]            )
         msg = str(exc_info.value)
         assert "LOW" in msg
         assert "HIGH" in msg
@@ -492,8 +479,7 @@ class TestLoadPriceCSVCommissioningYearFilter:
         """commissioning_year=None leaves all rows intact (default behaviour)."""
         p = _make_price_csv_with_timestamps(tmp_path, start_year=2020, n_years=3)
         data = load_price_csv(
-            p, required_columns=["MID"], price_unit="eur_per_mwh",
-            commissioning_year=None,
+            p, required_columns=["MID"],             commissioning_year=None,
         )
         assert data.n_hours == 3 * HOURS_PER_YEAR
 
@@ -501,8 +487,7 @@ class TestLoadPriceCSVCommissioningYearFilter:
         """CSV starting in 2020, commissioning 2022 → 2020+2021 dropped."""
         p = _make_price_csv_with_timestamps(tmp_path, start_year=2020, n_years=4)
         data = load_price_csv(
-            p, required_columns=["MID"], price_unit="eur_per_mwh",
-            commissioning_year=2022,
+            p, required_columns=["MID"],             commissioning_year=2022,
         )
         # 2022 + 2023 = 2 years remaining
         assert data.n_hours == 2 * HOURS_PER_YEAR
@@ -511,8 +496,7 @@ class TestLoadPriceCSVCommissioningYearFilter:
         """If CSV starts exactly at commissioning year, nothing is dropped."""
         p = _make_price_csv_with_timestamps(tmp_path, start_year=2025, n_years=2)
         data = load_price_csv(
-            p, required_columns=["MID"], price_unit="eur_per_mwh",
-            commissioning_year=2025,
+            p, required_columns=["MID"],             commissioning_year=2025,
         )
         assert data.n_hours == 2 * HOURS_PER_YEAR
 
@@ -520,8 +504,7 @@ class TestLoadPriceCSVCommissioningYearFilter:
         """If CSV starts after commissioning year, nothing is dropped."""
         p = _make_price_csv_with_timestamps(tmp_path, start_year=2026, n_years=1)
         data = load_price_csv(
-            p, required_columns=["MID"], price_unit="eur_per_mwh",
-            commissioning_year=2025,
+            p, required_columns=["MID"],             commissioning_year=2025,
         )
         assert data.n_hours == HOURS_PER_YEAR
 
@@ -529,8 +512,7 @@ class TestLoadPriceCSVCommissioningYearFilter:
         """CSV 2024–2026, commissioning 2025 → only 2024 dropped."""
         p = _make_price_csv_with_timestamps(tmp_path, start_year=2024, n_years=3)
         data = load_price_csv(
-            p, required_columns=["MID"], price_unit="eur_per_mwh",
-            commissioning_year=2025,
+            p, required_columns=["MID"],             commissioning_year=2025,
         )
         assert data.n_hours == 2 * HOURS_PER_YEAR
 
@@ -540,8 +522,7 @@ class TestLoadPriceCSVCommissioningYearFilter:
         p = _make_price_csv_with_timestamps(tmp_path, start_year=2020, n_years=1)
         with pytest.raises(ValueError, match=str(MIN_PRICE_TIMESERIES_HOURS)):
             load_price_csv(
-                p, required_columns=["MID"], price_unit="eur_per_mwh",
-                commissioning_year=2021,
+                p, required_columns=["MID"],                 commissioning_year=2021,
             )
 
     def test_filter_preserves_values(self, tmp_path):
@@ -561,12 +542,11 @@ class TestLoadPriceCSVCommissioningYearFilter:
         )
 
         data = load_price_csv(
-            p, required_columns=["MID"], price_unit="eur_per_mwh",
-            commissioning_year=2025,
+            p, required_columns=["MID"],             commissioning_year=2025,
         )
-        # Only 2025 data remains, all values should be 60 €/MWh → 0.06 €/kWh
+        # Only 2025 data remains, all values should be 60 (EUR/kWh as-is)
         assert data.n_hours == HOURS_PER_YEAR
-        np.testing.assert_allclose(data.columns["MID"], 0.06, rtol=1e-9)
+        np.testing.assert_allclose(data.columns["MID"], 60.0, rtol=1e-9)
 
     def test_filter_multiple_columns(self, tmp_path):
         """Filtering works correctly with multiple price columns."""
@@ -575,8 +555,7 @@ class TestLoadPriceCSVCommissioningYearFilter:
             columns=["LOW", "MID", "HIGH"],
         )
         data = load_price_csv(
-            p, required_columns=["LOW", "MID", "HIGH"], price_unit="eur_per_mwh",
-            commissioning_year=2022,
+            p, required_columns=["LOW", "MID", "HIGH"],             commissioning_year=2022,
         )
         assert data.n_hours == HOURS_PER_YEAR
         for col in ["LOW", "MID", "HIGH"]:
@@ -589,8 +568,7 @@ class TestLoadPriceCSVCommissioningYearFilter:
         p.write_text("\n".join(rows), encoding="utf-8")
         with pytest.raises(ValueError, match="timestamp"):
             load_price_csv(
-                p, required_columns=["MID"], price_unit="eur_per_mwh",
-                commissioning_year=2025,
+                p, required_columns=["MID"],                 commissioning_year=2025,
             )
 
 
@@ -628,8 +606,7 @@ class TestLoadPriceCSVCustomFormat:
         """CSV with comma as delimiter is loaded correctly."""
         p = _make_price_csv_custom(tmp_path, delimiter=",", decimal=".")
         data = load_price_csv(
-            p, required_columns=["MID"], price_unit="eur_per_mwh",
-            delimiter=",",
+            p, required_columns=["MID"],             delimiter=",",
         )
         assert data.n_hours == HOURS_PER_YEAR
         assert "MID" in data.columns
@@ -638,8 +615,7 @@ class TestLoadPriceCSVCustomFormat:
         """CSV with tab as delimiter is loaded correctly."""
         p = _make_price_csv_custom(tmp_path, delimiter="\t", decimal=".")
         data = load_price_csv(
-            p, required_columns=["MID"], price_unit="eur_per_mwh",
-            delimiter="\t",
+            p, required_columns=["MID"],             delimiter="\t",
         )
         assert data.n_hours == HOURS_PER_YEAR
 
@@ -647,20 +623,18 @@ class TestLoadPriceCSVCustomFormat:
         """CSV with comma as decimal separator is loaded and converted correctly."""
         p = _make_price_csv_custom(tmp_path, delimiter=";", decimal=",", value=1000.0)
         data = load_price_csv(
-            p, required_columns=["MID"], price_unit="eur_per_mwh",
-            decimal=",",
+            p, required_columns=["MID"],             decimal=",",
         )
-        # 1000 €/MWh → 1.0 €/kWh
+        # Values loaded as-is (EUR/kWh)
         assert data.n_hours == HOURS_PER_YEAR
         import math
-        assert math.isclose(float(data.columns["MID"][0]), 1.0, rel_tol=1e-6)
+        assert math.isclose(float(data.columns["MID"][0]), 1000.0, rel_tol=1e-6)
 
     def test_custom_timestamp_column_name(self, tmp_path):
         """CSV with a non-standard timestamp column name is loaded correctly."""
         p = _make_price_csv_custom(tmp_path, timestamp_col="time")
         data = load_price_csv(
-            p, required_columns=["MID"], price_unit="eur_per_mwh",
-            timestamp_column="time",
+            p, required_columns=["MID"],             timestamp_column="time",
         )
         assert data.n_hours == HOURS_PER_YEAR
 
@@ -677,8 +651,7 @@ class TestLoadPriceCSVCustomFormat:
             p, index=False, sep=";"
         )
         data = load_price_csv(
-            p, required_columns=["MID"], price_unit="eur_per_mwh",
-            commissioning_year=2024,
+            p, required_columns=["MID"],             commissioning_year=2024,
             timestamp_column="zeit",
         )
         assert data.n_hours == HOURS_PER_YEAR
@@ -692,8 +665,7 @@ class TestLoadPriceCSVCustomFormat:
             rows.append(f"01.01.2023 {i % 24:02d}:00;50.0")
         p.write_text("\n".join(rows), encoding="utf-8")
         data = load_price_csv(
-            p, required_columns=["MID"], price_unit="eur_per_mwh",
-            timestamp_format="%d.%m.%Y %H:%M",
+            p, required_columns=["MID"],             timestamp_format="%d.%m.%Y %H:%M",
         )
         assert data.n_hours == HOURS_PER_YEAR
 
@@ -708,8 +680,7 @@ class TestLoadPriceCSVCustomFormat:
                 rows.append(f"{t.strftime('%d.%m.%Y %H:%M')};50.0")
         p.write_text("\n".join(rows), encoding="utf-8")
         data = load_price_csv(
-            p, required_columns=["MID"], price_unit="eur_per_mwh",
-            commissioning_year=2024,
+            p, required_columns=["MID"],             commissioning_year=2024,
             timestamp_column="ts",
             timestamp_format="%d.%m.%Y %H:%M",
         )
@@ -721,15 +692,13 @@ class TestLoadPriceCSVCustomFormat:
         # Try to load with comma delimiter → columns won't be split correctly
         with pytest.raises((ValueError, KeyError)):
             load_price_csv(
-                p, required_columns=["MID"], price_unit="eur_per_mwh",
-                delimiter=",",
+                p, required_columns=["MID"],                 delimiter=",",
             )
 
     def test_default_decimal_dot_reads_standard_csv(self, tmp_path):
         """Default decimal '.' reads standard market data CSV correctly."""
         p = _make_price_csv_custom(tmp_path, decimal=".", value=50.0)
         data = load_price_csv(
-            p, required_columns=["MID"], price_unit="eur_per_mwh",
-        )
+            p, required_columns=["MID"],         )
         import math
-        assert math.isclose(float(data.columns["MID"][0]), 0.05, rel_tol=1e-6)
+        assert math.isclose(float(data.columns["MID"][0]), 50.0, rel_tol=1e-6)

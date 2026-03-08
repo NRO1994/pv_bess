@@ -148,10 +148,9 @@ class TestGreenModeBessDischargeAtSpot:
 
         eff = np.maximum(spot, floor)
 
-        # Verify revenue components
-        pv_rev = result["export_pv"] * eff
-        bess_rev = result["discharge_green"] * bess.round_trip_efficiency * spot
-        expected_total = pv_rev + bess_rev
+        # Revenue = (export_pv + discharge_green) × eff
+        # discharge_green is already post-RTE
+        expected_total = (result["export_pv"] + result["discharge_green"]) * eff
 
         np.testing.assert_allclose(result["revenue"], expected_total, atol=ATOL)
 
@@ -208,12 +207,9 @@ class TestGreenModeBessDischargeAtSpot:
             start_soc_kwh=50.0,
         )
 
-        # Revenue should equal: export × spot + discharge × RTE × spot
-        # (since eff == spot when no floor)
-        expected_revenue = (
-            result["export_pv"] * spot
-            + result["discharge_green"] * 0.90 * spot
-        )
+        # Revenue = (export_pv + discharge_green) × eff_prices
+        # discharge_green is already post-RTE; eff == spot when no floor
+        expected_revenue = (result["export_pv"] + result["discharge_green"]) * spot
         np.testing.assert_allclose(result["revenue"], expected_revenue, atol=ATOL)
 
 
@@ -246,11 +242,9 @@ class TestGreenModeCollarBessAtSpot:
 
         eff = np.clip(spot, floor, cap)
 
-        # Verify: PV at eff, BESS at spot
-        expected_revenue = (
-            result["export_pv"] * eff
-            + result["discharge_green"] * 1.0 * spot
-        )
+        # Revenue = (export_pv + discharge_green) × eff
+        # discharge_green is already post-RTE
+        expected_revenue = (result["export_pv"] + result["discharge_green"]) * eff
         np.testing.assert_allclose(result["revenue"], expected_revenue, atol=ATOL)
 
     def test_collar_bess_cycles_when_spot_above_cap(self) -> None:
@@ -312,11 +306,9 @@ class TestGreenModeGooWithBessSpot:
 
         eff = np.maximum(spot, floor) + goo
 
-        # PV export at eff (with goo), BESS at spot (no goo)
-        expected_revenue = (
-            result["export_pv"] * eff
-            + result["discharge_green"] * 1.0 * spot
-        )
+        # Revenue = (export_pv + discharge_green) × eff
+        # Both PV and BESS green discharge use effective prices (with goo)
+        expected_revenue = (result["export_pv"] + result["discharge_green"]) * eff
         np.testing.assert_allclose(result["revenue"], expected_revenue, atol=ATOL)
 
 
@@ -355,12 +347,11 @@ class TestGreyModeBessGreenDischargeAtSpot:
 
         eff = np.maximum(spot, floor)
 
-        # Revenue: PV at eff, green discharge at spot, grey at spot, grid import at spot
+        # Revenue = (export_pv + discharge_green) × eff + (discharge_grey - charge_grid) × spot
+        # discharge_green and discharge_grey are already post-RTE
         expected_revenue = (
-            result["export_pv"] * eff
-            + result["discharge_green"] * 0.90 * spot
-            + result["discharge_grey"] * 0.90 * spot
-            - result["charge_grid"] * spot
+            (result["export_pv"] + result["discharge_green"]) * eff
+            + (result["discharge_grey"] - result["charge_grid"]) * spot
         )
         np.testing.assert_allclose(result["revenue"], expected_revenue, atol=ATOL)
 
@@ -383,12 +374,10 @@ class TestGreyModeBessGreenDischargeAtSpot:
             start_soc_grey_kwh=0.0,
         )
 
-        # With no floor, eff==spot, so this just verifies consistency
+        # With no floor, eff==spot; discharge values are already post-RTE
         expected_revenue = (
-            result["export_pv"] * spot
-            + result["discharge_green"] * 0.90 * spot
-            + result["discharge_grey"] * 0.90 * spot
-            - result["charge_grid"] * spot
+            (result["export_pv"] + result["discharge_green"]) * spot
+            + (result["discharge_grey"] - result["charge_grid"]) * spot
         )
         np.testing.assert_allclose(result["revenue"], expected_revenue, atol=ATOL)
 
@@ -460,7 +449,8 @@ class TestEnergyBalancePreserved:
             start_soc_kwh=50.0,
         )
 
-        grid_out = result["export_pv"] + result["discharge_green"] * rte
+        # discharge_green is already post-RTE
+        grid_out = result["export_pv"] + result["discharge_green"]
         assert np.all(grid_out <= grid_max + ATOL)
 
 
@@ -490,10 +480,9 @@ class TestGridLossFactorWithSpotPricing:
         )
 
         eff = np.maximum(spot, floor)
-        expected_revenue = (
-            result["export_pv"] * glf * eff
-            + result["discharge_green"] * 1.0 * glf * spot
-        )
+        # export_pv and discharge_green are already post-glf and post-RTE
+        # Revenue = (export_pv + discharge_green) × eff
+        expected_revenue = (result["export_pv"] + result["discharge_green"]) * eff
         np.testing.assert_allclose(result["revenue"], expected_revenue, atol=ATOL)
 
 

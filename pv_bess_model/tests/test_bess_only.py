@@ -30,22 +30,30 @@ from pv_bess_model.optimization.grid_search import GridSearchConfig, run_grid_se
 # Helpers / shared fixtures
 # ---------------------------------------------------------------------------
 
-HOURS_PER_YEAR = 8760
+from pv_bess_model.config.defaults import (
+    INTERVALS_PER_HOUR,
+    INTERVALS_PER_YEAR,
+    TIMESTEP_HOURS,
+)
 
 
 def _flat_spot(price: float = 0.05) -> np.ndarray:
-    return np.full(HOURS_PER_YEAR, price, dtype=float)
+    return np.full(INTERVALS_PER_YEAR, price, dtype=float)
 
 
 def _pv_profile(peak_kwh: float = 10.0) -> np.ndarray:
-    """Simple half-sine daytime PV profile."""
-    hour_of_day = np.arange(HOURS_PER_YEAR) % 24
+    """Simple half-sine daytime PV profile at quarter-hourly resolution.
+
+    Energy per interval is ``peak_kwh / INTERVALS_PER_HOUR`` so that the
+    hourly total matches the old hourly profile.
+    """
+    hour_of_day = np.arange(INTERVALS_PER_YEAR) % (24 * INTERVALS_PER_HOUR) // INTERVALS_PER_HOUR
     daylight = np.where(
         (hour_of_day >= 6) & (hour_of_day <= 18),
         np.sin(np.pi * (hour_of_day - 6) / 12),
         0.0,
     )
-    return (peak_kwh * daylight).astype(float)
+    return (peak_kwh / INTERVALS_PER_HOUR * daylight).astype(float)
 
 
 def _make_grid_config(
@@ -60,15 +68,17 @@ def _make_grid_config(
     if e_to_p is None:
         e_to_p = [2.0]
     spot = _flat_spot()
-    pv = _pv_profile() if pv_peak_kwp > 0 else np.zeros(HOURS_PER_YEAR, dtype=float)
+    pv = _pv_profile() if pv_peak_kwp > 0 else np.zeros(INTERVALS_PER_YEAR, dtype=float)
     return GridSearchConfig(
         scale_pct_of_pv=scales,
         e_to_p_ratio_hours=e_to_p,
         pv_peak_kwp=pv_peak_kwp,
         pv_base_timeseries=pv,
+        pv_base_timeseries_year=2020,
         pv_degradation_rate=0.0,
         pv_costs_capex={"eur_per_kw": 100.0} if pv_peak_kwp > 0 else {},
         pv_costs_opex={},
+        pv_availability_pct=100.0,
         bess_rte=0.90,
         bess_min_soc_pct=10.0,
         bess_max_soc_pct=90.0,
@@ -90,7 +100,9 @@ def _make_grid_config(
         operating_mode="grey",
         spot_prices_yearly=[spot.copy() for _ in range(lifetime)],
         fixed_prices_yearly=[0.0] * lifetime,
+        baseload_mw=0.0,
         lifetime_years=lifetime,
+        commissioning_year=2027,
         leverage_pct=0.0,
         interest_rate_pct=4.5,
         loan_tenor_years=lifetime,
@@ -102,7 +114,9 @@ def _make_grid_config(
         gewerbesteuer_hebesatz=400,
         koerperschaftsteuer_pct=15.0,
         solidaritaetszuschlag_pct=5.5,
-
+        timestep_hours=TIMESTEP_HOURS,
+        intervals_per_day=INTERVALS_PER_HOUR * 24,
+        intervals_per_year=INTERVALS_PER_YEAR,
         max_workers=1,
         bess_absolute_power_kw=absolute_power_kw,
         bess_absolute_capacity_kwh=absolute_capacity_kwh,
@@ -136,7 +150,7 @@ def _minimal_scenario(extra_pv_peak: float = 1000.0) -> dict:
                         "azimuth_deg": 0,
                         "tilt_deg": 30,
                     },
-                    "performance": {"degradation_rate_pct_per_year": 0.4},
+                    "performance": {"degradation_rate_pct_per_year": 0.4, "pv_availability_pct": 97.0},
                     "costs": {
                         "capex": {"eur_per_kw": 800.0},
                         "opex": {"pct_of_capex": 0.01},
@@ -175,8 +189,21 @@ def _minimal_scenario(extra_pv_peak: float = 1000.0) -> dict:
                 "inflation_rate": 0.02,
                 "revenue_streams": {"marketing": {"type": "market"}},
                 "price_inputs": {
-                    "day_ahead_csv": "prices.csv",
-                    "price_unit": "eur_per_mwh",
+                    "scenarios": [
+                        {
+                            "name": "mid",
+                            "csv_column": "MID",
+                            "weather_year": 2017,
+                            "weight": 1.0,
+                            "is_central": True,
+                            "price_csv": "data/day_ahead_prices.csv",
+                            "inflation_on_input_data": True,
+                            "csv_separator": ";",
+                            "csv_decimal": ".",
+                            "csv_timestamp_column": "timestamp",
+                            "csv_timestamp_format": "ISO8601",
+                        }
+                    ]
                 },
                 "tax": {
                     "afa_years_pv": 20,

@@ -176,10 +176,9 @@ class TestApplyDegradationErrors:
 
 
 class TestDegradationFactor:
-    def test_year_0_raises(self):
-        """Year 0 (construction) is not a simulation year and must raise ValueError."""
-        with pytest.raises(ValueError):
-            degradation_factor(0.004, 0)
+    def test_year_0_returns_one(self):
+        """Year 0 (construction year) has no degradation applied."""
+        assert degradation_factor(0.004, 0) == pytest.approx(1.0)
 
     def test_year_1_value(self):
         assert degradation_factor(0.004, 1) == pytest.approx((1 - 0.004) ** 1)
@@ -211,8 +210,6 @@ class TestDegradationFactor:
             degradation_factor(1.0, 1)
 
     def test_invalid_year_raises(self):
-        with pytest.raises(ValueError):
-            degradation_factor(0.004, 0)
         with pytest.raises(ValueError):
             degradation_factor(0.004, -5)
 

@@ -297,9 +297,6 @@ def sample_scenario_config_green() -> dict:
                 "sigma_opex_bess_pct": 8.0,
                 "sigma_pv_availability_pct": 2.0,
                 "sigma_bess_availability_pct": 2.0,
-                "price_scenarios": {
-                    "mid": {"csv_column": "MID", "weight": 1.0},
-                },
             },
             "output": {
                 "directory": "output/test/",
@@ -326,6 +323,7 @@ def sample_scenario_config_green() -> dict:
                     },
                     "performance": {
                         "degradation_rate_pct_per_year": 0.4,
+                        "pv_availability_pct": 97.0,
                     },
                     "costs": {
                         "capex": {
@@ -411,9 +409,21 @@ def sample_scenario_config_green() -> dict:
                     },
                 },
                 "price_inputs": {
-                    "day_ahead_csv": "data/day_ahead_prices.csv",
-                    "price_unit": "eur_per_mwh",
-                    "inflation_on_input_data": True,
+                    "scenarios": [
+                        {
+                            "name": "mid",
+                            "csv_column": "MID",
+                            "weather_year": 2017,
+                            "weight": 1.0,
+                            "is_central": True,
+                            "price_csv": "data/day_ahead_prices.csv",
+                            "inflation_on_input_data": True,
+                            "csv_separator": ";",
+                            "csv_decimal": ".",
+                            "csv_timestamp_column": "timestamp",
+                            "csv_timestamp_format": "ISO8601",
+                        },
+                    ],
                 },
                 "tax": {
                     "afa_years_pv": 20,
@@ -447,9 +457,6 @@ def sample_scenario_config_grey() -> dict:
                 "sigma_opex_bess_pct": 8.0,
                 "sigma_pv_availability_pct": 2.0,
                 "sigma_bess_availability_pct": 2.0,
-                "price_scenarios": {
-                    "mid": {"csv_column": "MID", "weight": 1.0},
-                },
             },
             "output": {
                 "directory": "output/test/",
@@ -476,6 +483,7 @@ def sample_scenario_config_grey() -> dict:
                     },
                     "performance": {
                         "degradation_rate_pct_per_year": 0.4,
+                        "pv_availability_pct": 97.0,
                     },
                     "costs": {
                         "capex": {
@@ -561,9 +569,21 @@ def sample_scenario_config_grey() -> dict:
                     },
                 },
                 "price_inputs": {
-                    "day_ahead_csv": "data/day_ahead_prices.csv",
-                    "price_unit": "eur_per_mwh",
-                    "inflation_on_input_data": True,
+                    "scenarios": [
+                        {
+                            "name": "mid",
+                            "csv_column": "MID",
+                            "weather_year": 2017,
+                            "weight": 1.0,
+                            "is_central": True,
+                            "price_csv": "data/day_ahead_prices.csv",
+                            "inflation_on_input_data": True,
+                            "csv_separator": ";",
+                            "csv_decimal": ".",
+                            "csv_timestamp_column": "timestamp",
+                            "csv_timestamp_format": "ISO8601",
+                        },
+                    ],
                 },
                 "tax": {
                     "afa_years_pv": 20,
@@ -694,7 +714,8 @@ def reference_optimizer_4h() -> dict:
         "expected_charge_pv_kwh": np.array([0.0, charge_t1, 0.0, 0.0]),
         "expected_export_pv_kwh": np.array([100.0, export_t1, 50.0, 0.0]),
         "expected_curtail_kwh": np.array([0.0, 0.0, 0.0, 0.0]),
-        "expected_discharge_green_kwh": np.array([disch_t0, 0.0, 0.0, 100.0]),
+        # NOTE: optimizer returns discharge_green post-RTE (raw × 0.9)
+        "expected_discharge_green_kwh": np.array([disch_t0 * 0.9, 0.0, 0.0, 100.0 * 0.9]),
         # SoC at end of each hour (after charge/discharge applied)
         "expected_soc_kwh": np.array(
             [100.0 - disch_t0, 120.0, 120.0, 20.0]

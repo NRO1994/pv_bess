@@ -65,10 +65,14 @@ def _assert_soc_within_bounds(
 def _assert_grid_limit(
     result: DailyDispatchResult, rte: float, grid_max: float
 ) -> None:
-    """Assert grid limit: export_pv + (disch_green + disch_grey) x RTE <= grid_max."""
+    """Assert grid limit: export_pv + disch_green + disch_grey <= grid_max.
+
+    Note: discharge_green/grey are returned post-RTE by the optimizer,
+    so no additional RTE multiplication is needed.
+    """
     grid_out = (
         result["export_pv"]
-        + (result["discharge_green"] + result["discharge_grey"]) * rte
+        + result["discharge_green"] + result["discharge_grey"]
     )
     assert np.all(grid_out <= grid_max + ATOL), (
         f"Grid limit exceeded: max = {grid_out.max():.4f} > {grid_max}"
@@ -76,14 +80,20 @@ def _assert_grid_limit(
 
 
 def _assert_soc_tracking_green(
-    result: DailyDispatchResult, start_soc: float
+    result: DailyDispatchResult, start_soc: float, rte: float = 0.9
 ) -> None:
-    """Assert SoC[t] = SoC[t-1] + charge_pv[t] - discharge_green[t] (Green Mode)."""
+    """Assert SoC tracking from returned (post-RTE) discharge values.
+
+    The optimizer returns discharge_green post-RTE (raw × rte × glf).
+    SoC is computed from raw values, so we divide back by rte to recover raw.
+    """
     T = len(result["soc"])
     expected_soc = np.empty(T)
     cumulative = start_soc
     for t in range(T):
-        cumulative += result["charge_pv"][t] - result["discharge_green"][t]
+        # discharge_green is post-RTE; raw = discharge_green / rte
+        raw_discharge = result["discharge_green"][t] / rte if rte > 0 else 0.0
+        cumulative += result["charge_pv"][t] - raw_discharge
         expected_soc[t] = cumulative
     np.testing.assert_allclose(result["soc"], expected_soc, atol=ATOL)
 
@@ -184,7 +194,8 @@ class TestGreenModeReferenceOptimizer4h:
             start_soc_kwh=ref["start_soc_kwh"],
         )
 
-        grid_export = result["export_pv"] + result["discharge_green"] * ref["rte"]
+        # discharge_green is already post-RTE, no additional multiplication needed
+        grid_export = result["export_pv"] + result["discharge_green"]
         np.testing.assert_allclose(
             grid_export, ref["expected_grid_export_kwh"], atol=ATOL
         )
@@ -252,7 +263,7 @@ class TestGreenModeSocTracking:
             mode="green",
             start_soc_kwh=ref["start_soc_kwh"],
         )
-        _assert_soc_tracking_green(result, ref["start_soc_kwh"])
+        _assert_soc_tracking_green(result, ref["start_soc_kwh"], rte=ref["rte"])
 
 
 class TestGreenModeSocBounds:
@@ -563,7 +574,7 @@ class TestGreenModeSocDayToDay:
         )
 
         # Verify SoC tracking in day 2 starts from day 1 end SoC
-        _assert_soc_tracking_green(result_day2, result_day1["end_soc"])
+        _assert_soc_tracking_green(result_day2, result_day1["end_soc"], rte=0.9)
         _assert_soc_within_bounds(result_day2, bess.soc_min_kwh, bess.soc_max_kwh)
 
 
@@ -683,8 +694,8 @@ class TestGreyModeArbitrage:
 
         # Charge at t=0: 100 kWh from grid
         assert abs(result["charge_grid"][0] - 100.0) < ATOL
-        # Discharge at t=1: 100 kWh
-        assert abs(result["discharge_grey"][1] - 100.0) < ATOL
+        # Discharge at t=1: 100 kWh raw, returned as post-RTE = 90 kWh
+        assert abs(result["discharge_grey"][1] - 90.0) < ATOL
         # Net revenue: -100 x 0.01 + 100 x 0.9 x 0.10 = -1.00 + 9.00 = 8.00
         total_rev = float(np.sum(result["revenue"]))
         assert abs(total_rev - 8.00) < ATOL
