@@ -1001,14 +1001,14 @@ def run(args: argparse.Namespace) -> int:
         dscr_avg=optimal_setup.metrics.dscr_avg,
         lcoe=optimal_setup.metrics.lcoe,
         payback_year=optimal_setup.metrics.payback_year,
-        total_production_kwh=np.sum([r.pv_production for r in optimal_setup.run_result.annual_results]),
+        total_production_kwh=np.sum([r.pv_export for r in optimal_setup.run_result.annual_results]),
         config=csv_config,
     )
 
     write_cashflows_csv(
         path=output_dir / f"{scenario.name}_cashflows.csv",
         cashflow=optimal_setup.cashflow,
-        annual_pv_production_kwh=[r.pv_production for r in optimal_setup.run_result.annual_results],
+        annual_pv_production_kwh=[r.pv_export for r in optimal_setup.run_result.annual_results],
         annual_bess_throughput_kwh=[r.bess_throughput for r in optimal_setup.run_result.annual_results],
         annual_dscr=optimal_setup.metrics.annual_dscr,
         commissioning_year=scenario.commissioning_year,

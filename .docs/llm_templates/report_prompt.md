@@ -167,6 +167,6 @@ Antworte ausschließlich mit folgendem JSON‑Objekt (kein Markdown‑Codeblock,
 
 Beachte:
 
-- Verwende **fett** für alle Zahlen und Schlüsselwerte
+- Verwende **fett** für wesentliche Zahlen und Schlüsselwerte
 - Setze Tabs auf `null` (nicht als String, sondern JSON null) wenn keine Daten vorhanden sind
 - Antworte NUR mit dem JSON-Objekt, ohne zusätzlichen Text

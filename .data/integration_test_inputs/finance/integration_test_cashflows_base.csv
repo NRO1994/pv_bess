@@ -1,4 +1,4 @@
-year;capex_eur;pv_production_mwh;bess_throughput_mwh;revenue_eur;opex_eur;debt_service_eur;depreciation_eur;gewerbesteuer_eur;koerperschaftsteuer_eur;solidaritaetszuschlag_eur;total_tax_eur;project_cf_eur;equity_cf_eur;cumulative_equity_cf_eur;dscr
+year;capex_eur;pv_production_mwh;bess_throughput_mwh;revenue_eur;opex_eur;debt_interest_eur;depreciation_eur;gewerbesteuer_eur;koerperschaftsteuer_eur;solidaritaetszuschlag_eur;total_tax_eur;project_cf_eur;equity_cf_eur;cumulative_equity_cf_eur;dscr
 2027;5307000;10357,452;0;568624;132721;154879,488;212280;10827,10314;10311,5268;567,133974;21705,76391;-4871097;-971906,2519;#NA;#NA
 2028;0;10357,452;0;568624;134679;148426,176;212280;11535,11478;10985,8236;604,220298;23125,15868;433945;90428,71511;#NA;#NA
 2029;0;10326,38;0;566918;136687;141972,864;212280;11966,55642;11396,7204;626,819622;23990,09644;430231;90125,9566;#NA;#NA

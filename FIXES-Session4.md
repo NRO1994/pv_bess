@@ -53,5 +53,20 @@ aber davon ab, wie EE die Outputs haben möchte.
       auszuwählen sein. Stelle sicher, dass dann das JSON dem schema entspricht. So muss der Nutzer nicht mehr 10 Werte
       von Hand eingeben, sondern kann dies elegant beschleunigen, ohne dass es in einem falschen JSON mündet.
 - [ ] dashboard_Report.html Anpassungen
-  - Tool-Tip ist viel zu weit unten, muss dichter an den Cursor ren
-  - Tool-Tip hat im Multi-Line Diagramm immer nur die erste Datenreihe als info, die anderen müssen ebenfalls erscheinen
+    - Tool-Tip ist viel zu weit unten, muss dichter an den Cursor ren
+    - Tool-Tip hat im Multi-Line Diagramm immer nur die erste Datenreihe als info, die anderen müssen ebenfalls
+      erscheinen
+- AfA im pv_only case ändert sich nach 10 jahren - warum!? -> Tax wird gar nicht getestet
+- Gleiches Layout/Header zwischen input_wizard und dashboard -> Nutzen des Input wizards für Report. Input wizard so
+  breit machen wie dashboard. Footer in input wizard, Versions Nummer und Creator aufnehmen. Dashboard: Gleiche Tab
+  Formen, wie im Input Wizard, aber ohne Grün Färbung bei klick
+- Dashboard: Pin in Karte ist nicht an der richtigen Stelle, kein Overlay, sondern direkt in OSM verankert, Soll
+  interaktiv gestaltet sein, sodass man zoomen und verschieben kann. Input und Dashboard gleiches design
+- Input: Analysen, gleicher aufbau wie andere Tabs. Aktuell sind die Eingabefelder ebenfalls grau
+- Input/BESS und Input/PV: horizontale Trennlinien zwischen Bereichen fehlen
+
+## Fragen:
+
+- Decommissioning extra?
+- OPEX feiner aufgliedern?
+- Warum AfA in Cashflow Berechnung?

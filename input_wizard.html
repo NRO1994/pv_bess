@@ -119,7 +119,6 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
 
 <!-- TOOLBAR -->
 <div class="tb">
-  <label class="sw"><input type="checkbox" id="chkDark"/> Dunkler Modus</label>
   <label class="sw"><input type="checkbox" id="chkPersist" checked/> Eingaben merken</label>
   <span class="tb-info">Alle Eingaben bleiben lokal im Browser.</span>
   <input type="file" id="fileImport" accept=".json" style="display:none"/>
@@ -157,10 +156,10 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
   </div>
   <div class="g g3" style="margin-top:8px">
     <div><label>Sigma CAPEX PV (%)</label><input id="f_mc_scpv" type="number" min="0" step="0.1" value="5"/></div>
-    <div><label>Sigma CAPEX BESS (%)</label><input id="f_mc_scb" type="number" min="0" step="0.1" value="8"/></div>
     <div><label>Sigma OPEX PV (%)</label><input id="f_mc_sopv" type="number" min="0" step="0.1" value="3"/></div>
-    <div><label>Sigma OPEX BESS (%)</label><input id="f_mc_sob" type="number" min="0" step="0.1" value="5"/></div>
     <div><label>Sigma PV Verfügbarkeit (%)</label><input id="f_mc_spva" type="number" min="0" step="0.1" value="2"/></div>
+    <div><label>Sigma CAPEX BESS (%)</label><input id="f_mc_scb" type="number" min="0" step="0.1" value="8"/></div>
+    <div><label>Sigma OPEX BESS (%)</label><input id="f_mc_sob" type="number" min="0" step="0.1" value="5"/></div>
     <div><label>Sigma BESS Verfügbarkeit (%)</label><input id="f_mc_sba" type="number" min="0" step="0.1" value="2"/></div>
   </div>
 </section>
@@ -171,18 +170,18 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
   <div class="g g3">
     <div><label class="req">Projektlaufzeit (Jahre)</label><input id="f_lifetime" type="number" min="1" value="25"/></div>
     <div><label class="req">Inbetriebnahme-Jahr</label><input id="f_comyear" type="number" min="2020" value="2027"/></div>
-    <div><label class="req">Diskontsatz</label><input id="f_discount" type="number" min="0" step="0.01" value="0.06"/><div class="hint">z.B. 0.06 = 6%</div></div>
+    <div><label class="req">Diskontsatz (%)</label><input id="f_discount" type="number" min="0" step="1" value="6" max="100"/></div>
     <div>
       <label class="req">Betriebsmodus</label>
-      <select id="f_opmode"><option value="green">Green (nur PV-Strom im BESS)</option><option value="grey">Grey (auch Netzstrom im BESS)</option></select>
+      <select id="f_opmode"><option value="green">Grün (nur PV-Strom im BESS)</option><option value="grey">Grau (auch Netzstrom im BESS)</option></select>
     </div>
   </div>
   <hr class="sep"/>
   <div class="sub-title">Standort</div>
   <div class="g g3">
-    <div><label class="req">Breitengrad</label><input id="f_lat" type="number" step="any" min="-90" max="90" value="53.58"/><div class="hint">z.B. 53.58 / 10.67 (SWLe HQ)</div></div>
+    <div><label class="req">Breitengrad</label><input id="f_lat" type="number" step="any" min="-90" max="90" value="53.58"/><div class="hint">z.B. 53,58N/10,67E (Stadtwerke Lübeck, Geniner Straße)</div></div>
     <div><label class="req">Längengrad</label><input id="f_lon" type="number" step="any" min="-180" max="180" value="10.67"/></div>
-    <div><label class="req">PVGIS-Datenbank</label><input id="f_pvgis" type="text" value="PVGIS-SARAH2"/></div>
+    <div><label class="req">PVGIS-Datenbank</label><select id="f_pvgis"><option value="PVGIS-SAHRA3">SAHRA3</option><option value="PVGIS-ERA5">ERA5</option></select></div>
   </div>
 </section>
 
@@ -205,11 +204,10 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
   <div class="g g4">
     <div><label>CAPEX fest (EUR)</label><input id="f_pv_cx_fix" type="number" min="0" step="any" value="50000"/></div>
     <div><label>CAPEX EUR/kW</label><input id="f_pv_cx_kw" type="number" min="0" step="any" value="800"/></div>
-    <div><label>CAPEX EUR/kWh</label><input id="f_pv_cx_kwh" type="number" min="0" step="any" value="0"/></div>
-    <div><label>CAPEX % of CAPEX</label><input id="f_pv_cx_pct" type="number" min="0" max="1" step="0.001" value="0"/><div class="hint">0..1</div></div>
+    <div><label> </label><input id="f_pv_cx_kwh" type="number" min="0" step="any" value="0" style="display: none;"/></div>
+    <div><label> </label><input id="f_pv_cx_pct" type="number" min="0" max="1" step="0.001" value="0" style="display: none;"/></div>
     <div><label>OPEX fest (EUR/a)</label><input id="f_pv_ox_fix" type="number" min="0" step="any" value="5000"/></div>
     <div><label>OPEX EUR/kW</label><input id="f_pv_ox_kw" type="number" min="0" step="any" value="12"/></div>
-    <div><label>OPEX EUR/kWh</label><input id="f_pv_ox_kwh" type="number" min="0" step="any" value="0"/></div>
     <div><label>OPEX % of CAPEX</label><input id="f_pv_ox_pct" type="number" min="0" max="1" step="0.001" value="0.003"/></div>
   </div>
 </section>
@@ -249,7 +247,7 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
     <div><label>CAPEX fest (EUR)</label><input id="f_bs_cx_fix" type="number" min="0" step="any" value="50000"/></div>
     <div><label>CAPEX EUR/kW</label><input id="f_bs_cx_kw" type="number" min="0" step="any" value="100"/></div>
     <div><label>CAPEX EUR/kWh</label><input id="f_bs_cx_kwh" type="number" min="0" step="any" value="250"/></div>
-    <div><label>CAPEX % of CAPEX</label><input id="f_bs_cx_pct" type="number" min="0" max="1" step="0.001" value="0"/></div>
+    <div><label> </label><input id="f_bs_cx_pct" type="number" min="0" max="1" step="0.001" value="0" style="display: none;"/></div>
     <div><label>OPEX fest (EUR/a)</label><input id="f_bs_ox_fix" type="number" min="0" step="any" value="25000"/></div>
     <div><label>OPEX EUR/kW</label><input id="f_bs_ox_kw" type="number" min="0" step="any" value="0"/></div>
     <div><label>OPEX EUR/kWh</label><input id="f_bs_ox_kwh" type="number" min="0" step="any" value="0"/></div>
@@ -281,12 +279,12 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
   <div class="g g4">
     <div><label>CAPEX fest (EUR)</label><input id="f_gr_cx_fix" type="number" min="0" step="any" value="50000"/></div>
     <div><label>CAPEX EUR/kW</label><input id="f_gr_cx_kw" type="number" min="0" step="any" value="100"/></div>
-    <div><label>CAPEX EUR/kWh</label><input id="f_gr_cx_kwh" type="number" min="0" step="any" value="0"/></div>
-    <div><label>CAPEX % of CAPEX</label><input id="f_gr_cx_pct" type="number" min="0" max="1" step="0.001" value="0"/></div>
+    <div><label> </label><input id="f_gr_cx_kwh" type="number" min="0" step="any" value="0" style="display: none;"/></div>
+    <div><label> </label><input id="f_gr_cx_pct" type="number" min="0" max="1" step="0.001" value="0" style="display: none;"/></div>
     <div><label>OPEX fest (EUR/a)</label><input id="f_gr_ox_fix" type="number" min="0" step="any" value="25000"/></div>
     <div><label>OPEX EUR/kW</label><input id="f_gr_ox_kw" type="number" min="0" step="any" value="0"/></div>
-    <div><label>OPEX EUR/kWh</label><input id="f_gr_ox_kwh" type="number" min="0" step="any" value="0"/></div>
-    <div><label>OPEX % of CAPEX</label><input id="f_gr_ox_pct" type="number" min="0" max="1" step="0.001" value="0.015"/></div>
+    <div><label> </label><input id="f_gr_ox_kwh" type="number" min="0" step="any" value="0" style="display: none;"/></div>
+    <div><label> </label><input id="f_gr_ox_pct" type="number" min="0" max="1" step="0.001" value="0.015" style="display: none;"/></div>
   </div>
 </section>
 
@@ -298,7 +296,7 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
     <div><label class="req">Fremdkapitalanteil (%)</label><input id="f_fi_lev" type="number" min="0" max="100" step="0.1" value="75"/></div>
     <div><label class="req">Zinssatz (%)</label><input id="f_fi_ir" type="number" min="0" step="0.01" value="4.5"/></div>
     <div><label class="req">Kreditlaufzeit (Jahre)</label><input id="f_fi_tenor" type="number" min="1" value="18"/></div>
-    <div><label class="req">Inflation</label><input id="f_fi_infl" type="number" min="0" step="0.001" value="0.02"/><div class="hint">0.02 = 2%</div></div>
+    <div><label class="req">Inflation (%)</label><input id="f_fi_infl" type="number" min="0" step="0.1" value="2" max="100"/></div>
     <div><label>Equity-IRR Ziel</label><input id="f_fi_irrtgt" type="number" step="any"/><div class="hint">Optional</div></div>
     <div><label class="sw"><input type="checkbox" id="f_fi_p90" checked/> Debt Sizing mit P90</label></div>
     <div><label>Debt Sizing Downside (%)</label><input id="f_fi_dsds" type="number" min="0" max="100" step="0.1"/></div>
@@ -502,7 +500,7 @@ function buildJSON(){
     project_settings:{
       lifetime_years:v('f_lifetime'),
       commissioning_year:v('f_comyear'),
-      discount_rate:v('f_discount'),
+      discount_rate:v('f_discount')/100,
       operating_mode:v('f_opmode'),
       location:{latitude:v('f_lat'),longitude:v('f_lon'),pvgis_database:v('f_pvgis')},
       technology:{
@@ -538,7 +536,7 @@ function buildJSON(){
         equity_irr_target:v('f_fi_irrtgt'),
         debt_uses_p90:v('f_fi_p90'),
         debt_sizing_downside_pct:v('f_fi_dsds'),
-        inflation_rate:v('f_fi_infl'),
+        inflation_rate:v('f_fi_infl')/100,
         revenue_streams:{
           marketing:{type:v('f_mkt_type'),floor_price_eur_per_kwh:v('f_mkt_floor'),fixed_price_years:v('f_mkt_fpyrs'),eeg_inflation:v('f_mkt_eeginfl')},
           ppa:{type:v('f_ppa_type'),pay_as_produced_price_eur_per_kwh:v('f_ppa_pap'),baseload_mw:v('f_ppa_bl'),floor_price_eur_per_kwh:v('f_ppa_floor'),cap_price_eur_per_kwh:v('f_ppa_cap'),duration_years:v('f_ppa_dur'),inflation_on_ppa:v('f_ppa_infl'),guarantee_of_origin_eur_per_kwh:v('f_ppa_goo')}
@@ -593,7 +591,7 @@ function loadFromJSON(j){
   sv('f_mc_sopv',mc.sigma_opex_pv_pct);sv('f_mc_sob',mc.sigma_opex_bess_pct);
   sv('f_mc_spva',mc.sigma_pv_availability_pct);sv('f_mc_sba',mc.sigma_bess_availability_pct);
   sv('f_lifetime',p.lifetime_years);sv('f_comyear',p.commissioning_year);
-  sv('f_discount',p.discount_rate);sv('f_opmode',p.operating_mode);
+  sv('f_discount',p.discount_rate*100);sv('f_opmode',p.operating_mode);
   const loc=p.location||{};sv('f_lat',loc.latitude);sv('f_lon',loc.longitude);sv('f_pvgis',loc.pvgis_database);
   const pv=(p.technology||{}).pv||{};const pvd=pv.design||{};const pvp=pv.performance||{};const pvc=pv.costs||{};
   sv('f_pv_kwp',pvd.peak_power_kwp);sv('f_pv_mount',pvd.mounting_type);sv('f_pv_azi',pvd.azimuth_deg);sv('f_pv_tilt',pvd.tilt_deg);
@@ -616,7 +614,7 @@ function loadFromJSON(j){
   sv('f_gr_ox_fix',(grc.opex||{}).fixed_eur);sv('f_gr_ox_kw',(grc.opex||{}).eur_per_kw);sv('f_gr_ox_kwh',(grc.opex||{}).eur_per_kwh);sv('f_gr_ox_pct',(grc.opex||{}).pct_of_capex);
   const fi=p.finance||{};
   sv('f_fi_lev',fi.leverage_pct);sv('f_fi_ir',fi.interest_rate_pct);sv('f_fi_tenor',fi.loan_tenor_years);
-  sv('f_fi_irrtgt',fi.equity_irr_target);sv('f_fi_p90',fi.debt_uses_p90);sv('f_fi_dsds',fi.debt_sizing_downside_pct);sv('f_fi_infl',fi.inflation_rate);
+  sv('f_fi_irrtgt',fi.equity_irr_target);sv('f_fi_p90',fi.debt_uses_p90);sv('f_fi_dsds',fi.debt_sizing_downside_pct);sv('f_fi_infl',fi.inflation_rate*100);
   const mkt=(fi.revenue_streams||{}).marketing||{};
   sv('f_mkt_type',mkt.type);sv('f_mkt_floor',mkt.floor_price_eur_per_kwh);sv('f_mkt_fpyrs',mkt.fixed_price_years);sv('f_mkt_eeginfl',mkt.eeg_inflation);
   const ppa=(fi.revenue_streams||{}).ppa||{};
@@ -692,13 +690,6 @@ function showBanner(msg,type){
   b.textContent=msg;b.className='banner show '+(type||'');
   setTimeout(()=>b.classList.remove('show'),5000);
 }
-
-/* --- Dark mode --- */
-document.getElementById('chkDark').addEventListener('change',function(){
-  document.documentElement.setAttribute('data-theme',this.checked?'dark':'');
-  localStorage.setItem('pvbess_dark',this.checked?'1':'0');
-});
-if(localStorage.getItem('pvbess_dark')==='1'){document.getElementById('chkDark').checked=true;document.documentElement.setAttribute('data-theme','dark');}
 
 /* --- Auto-persist on input change --- */
 document.addEventListener('input',function(e){if(e.target.closest('.wrap'))persist();});
