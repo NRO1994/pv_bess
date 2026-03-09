@@ -1075,6 +1075,7 @@ def run(args: argparse.Namespace) -> int:
         eeg_sens_result=eeg_sens_result,
         collar_result=collar_result,
         baseload_result=baseload_result,
+        analyses=analyses_cfg
     )
 
     # ------------------------------------------------------------------
@@ -1100,6 +1101,7 @@ def _generate_report(
     eeg_sens_result,
     collar_result,
     baseload_result,
+    analyses:dict
 ) -> None:
     """Generate the interactive HTML report (Step 7b).
 
@@ -1165,6 +1167,7 @@ def _generate_report(
             eeg_sens_result=eeg_sens_result,
             collar_result=collar_result,
             baseload_result=baseload_result,
+            analyses=analyses
         )
     except Exception:
         logger.error("Report data collection failed.", exc_info=True)

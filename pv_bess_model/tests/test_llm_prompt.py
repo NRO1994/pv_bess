@@ -63,9 +63,9 @@ def _make_mock_data() -> MagicMock:
         "payback_year": 12,
     }
     data.pv_monthly_by_year = {2019: [0.5] * 12, 2020: [0.6] * 12}
-    data.pv_production_model = "PVGIS-SARAH2"
+    data.pv_production_model = "PVGIS-SARAH3"
     data.price_scenario_annual_means = [
-        {"name": "Mid", "means": [50.0, 52.0]},
+        {"name": "Mid", "means": [50.0] * 25},
     ]
     data.price_origin = "Prognos 2026"
     data.eeg_sensitivity = None

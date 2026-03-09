@@ -185,10 +185,7 @@
     </div>
 
     <div class="toolbar" role="toolbar" aria-label="Globale Aktionen">
-      <span class="pill">Hover: Tooltip &middot; Wheel: Zoom &middot; Drag: Pan &middot; Shift+Drag: Bereich &middot; Doppelklick: Reset</span>
-      <label class="switch" title="Dunkles Farbschema">
-        <input type="checkbox" id="toggleDark" /> Dark Mode
-      </label>
+      <span class="pill">Hover: Tooltip &middot; Rad: Zoom &middot; Mausklick: Verschieben &middot; Shift+Ziehen: Bereich &middot; Doppelklick: Reset</span>
     </div>
 
     <div class="hr"></div>
@@ -769,8 +766,8 @@
     // ================================================================
     //  TAB 1: Szenario-Uebersicht
     // ================================================================
-    addTab('overview', '1 \u00b7 Szenario-Uebersicht', true, (panel) => {
-      panel.innerHTML = `<h2>Szenario-Uebersicht</h2>`;
+    addTab('overview', 'Szenario-Übersicht', true, (panel) => {
+      panel.innerHTML = `<h2>Szenario-Übersicht</h2>`;
 
       // Two columns: params + map
       const row = document.createElement('div'); row.className = 'two-col';
@@ -831,7 +828,7 @@
     // ================================================================
     //  TAB 2: Eingangszeitreihen
     // ================================================================
-    addTab('timeseries', '2 \u00b7 Eingangszeitreihen', true, (panel) => {
+    addTab('timeseries', 'Eingangszeitreihen', true, (panel) => {
       panel.innerHTML = `<h2>Eingangszeitreihen</h2>`;
 
       // Downloads
@@ -848,6 +845,10 @@
       pvTitle.textContent = 'Brutto PV-Ertrag nach Wetterjahr';
       pvTitle.style.fontSize = '14px'; pvTitle.style.marginTop = '12px';
       panel.appendChild(pvTitle);
+
+      const info_pv = document.createElement('div'); info_pv.className = 'small muted';
+      info_pv.textContent = `Produktionsmodell: ${D.pv_production_model}, Diagrammwerte in GWh`;
+      panel.appendChild(info_pv);
 
       const pvChartDiv = document.createElement('div'); pvChartDiv.id = 'chart-pv-yield';
       panel.appendChild(pvChartDiv);
@@ -884,7 +885,7 @@
       panel.appendChild(priceTitle);
 
       const info = document.createElement('div'); info.className = 'small muted';
-      info.textContent = `Produktionsmodell: ${D.pv_production_model} | Preisdatenquelle: ${D.price_origin}`;
+      info.textContent = `Preisdatenquelle: ${D.price_origin}, Diagrammwerte in EUR/MWh`;
       panel.appendChild(info);
 
       const priceChartDiv = document.createElement('div'); priceChartDiv.id = 'chart-prices';
@@ -928,7 +929,7 @@
     // ================================================================
     //  TAB 3: Grid-Search-Ergebnis
     // ================================================================
-    addTab('gridsearch', '3 \u00b7 Grid-Search', D.grid_search_points && D.grid_search_points.length > 1, (panel) => {
+    addTab('gridsearch', 'Grid-Search', D.grid_search_points && D.grid_search_points.length > 1, (panel) => {
       panel.innerHTML = `<h2>BESS-Dimensionierung (Grid Search)</h2>`;
 
       const actions = document.createElement('div'); actions.className = 'actions';
@@ -1005,8 +1006,8 @@
     // ================================================================
     //  TAB 4: EEG-Sensitivitaet
     // ================================================================
-    addTab('eeg', '4 \u00b7 EEG-Analyse', D.eeg_sensitivity != null, (panel) => {
-      panel.innerHTML = `<h2>EEG-Sensitivitaetsanalyse</h2>`;
+    addTab('eeg', 'EEG-Analyse', D.eeg_sensitivity != null, (panel) => {
+      panel.innerHTML = `<h2>EEG-Sensitivitätsanalyse</h2>`;
 
       const actions = document.createElement('div'); actions.className = 'actions';
       const btnPng = document.createElement('button'); btnPng.textContent = 'PNG';
@@ -1056,7 +1057,7 @@
     // ================================================================
     //  TAB 5: PPA-Collar-Analyse
     // ================================================================
-    addTab('collar', '5 \u00b7 PPA-Collar', D.ppa_collar != null, (panel) => {
+    addTab('collar', 'PPA-Collar', D.ppa_collar != null, (panel) => {
       panel.innerHTML = `<h2>PPA-Collar-Analyse</h2>`;
 
       const actions = document.createElement('div'); actions.className = 'actions';
@@ -1117,7 +1118,7 @@
     // ================================================================
     //  TAB 6: PPA-Baseload-Analyse
     // ================================================================
-    addTab('baseload', '6 \u00b7 PPA-Baseload', D.ppa_baseload != null, (panel) => {
+    addTab('baseload', 'PPA-Baseload', D.ppa_baseload != null, (panel) => {
       panel.innerHTML = `<h2>PPA-Baseload-Analyse</h2>`;
 
       const actions = document.createElement('div'); actions.className = 'actions';
@@ -1175,7 +1176,7 @@
     // ================================================================
     //  TAB 7: Cashflow-Analyse
     // ================================================================
-    addTab('cashflow', '7 \u00b7 Cashflow-Analyse', true, (panel) => {
+    addTab('cashflow', 'Cashflow-Analyse', true, (panel) => {
       panel.innerHTML = `<h2>Cashflow-Analyse</h2>`;
 
       // KPI cards
@@ -1261,23 +1262,16 @@
         document.getElementById('companyLogo').appendChild(img);
       }
       document.getElementById('headerSubtitle').textContent =
-        `Szenario: ${D.scenario_name} | ${D.creation_date} | ${D.scenario_json_filename}`;
+        `Szenario: ${D.scenario_name} | ${D.creation_date}`;
 
       // Footer
       document.getElementById('reportFooter').innerHTML =
         `Modellversion ${D.model_version} | Erstellt am ${D.creation_date} | ` +
-        `Szenario: ${D.scenario_name} | Input: ${D.scenario_json_filename} | ` +
-        `Keine Anlageberatung. Alle Ergebnisse basieren auf Modellannahmen.`;
+        `Szenario: ${D.scenario_name} | ` +
+        `Nur indikative Analysen. Finale Entschiedung muss mit FiCo internen Tools gerechnet werden!`;
 
       // Build tabs
       initTabs();
-
-      // Dark mode toggle
-      const toggleDark = document.getElementById('toggleDark');
-      toggleDark.addEventListener('change', () => {
-        document.body.setAttribute('data-theme', toggleDark.checked ? 'dark' : 'light');
-        allCharts.forEach(c => c.chart.render());
-      });
     })();
   </script>
 </body>

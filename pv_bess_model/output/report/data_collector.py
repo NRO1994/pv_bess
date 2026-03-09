@@ -135,7 +135,9 @@ class HtmlReportData:
     # -- Sensitivity results (Tab 4-6, optional) --
     eeg_sensitivity: list[dict] | None
     ppa_collar: list[dict] | None
+    ppa_collar_duration: int
     ppa_baseload: list[dict] | None
+    ppa_baseload_duration: int
 
     # -- Grid search (Tab 3) --
     grid_search_points: list[dict]
@@ -441,6 +443,7 @@ def collect_report_data(
     eeg_sens_result: Any | None = None,
     collar_result: Any | None = None,
     baseload_result: Any | None = None,
+    analyses:dict[str, Any] | None = None,
 ) -> HtmlReportData:
     """Aggregate all simulation results into an ``HtmlReportData`` instance.
 
@@ -528,7 +531,9 @@ def collect_report_data(
         # Sensitivity
         eeg_sensitivity=_extract_sensitivity(eeg_sens_result),
         ppa_collar=_extract_sensitivity(collar_result),
+        ppa_collar_duration=analyses.get("ppa_collar", {}).get("duration_years", 0),
         ppa_baseload=_extract_sensitivity(baseload_result),
+        ppa_baseload_duration=analyses.get("ppa_baseload", {}).get("duration_years", 0),
         # Grid search
         grid_search_points=_extract_grid_search_points(grid_result),
         optimal_scale_pct=opt.scale_pct,

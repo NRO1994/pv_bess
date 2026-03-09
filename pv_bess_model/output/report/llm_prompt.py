@@ -38,8 +38,8 @@ _EXPECTED_KEYS = [
 ]
 
 _FALLBACK_TEXT = (
-    "Textbeschreibung nicht verfuegbar. "
-    "Bitte fuehren Sie den LLM-Prompt-Workflow durch."
+    "CoPilot nicht verfügbar. "
+    "Bitte führen Sie den LLM-Prompt-Workflow manuell durch."
 )
 
 
@@ -66,7 +66,7 @@ def render_prompt(data: Any) -> str:
     if "cap_price_ct_kwh" in mp:
         marketing_lines.append(f"- Cap-Preis: {mp['cap_price_ct_kwh']:.2f} ct/kWh")
     if "fixed_price_years" in mp:
-        marketing_lines.append(f"- Foerderdauer: {mp['fixed_price_years']} Jahre")
+        marketing_lines.append(f"- Förderdauer: {mp['fixed_price_years']} Jahre")
     if "ppa_duration_years" in mp:
         marketing_lines.append(f"- PPA-Laufzeit: {mp['ppa_duration_years']} Jahre")
     if "goo_premium_ct_kwh" in mp:
@@ -77,15 +77,26 @@ def render_prompt(data: Any) -> str:
         marketing_lines.append(f"- PPA-Preis: {mp['ppa_price_ct_kwh']:.2f} ct/kWh")
 
     # Weather years
-    weather_years = ", ".join(str(y) for y in sorted(data.pv_monthly_by_year.keys()))
+    weather_years: list[str] = []
+    for year, prod in data.pv_monthly_by_year.items():
+        winter_mean_prod = (sum(prod[:3]) + sum(prod[9:])) / 6
+        summer_mean_prod = sum(prod[3:9]) / 6
+        weather_years.append(f"  - {year}: durchschnittliche Monatsproduktion im Winter: {winter_mean_prod:.2f} GWh,"
+                             f" im Sommer {summer_mean_prod:.2f} GWh")
+    weather_stats = "\n".join(weather_years) if weather_years else ""
 
     # Price scenarios summary
     price_summaries: list[str] = []
     for ps in data.price_scenario_annual_means:
         if ps["means"]:
-            avg = sum(ps["means"]) / len(ps["means"])
-            price_summaries.append(f"{ps['name']} (Mittel: {avg:.1f} EUR/MWh)")
-    price_scenarios_summary = ", ".join(price_summaries) if price_summaries else "keine"
+            avg_y5 = sum(ps["means"][:5]) / 5
+            avg_y10 = sum(ps["means"][10:15]) / 5
+            avg_tail = sum(ps["means"][-5:]) / 5
+            price_summaries.append(f"  - {ps['name']}: Mittlerer Spotpreis "
+                                   f"Jahr {data.commissioning_year} - {data.commissioning_year + 5}: {avg_y5:.2f} EUR/MWh, "
+                                   f"Jahr {data.commissioning_year+ 10} - {data.commissioning_year + 15}: {avg_y10:.2f} EUR/MWh, "
+                                   f"Jahr {data.commissioning_year + data.lifetime_years -5} - {data.commissioning_year + data.lifetime_years}: {avg_tail:.2f} EUR/MWh")
+    price_scenarios_summary = "\n".join(price_summaries) if price_summaries else "keine"
 
     # Metrics formatting
     m = data.metrics
@@ -100,22 +111,31 @@ def render_prompt(data: Any) -> str:
     # Sensitivity section
     sens_lines: list[str] = []
     if data.eeg_sensitivity:
-        sens_lines.append("### EEG-Sensitivitaet")
+        sens_lines.append("### EEG-Sensitivitaet (20 Jahre Laufzeit)")
         for pt in data.eeg_sensitivity:
             floor = pt.get("floor_price_eur_per_kwh", 0) * 100
-            irr = pt.get("irr_mean", 0)
-            sens_lines.append(f"- Floor {floor:.2f} ct/kWh -> IRR {irr:.2f} %")
+            irr_mean = pt.get("irr_mean", 0)
+            irr_std = pt.get("equity_irr_std", 0)
+            sens_lines.append(f"- Floor {floor:.2f} ct/kWh -> "
+                              f"durchschnittlicher IRR {irr_mean:.2f} %, Std.Abweichung eq.IRR {irr_std:.2f} %")
     if data.ppa_collar:
-        sens_lines.append("### PPA-Collar-Analyse")
+        sens_lines.append(f"### PPA-Collar-Analyse ({data.ppa_collar_duration} Jahre Laufzeit)")
         for pt in data.ppa_collar:
             floor = pt.get("floor_price_eur_per_kwh", 0) * 100
-            irr = pt.get("irr_mean", 0)
-            sens_lines.append(f"- Floor {floor:.2f} ct/kWh -> IRR {irr:.2f} %")
+            cap = pt.get("cap_price_eur_per_kwh", 0) * 100
+            irr_mean = pt.get("irr_mean", 0)
+            irr_std = pt.get("irr_std", 0)
+            sens_lines.append(f"- Floor {floor:.2f} ct/kWh, Cap {cap:.2f} ct/kWh -> "
+                              f"durchschnittlicher eq.IRR {irr_mean:.2f} %, Std.Abweichung eq.IRR {irr_std:.2f} %")
     if data.ppa_baseload:
-        sens_lines.append("### PPA-Baseload-Analyse")
+        sens_lines.append(f"### PPA-Baseload-Analyse ({data.ppa_baseload_duration} Jahre Laufzeit)")
         for pt in data.ppa_baseload:
-            irr = pt.get("irr_mean", 0)
-            sens_lines.append(f"- IRR {irr:.2f} %")
+            irr_mean = pt.get("irr_mean", 0)
+            irr_std = pt.get("irr_std", 0)
+            baseload = pt.get("baseload_mw", 0)
+            ppa_price = pt.get("ppa_price_eur_per_kwh", 0) * 100
+            sens_lines.append(f"- Baseload {baseload} MW, PPA-Preis {ppa_price:.2f} ct/kWh -> "
+                              f"durchschnittlicher IRR {irr_mean:.2f} %, Std.Abweichung eq.IRR {irr_std:.2f} %")
 
     sensitivity_section = "\n".join(sens_lines) if sens_lines else ""
 
@@ -155,7 +175,7 @@ def render_prompt(data: Any) -> str:
         "{{payback_year}}": payback,
         "{{pv_production_model}}": data.pv_production_model,
         "{{price_origin}}": data.price_origin,
-        "{{weather_years}}": weather_years if weather_years else "keine",
+        "{{weather_years}}": weather_stats,
         "{{price_scenarios_summary}}": price_scenarios_summary,
         "{{sensitivity_section}}": sensitivity_section,
     }
@@ -168,8 +188,8 @@ def render_prompt(data: Any) -> str:
 
 
 def save_rendered_prompt(
-    data: Any,
-    output_dir: Path,
+        data: Any,
+        output_dir: Path,
 ) -> Path:
     """Render the LLM prompt and save it to the output directory.
 
@@ -194,7 +214,7 @@ def save_rendered_prompt(
 
 
 def load_llm_response(
-    response_path: Path,
+        response_path: Path,
 ) -> dict[str, str | None]:
     """Load and validate an LLM response JSON file.
 

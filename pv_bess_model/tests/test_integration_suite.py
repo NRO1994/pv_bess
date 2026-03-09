@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 TECH_SETUPS = ["bess_only", "pv_only", "pv_bess"]
 OPERATING_MODES = ["grey", "green"]
 MARKETING_STRATEGIES = ["market", "eeg", "ppa_pap", "ppa_baseload", "ppa_floor", "ppa_collar"]
-ONLY_CHECK_NOT_RERUN = True
+ONLY_CHECK_NOT_RERUN = False
 
 BESS_CONFIGS: dict[str, dict[str, float | None]] = {
     "pv_only": {"bess_power": None, "bess_capacity": None},
