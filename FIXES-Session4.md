@@ -64,6 +64,7 @@ aber davon ab, wie EE die Outputs haben möchte.
   interaktiv gestaltet sein, sodass man zoomen und verschieben kann. Input und Dashboard gleiches design
 - Input: Analysen, gleicher aufbau wie andere Tabs. Aktuell sind die Eingabefelder ebenfalls grau
 - Input/BESS und Input/PV: horizontale Trennlinien zwischen Bereichen fehlen
+- AfA für Debt sizing berücksichtigen
 
 ## Fragen:
 
