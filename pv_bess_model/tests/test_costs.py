@@ -187,13 +187,14 @@ class TestTotalCosts:
     def test_zero_bess_produces_pv_only_baseline(
         self, sample_capex_config: dict, sample_opex_config: dict,
     ) -> None:
-        """Scale 0 % → BESS power/capacity = 0 → BESS CAPEX = fixed only."""
+        """Scale 0 % → BESS power/capacity = 0 → no BESS costs at all."""
         tc = calculate_total_costs(
             sample_capex_config, sample_opex_config,
             pv_peak_kwp=5_000.0, bess_power_kw=0.0,
             bess_capacity_kwh=0.0, grid_max_export_kw=4_000.0,
         )
-        assert math.isclose(tc.capex_bess, 50_000.0)
+        assert math.isclose(tc.capex_bess, 0.0)
+        assert math.isclose(tc.opex_bess, 0.0)
         assert tc.capex_total < 5_750_000.0
 
     def test_other_asset_empty_config(

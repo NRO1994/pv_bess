@@ -70,4 +70,9 @@
     - Verwende das Header und Tab-Design aus dem input_wizard auch für das Dashboard-Template, nur die Grün-Färbung soll
       nicht übernommen werden
 
- 
+## Fragen:
+
+- Warum AfA in Cashflow Berechnung? und in reduzierung der capex für zinsberechnung?
+- Negative Steuern
+- AfA nur während EEG?
+- Tilgung berücksichtigen?

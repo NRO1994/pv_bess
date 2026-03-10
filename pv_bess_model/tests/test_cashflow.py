@@ -1001,3 +1001,76 @@ class TestReplacementDebtFinancing:
             assert y.debt_service > ds_before + 1.0, (
                 f"Year {y.year}: ds {y.debt_service} not > original {ds_before}"
             )
+
+
+# ---------------------------------------------------------------------------
+# PV-only depreciation (AfA) tests – no BESS
+# ---------------------------------------------------------------------------
+
+
+class TestPvOnlyDepreciation:
+    """Verify AfA is constant across all years when BESS CAPEX is zero.
+
+    In a PV-only case (no BESS), the depreciation should equal
+    capex_pv / afa_years_pv for years within the PV AfA period and 0
+    afterwards.  It must never change at the BESS AfA boundary (e.g.
+    year 10) because there is no BESS to depreciate.
+    """
+
+    def test_pv_only_afa_constant_within_pv_period(self) -> None:
+        """With capex_bess=0, depreciation must be constant for years 1..afa_pv."""
+        capex_pv = 1_000_000.0
+        afa_pv = 20
+        afa_bess = 10
+        lifetime = 25
+        expected_depr = capex_pv / afa_pv  # 50 000 €/year
+
+        proj = _build_simple_projection(
+            lifetime=lifetime,
+            revenues=[200_000.0] * lifetime,
+            capex_total=capex_pv,
+            capex_pv=capex_pv,
+            capex_bess=0.0,
+            afa_pv=afa_pv,
+            afa_bess=afa_bess,
+            leverage=0.0,
+            messzahl=0.0,
+        )
+
+        # Years 1 through afa_pv: constant PV depreciation
+        for y in proj.years[:afa_pv]:
+            assert math.isclose(y.depreciation, expected_depr), (
+                f"Year {y.year}: depreciation {y.depreciation} != {expected_depr}"
+            )
+
+        # Years after afa_pv: depreciation must be 0
+        for y in proj.years[afa_pv:]:
+            assert math.isclose(y.depreciation, 0.0), (
+                f"Year {y.year}: depreciation {y.depreciation} != 0.0"
+            )
+
+    def test_pv_only_no_afa_jump_at_bess_afa_boundary(self) -> None:
+        """Depreciation must not change at the BESS AfA boundary (year 10/11)."""
+        capex_pv = 1_000_000.0
+        afa_bess = 10
+        lifetime = 15
+
+        proj = _build_simple_projection(
+            lifetime=lifetime,
+            revenues=[200_000.0] * lifetime,
+            capex_total=capex_pv,
+            capex_pv=capex_pv,
+            capex_bess=0.0,
+            afa_pv=20,
+            afa_bess=afa_bess,
+            leverage=0.0,
+            messzahl=0.0,
+        )
+
+        # Depreciation at the BESS AfA boundary should be identical
+        depr_before = proj.years[afa_bess - 1].depreciation  # year 10
+        depr_after = proj.years[afa_bess].depreciation        # year 11
+        assert math.isclose(depr_before, depr_after), (
+            f"Depreciation jump at BESS AfA boundary: "
+            f"year {afa_bess}={depr_before}, year {afa_bess + 1}={depr_after}"
+        )

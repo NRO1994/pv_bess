@@ -190,6 +190,10 @@ def write_cashflows_csv(
     annual_dscr: list[float | None],
     commissioning_year: int | None = None,
     config: CsvConfig | None = None,
+    annual_revenue_pv_eur: list[float] | None = None,
+    annual_revenue_bess_green_eur: list[float] | None = None,
+    annual_revenue_bess_grey_eur: list[float] | None = None,
+    annual_pv_grid_export_kwh: list[float] | None = None,
 ) -> None:
     """Write the per-year cashflow table.
 
@@ -211,6 +215,18 @@ def write_cashflows_csv(
         year indices (1, 2, …).
     config:
         CSV formatting settings. Uses defaults when None.
+    annual_revenue_pv_eur:
+        PV direct export revenue per year in EUR (same indexing).
+        If None, the column is omitted.
+    annual_revenue_bess_green_eur:
+        BESS green discharge revenue per year in EUR (same indexing).
+        If None, the column is omitted.
+    annual_revenue_bess_grey_eur:
+        BESS grey discharge revenue per year in EUR (same indexing).
+        If None, the column is omitted.
+    annual_pv_grid_export_kwh:
+        PV energy exported directly to grid per year in kWh (same indexing).
+        Written as MWh in the CSV. If None, the column is omitted.
     """
     cfg = config or CsvConfig()
     d = cfg.decimal
@@ -237,12 +253,38 @@ def write_cashflows_csv(
         else:
             year_label = str(y.year)
 
-        rows.append({
+        # Revenue breakdown columns (optional, only when data is provided)
+        rev_pv = (
+            annual_revenue_pv_eur[i]
+            if annual_revenue_pv_eur is not None and i < len(annual_revenue_pv_eur)
+            else None
+        )
+        rev_bess_green = (
+            annual_revenue_bess_green_eur[i]
+            if annual_revenue_bess_green_eur is not None and i < len(annual_revenue_bess_green_eur)
+            else None
+        )
+        rev_bess_grey = (
+            annual_revenue_bess_grey_eur[i]
+            if annual_revenue_bess_grey_eur is not None and i < len(annual_revenue_bess_grey_eur)
+            else None
+        )
+        pv_grid_export_mwh = (
+            annual_pv_grid_export_kwh[i] * KWH_TO_MWH
+            if annual_pv_grid_export_kwh is not None and i < len(annual_pv_grid_export_kwh)
+            else None
+        )
+
+        row: dict[str, str] = {
             "year": year_label,
             "capex_eur": fmt_currency(y.capex, decimal=d),
             "pv_production_mwh": fmt_float(pv_mwh, decimal=d),
+            "pv_grid_export_mwh": fmt_float(pv_grid_export_mwh, decimal=d),
             "bess_throughput_mwh": fmt_float(bess_mwh, decimal=d),
             "revenue_eur": fmt_currency(y.revenue, decimal=d),
+            "revenue_pv_eur": fmt_currency(rev_pv, decimal=d),
+            "revenue_bess_green_eur": fmt_currency(rev_bess_green, decimal=d),
+            "revenue_bess_grey_eur": fmt_currency(rev_bess_grey, decimal=d),
             "grid_import_costs": fmt_currency(y.grid_import_costs, decimal=d),
             "baseload_matching_costs": fmt_currency(y.baseload_matching_costs, decimal=d),
             "opex_eur": fmt_currency(y.opex, decimal=d),
@@ -257,7 +299,8 @@ def write_cashflows_csv(
             "equity_cf_eur": fmt_currency(y.equity_cf, decimal=d),
             "cumulative_equity_cf_eur": fmt_currency(cumulative, decimal=d),
             "dscr": fmt_float(dscr_val, decimal=d),
-        })
+        }
+        rows.append(row)
 
     _write_dicts(path, rows, delimiter=cfg.delimiter)
     logger.info("Wrote cashflows CSV (%d rows): %s", len(rows), path)

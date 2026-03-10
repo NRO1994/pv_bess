@@ -4,6 +4,8 @@
 <meta charset="UTF-8"/>
 <title>PV/BESS Co-Location - Szenario-Eingabe</title>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
 :root {
   --c1:#FF8200;--c2:#F73E5E;--c3:#A51BA7;--c4:#00467A;--c5:#006EB2;--c6:#00BDDC;
@@ -17,7 +19,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
 body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,-apple-system,sans-serif;line-height:1.6;min-height:100vh}
-.wrap{max-width:1000px;margin:0 auto;padding:16px 20px 100px}
+.wrap{max-width:1200px;margin:0 auto;padding:16px 28px 100px}
 
 /* Header */
 .hdr{display:flex;align-items:center;gap:16px;padding:16px 0;border-bottom:3px solid var(--c1);margin-bottom:20px}
@@ -40,20 +42,21 @@ btn,button,.btn{border:1px solid var(--border);background:var(--surface);color:v
 .btn-danger{color:var(--error);border-color:var(--error)}
 
 /* Stepper */
-.stepper{display:flex;gap:4px;margin-bottom:20px;overflow-x:auto;padding-bottom:4px}
-.stepper .s{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;border:2px solid var(--border);color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .2s}
+.stepper{display:flex;gap:6px;margin-bottom:20px;overflow-x:auto;padding-bottom:4px}
+.stepper .s{padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600;border:2px solid var(--border);color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .2s}
 .stepper .s:hover{border-color:var(--c5)}
 .stepper .s.active{border-color:var(--c1);color:var(--c1);background:rgba(255,130,0,.08)}
 .stepper .s.done{border-color:var(--success);color:var(--success)}
+.stepper .s.hidden-tab{display:none}
 
 /* Card / Section */
-.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:16px}
 .card .card{background:var(--bg)}
 .sec-title{font-size:15px;font-weight:700;color:var(--c4);margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid var(--c1)}
 .sub-title{font-size:13px;font-weight:700;color:var(--c5);margin:12px 0 8px}
 
 /* Grid */
-.g{display:grid;gap:12px}
+.g{display:grid;gap:16px}
 .g2{grid-template-columns:1fr 1fr}
 .g3{grid-template-columns:1fr 1fr 1fr}
 .g4{grid-template-columns:1fr 1fr 1fr 1fr}
@@ -61,7 +64,7 @@ btn,button,.btn{border:1px solid var(--border);background:var(--surface);color:v
 
 /* Form */
 label{display:block;font-size:12px;font-weight:600;color:var(--fg);margin-bottom:3px}
-input[type="text"],input[type="number"],select{width:100%;border:1px solid var(--border);background:var(--bg);color:var(--fg);padding:8px 10px;border-radius:8px;font-size:13px;transition:border .15s}
+input[type="text"],input[type="number"],select{width:100%;border:1px solid var(--border);background:var(--surface);color:var(--fg);padding:8px 10px;border-radius:8px;font-size:13px;transition:border .15s}
 input:focus,select:focus{outline:none;border-color:var(--c1);box-shadow:0 0 0 3px rgba(255,130,0,.12)}
 .hint{font-size:11px;color:var(--muted);margin-top:2px}
 .req::after{content:" *";color:var(--c2)}
@@ -82,7 +85,7 @@ section[data-step].visible{display:block}
 
 /* Bottom bar */
 .bottom{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(transparent,var(--bg) 30%);padding:12px 20px}
-.bottom-inner{max-width:1000px;margin:0 auto;display:flex;justify-content:space-between;align-items:center}
+.bottom-inner{max-width:1200px;margin:0 auto;display:flex;justify-content:space-between;align-items:center}
 
 /* Banner */
 .banner{padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:13px;display:none;border:1px solid var(--border)}
@@ -101,19 +104,22 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
 /* Tooltip */
 [data-tip]{position:relative}
 [data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:100%;left:0;background:var(--fg);color:var(--bg);padding:4px 8px;border-radius:6px;font-size:11px;white-space:nowrap;z-index:99}
+
+/* Map */
+#mapContainer{height:300px;border-radius:8px;border:1px solid var(--border);margin-top:8px;z-index:1}
 </style>
 </head>
 <body>
 <div class="wrap">
 <!-- HEADER -->
 <div class="hdr">
-  <img src="data:image/png;base64,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" alt="PV/BESS Logo"/>
+  <img src="data:image/png;base64,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" alt="PV/BESS Logo"/>
   <div class="hdr-text">
     <h1>PV/BESS Co-Location Analyse</h1>
     <p>Reine Szenario-Konfiguration &middot; Separate Simulation &middot; Version 0.1 erstellt durch Niels Röschmann (2810 Unternehmenentwicklung)</p>
   </div>
   <div class="hdr-right">
-    <img src="data:image/png;base64,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" alt="SWL" style="height:32px"/>
+    <img src="data:image/png;base64,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" alt="SWL" style="height:32px"/>
   </div>
 </div>
 
@@ -132,35 +138,30 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
 <div class="stepper" id="stepper">
   <div class="s active" data-step="1">1 &middot; Szenario</div>
   <div class="s" data-step="2">2 &middot; Projekt &amp; Standort</div>
-  <div class="s" data-step="3">3 &middot; PV-Anlage</div>
-  <div class="s" data-step="4">4 &middot; Batteriespeicher</div>
+  <div class="s" data-step="3" id="step_pv_tab">3 &middot; PV-Anlage</div>
+  <div class="s" data-step="4" id="step_bess_tab">4 &middot; Batteriespeicher</div>
   <div class="s" data-step="5">5 &middot; Netzanschluss</div>
   <div class="s" data-step="6">6 &middot; Finanzierung</div>
   <div class="s" data-step="7">7 &middot; Analysen</div>
   <div class="s" data-step="8">8 &middot; Export</div>
 </div>
 
-<!-- STEP 1: Szenario & MC -->
+<!-- STEP 1: Szenario -->
 <section class="card" data-step="1">
   <div class="sec-title">Szenario-Definition</div>
   <div class="g g2">
-    <div><label class="req">Szenario-Name</label><input id="f_name" type="text" placeholder="z.B. EEG_Green_2027"/><div class="hint">Eindeutiger Name für dieses Szenario</div></div>
-    <div style="display:flex;align-items:end"><label class="sw"><input type="checkbox" id="f_skip_baseline"/> Baseline (nur PV, ohne BESS) überspringen</label></div>
+    <div><label class="req">Szenario-Name</label><input id="f_name" type="text" placeholder="z.B. EEG_Green_2027"/><div class="hint">Eindeutiger Name fuer dieses Szenario</div></div>
+    <div style="display:flex;align-items:end"><label class="sw"><input type="checkbox" id="f_skip_baseline"/> Baseline (nur PV, ohne BESS) ueberspringen</label></div>
   </div>
   <hr class="sep"/>
-  <div class="sub-title">Monte-Carlo-Simulation</div>
+  <div class="sub-title">Betriebsmodus &amp; Anlagentypen</div>
   <div class="g g3">
-    <div><label class="sw"><input type="checkbox" id="f_mc_enabled"/> Monte Carlo aktivieren</label></div>
-    <div><label>Iterationen</label><input id="f_mc_iter" type="number" min="1" value="500" data-tip="Anzahl der Simulationsdurchläufe"/></div>
-    <div></div>
-  </div>
-  <div class="g g3" style="margin-top:8px">
-    <div><label>Sigma CAPEX PV (%)</label><input id="f_mc_scpv" type="number" min="0" step="0.1" value="5"/></div>
-    <div><label>Sigma OPEX PV (%)</label><input id="f_mc_sopv" type="number" min="0" step="0.1" value="3"/></div>
-    <div><label>Sigma PV Verfügbarkeit (%)</label><input id="f_mc_spva" type="number" min="0" step="0.1" value="2"/></div>
-    <div><label>Sigma CAPEX BESS (%)</label><input id="f_mc_scb" type="number" min="0" step="0.1" value="8"/></div>
-    <div><label>Sigma OPEX BESS (%)</label><input id="f_mc_sob" type="number" min="0" step="0.1" value="5"/></div>
-    <div><label>Sigma BESS Verfügbarkeit (%)</label><input id="f_mc_sba" type="number" min="0" step="0.1" value="2"/></div>
+    <div>
+      <label class="req">Betriebsmodus</label>
+      <select id="f_opmode"><option value="green">Grün (nur PV-Strom im BESS)</option><option value="grey">Grau (auch Netzstrom im BESS)</option></select>
+    </div>
+    <div style="display:flex;align-items:end"><label class="sw"><input type="checkbox" id="f_pv_case" checked onchange="updateCaseTabs()"/> PV-Case</label></div>
+    <div style="display:flex;align-items:end"><label class="sw"><input type="checkbox" id="f_bess_case" checked onchange="updateCaseTabs()"/> BESS-Case</label></div>
   </div>
 </section>
 
@@ -170,19 +171,16 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
   <div class="g g3">
     <div><label class="req">Projektlaufzeit (Jahre)</label><input id="f_lifetime" type="number" min="1" value="25"/></div>
     <div><label class="req">Inbetriebnahme-Jahr</label><input id="f_comyear" type="number" min="2020" value="2027"/></div>
-    <div><label class="req">Diskontsatz (%)</label><input id="f_discount" type="number" min="0" step="1" value="6" max="100"/></div>
-    <div>
-      <label class="req">Betriebsmodus</label>
-      <select id="f_opmode"><option value="green">Grün (nur PV-Strom im BESS)</option><option value="grey">Grau (auch Netzstrom im BESS)</option></select>
-    </div>
   </div>
   <hr class="sep"/>
   <div class="sub-title">Standort</div>
   <div class="g g3">
-    <div><label class="req">Breitengrad</label><input id="f_lat" type="number" step="any" min="-90" max="90" value="53.58"/><div class="hint">z.B. 53,58N/10,67E (Stadtwerke Lübeck, Geniner Straße)</div></div>
-    <div><label class="req">Längengrad</label><input id="f_lon" type="number" step="any" min="-180" max="180" value="10.67"/></div>
+    <div><label class="req">Breitengrad</label><input id="f_lat" type="number" step="any" min="-90" max="90" value="53.58" onchange="updateMap()"/><div class="hint">z.B. 53,58N/10,67E (Stadtwerke Lübeck, Geniner Straße)</div></div>
+    <div><label class="req">Längengrad</label><input id="f_lon" type="number" step="any" min="-180" max="180" value="10.67" onchange="updateMap()"/></div>
     <div><label class="req">PVGIS-Datenbank</label><select id="f_pvgis"><option value="PVGIS-SAHRA3">SAHRA3</option><option value="PVGIS-ERA5">ERA5</option></select></div>
   </div>
+  <div id="mapContainer"></div>
+  <div class="hint" style="margin-top:4px">Klicken Sie auf die Karte, um den Standort zu setzen. Die Koordinaten werden automatisch uebernommen.</div>
 </section>
 
 <!-- STEP 3: PV -->
@@ -195,11 +193,13 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
     <div><label class="req">Azimut (Grad)</label><input id="f_pv_azi" type="number" min="-180" max="180" step="any" value="0"/><div class="hint">0 = Süd</div></div>
     <div><label class="req">Neigung (Grad)</label><input id="f_pv_tilt" type="number" min="0" max="90" step="any" value="30"/></div>
   </div>
+  <hr class="sep"/>
   <div class="sub-title">Performance</div>
   <div class="g g3">
     <div><label class="req">Degradation (%/Jahr)</label><input id="f_pv_deg" type="number" min="0" max="100" step="0.1" value="0.4"/></div>
     <div><label class="req">PV-Verfügbarkeit (%)</label><input id="f_pv_avail" type="number" min="0" max="100" step="0.1" value="97"/></div>
   </div>
+  <hr class="sep"/>
   <div class="sub-title">Kosten</div>
   <div class="g g4">
     <div><label>CAPEX fest (EUR)</label><input id="f_pv_cx_fix" type="number" min="0" step="any" value="50000"/></div>
@@ -234,6 +234,7 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
     <div><label>Fixe Leistung (kW) - optional</label><input id="f_bs_abskw" type="number" min="0" step="any"/><div class="hint">Nur bei fixer Dimensionierung</div></div>
     <div><label>Fixe Kapazität (kWh) - optional</label><input id="f_bs_abskwh" type="number" min="0" step="any"/></div>
   </div>
+  <hr class="sep"/>
   <div class="sub-title">Performance</div>
   <div class="g g3">
     <div><label class="req">Round-Trip-Effizienz (%)</label><input id="f_bs_rte" type="number" min="0" max="100" step="0.1" value="88"/></div>
@@ -242,6 +243,7 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
     <div><label class="req">Degradation (%/Jahr)</label><input id="f_bs_deg" type="number" min="0" max="100" step="0.1" value="2"/></div>
     <div><label class="req">BESS-Verfügbarkeit (%)</label><input id="f_bs_avail" type="number" min="0" max="100" step="0.1" value="97"/></div>
   </div>
+  <hr class="sep"/>
   <div class="sub-title">Kosten</div>
   <div class="g g4">
     <div><label>CAPEX fest (EUR)</label><input id="f_bs_cx_fix" type="number" min="0" step="any" value="50000"/></div>
@@ -256,6 +258,7 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
   <div class="g g2" style="margin-top:4px">
     <div><label>Optimierungsgebühr (%)</label><input id="f_bs_optfee" type="number" min="0" max="100" step="0.1" value="0"/><div class="hint">Anteil am BESS-Ertrag</div></div>
   </div>
+  <hr class="sep"/>
   <div class="sub-title">Ersatzinvestition (optional)</div>
   <div class="g g4">
     <div style="grid-column:1/-1"><label class="sw"><input type="checkbox" id="f_bs_repl_en"/> Ersatzinvestition aktivieren</label></div>
@@ -297,6 +300,7 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
     <div><label class="req">Zinssatz (%)</label><input id="f_fi_ir" type="number" min="0" step="0.01" value="4.5"/></div>
     <div><label class="req">Kreditlaufzeit (Jahre)</label><input id="f_fi_tenor" type="number" min="1" value="18"/></div>
     <div><label class="req">Inflation (%)</label><input id="f_fi_infl" type="number" min="0" step="0.1" value="2" max="100"/></div>
+    <div><label class="req">Diskontsatz (%)</label><input id="f_discount" type="number" min="0" step="1" value="6" max="100"/></div>
     <div><label>Equity-IRR Ziel</label><input id="f_fi_irrtgt" type="number" step="any"/><div class="hint">Optional</div></div>
     <div><label class="sw"><input type="checkbox" id="f_fi_p90" checked/> Debt Sizing mit P90</label></div>
     <div><label>Debt Sizing Downside (%)</label><input id="f_fi_dsds" type="number" min="0" max="100" step="0.1"/></div>
@@ -343,7 +347,7 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
 <section class="card" data-step="7">
   <div class="sec-title">Durchzuführende Analysen</div>
 
-  <div class="card">
+  <div class="card" style="background:var(--surface)">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div class="sub-title" style="margin:0">EEG-Sensitivität</div>
       <label class="sw"><input type="checkbox" id="f_an_eeg_en"/> Aktivieren</label>
@@ -355,7 +359,7 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" style="background:var(--surface)">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div class="sub-title" style="margin:0">PPA Collar</div>
       <label class="sw"><input type="checkbox" id="f_an_col_en"/> Aktivieren</label>
@@ -379,7 +383,7 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" style="background:var(--surface)">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div class="sub-title" style="margin:0">PPA Baseload</div>
       <label class="sw"><input type="checkbox" id="f_an_bl_en"/> Aktivieren</label>
@@ -401,6 +405,22 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
         <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="addListItem('lst_bl_lv',1)">+ Level</button>
       </div>
     </div>
+  </div>
+
+  <hr class="sep"/>
+  <div class="sub-title">Monte-Carlo-Simulation</div>
+  <div class="g g3">
+    <div><label class="sw"><input type="checkbox" id="f_mc_enabled"/> Monte Carlo aktivieren</label></div>
+    <div><label>Iterationen</label><input id="f_mc_iter" type="number" min="1" value="500" data-tip="Anzahl der Simulationsdurchlaeufe"/></div>
+    <div></div>
+  </div>
+  <div class="g g3" style="margin-top:8px">
+    <div><label>Sigma CAPEX PV (%)</label><input id="f_mc_scpv" type="number" min="0" step="0.1" value="5"/></div>
+    <div><label>Sigma OPEX PV (%)</label><input id="f_mc_sopv" type="number" min="0" step="0.1" value="3"/></div>
+    <div><label>Sigma PV Verfuegbarkeit (%)</label><input id="f_mc_spva" type="number" min="0" step="0.1" value="2"/></div>
+    <div><label>Sigma CAPEX BESS (%)</label><input id="f_mc_scb" type="number" min="0" step="0.1" value="8"/></div>
+    <div><label>Sigma OPEX BESS (%)</label><input id="f_mc_sob" type="number" min="0" step="0.1" value="5"/></div>
+    <div><label>Sigma BESS Verfuegbarkeit (%)</label><input id="f_mc_sba" type="number" min="0" step="0.1" value="2"/></div>
   </div>
 </section>
 
@@ -429,6 +449,18 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
 const TOTAL=8;
 let curStep=1;
 const LS_KEY='pvbess_wizard';
+let map=null, marker=null;
+
+/* --- PV/BESS Case Tab visibility --- */
+function updateCaseTabs(){
+  const pvOn=document.getElementById('f_pv_case').checked;
+  const bessOn=document.getElementById('f_bess_case').checked;
+  const pvTab=document.getElementById('step_pv_tab');
+  const bessTab=document.getElementById('step_bess_tab');
+  if(pvTab) pvTab.classList.toggle('hidden-tab',!pvOn);
+  if(bessTab) bessTab.classList.toggle('hidden-tab',!bessOn);
+  persist();
+}
 
 /* --- Navigation --- */
 function goStep(n){
@@ -446,10 +478,44 @@ function goStep(n){
   document.getElementById('btnPrev').style.visibility=n===1?'hidden':'visible';
   document.getElementById('btnNext').textContent=n===TOTAL?'Fertig':'Weiter';
   if(n===TOTAL)buildReview();
+  if(n===2)initMap();
   window.scrollTo(0,0);
   persist();
 }
 document.querySelectorAll('.stepper .s').forEach(s=>s.addEventListener('click',()=>goStep(+s.dataset.step)));
+
+/* --- Map --- */
+function initMap(){
+  if(map) { map.invalidateSize(); return; }
+  const lat=parseFloat(document.getElementById('f_lat').value)||53.58;
+  const lon=parseFloat(document.getElementById('f_lon').value)||10.67;
+  map=L.map('mapContainer').setView([lat,lon],10);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom:19
+  }).addTo(map);
+  marker=L.marker([lat,lon],{draggable:true}).addTo(map);
+  marker.on('dragend',function(){
+    const p=marker.getLatLng();
+    document.getElementById('f_lat').value=Math.round(p.lat*1000000)/1000000;
+    document.getElementById('f_lon').value=Math.round(p.lng*1000000)/1000000;
+    persist();
+  });
+  map.on('click',function(e){
+    marker.setLatLng(e.latlng);
+    document.getElementById('f_lat').value=Math.round(e.latlng.lat*1000000)/1000000;
+    document.getElementById('f_lon').value=Math.round(e.latlng.lng*1000000)/1000000;
+    persist();
+  });
+  setTimeout(function(){map.invalidateSize();},200);
+}
+function updateMap(){
+  if(!map||!marker)return;
+  const lat=parseFloat(document.getElementById('f_lat').value)||0;
+  const lon=parseFloat(document.getElementById('f_lon').value)||0;
+  marker.setLatLng([lat,lon]);
+  map.setView([lat,lon],map.getZoom());
+}
 
 /* --- Dynamic lists --- */
 function addListItem(id,defVal){
@@ -476,8 +542,58 @@ function setListValues(id,vals){
 function v(id){const e=document.getElementById(id);if(!e)return null;if(e.type==='checkbox')return e.checked;if(e.type==='number')return e.value===''?null:parseFloat(e.value);return e.value||null;}
 function sv(id,val){const e=document.getElementById(id);if(!e)return;if(e.type==='checkbox')e.checked=!!val;else if(val!==null&&val!==undefined)e.value=val;}
 
+/* --- Hardcoded price scenarios (from full_input_example.json) --- */
+function getDefaultPriceScenarios(){
+  return [
+    {
+      "name": "Central",
+      "label": "Zentralszenario",
+      "csv_column": "price_central",
+      "weather_year": 2018,
+      "weight": 0.6,
+      "is_central": true,
+      "price_csv": "./inputs/day_ahead_prices.csv",
+      "inflation_on_input_data": false,
+      "csv_separator": ";",
+      "csv_decimal": ",",
+      "csv_timestamp_column": "timestamp",
+      "csv_timestamp_format": "%Y-%m-%dT%H:%M:%S"
+    },
+    {
+      "name": "High",
+      "label": "Hohes Preisniveau",
+      "csv_column": "price_high",
+      "weather_year": 2015,
+      "weight": 0.25,
+      "is_central": false,
+      "price_csv": "./inputs/day_ahead_prices.csv",
+      "inflation_on_input_data": false,
+      "csv_separator": ";",
+      "csv_decimal": ",",
+      "csv_timestamp_column": "timestamp",
+      "csv_timestamp_format": "%Y-%m-%dT%H:%M:%S"
+    },
+    {
+      "name": "Low",
+      "label": "Niedriges Preisniveau",
+      "csv_column": "price_low",
+      "weather_year": 2016,
+      "weight": 0.15,
+      "is_central": false,
+      "price_csv": "./inputs/day_ahead_prices.csv",
+      "inflation_on_input_data": false,
+      "csv_separator": ";",
+      "csv_decimal": ",",
+      "csv_timestamp_column": "timestamp",
+      "csv_timestamp_format": "%Y-%m-%dT%H:%M:%S"
+    }
+  ];
+}
+
 /* --- Build JSON --- */
 function buildJSON(){
+  const pvCase=v('f_pv_case');
+  const bessCase=v('f_bess_case');
   const j={
     scenario:{
       name:v('f_name')||'Unnamed',
@@ -505,16 +621,16 @@ function buildJSON(){
       location:{latitude:v('f_lat'),longitude:v('f_lon'),pvgis_database:v('f_pvgis')},
       technology:{
         pv:{
-          design:{peak_power_kwp:v('f_pv_kwp'),mounting_type:v('f_pv_mount'),azimuth_deg:v('f_pv_azi'),tilt_deg:v('f_pv_tilt')},
+          design:{peak_power_kwp:pvCase?v('f_pv_kwp'):0,mounting_type:v('f_pv_mount'),azimuth_deg:v('f_pv_azi'),tilt_deg:v('f_pv_tilt')},
           performance:{degradation_rate_pct_per_year:v('f_pv_deg'),pv_availability_pct:v('f_pv_avail')},
           costs:{capex:{fixed_eur:v('f_pv_cx_fix'),eur_per_kw:v('f_pv_cx_kw'),eur_per_kwh:v('f_pv_cx_kwh'),pct_of_capex:v('f_pv_cx_pct')},opex:{fixed_eur:v('f_pv_ox_fix'),eur_per_kw:v('f_pv_ox_kw'),eur_per_kwh:v('f_pv_ox_kwh'),pct_of_capex:v('f_pv_ox_pct')}}
         },
         bess:{
           design_space:{
-            scale_pct_of_pv:getListValues('lst_bscale'),
-            e_to_p_ratio_hours:getListValues('lst_epr'),
-            ...(v('f_bs_abskw')!=null?{absolute_power_kw:v('f_bs_abskw')}:{}),
-            ...(v('f_bs_abskwh')!=null?{absolute_capacity_kwh:v('f_bs_abskwh')}:{})
+            scale_pct_of_pv:bessCase?getListValues('lst_bscale'):[0],
+            e_to_p_ratio_hours:bessCase?getListValues('lst_epr'):[1],
+            ...(bessCase&&v('f_bs_abskw')!=null?{absolute_power_kw:v('f_bs_abskw')}:(!bessCase?{absolute_power_kw:0}:{})),
+            ...(bessCase&&v('f_bs_abskwh')!=null?{absolute_capacity_kwh:v('f_bs_abskwh')}:(!bessCase?{absolute_capacity_kwh:0}:{}))
           },
           performance:{round_trip_efficiency_pct:v('f_bs_rte'),min_soc_pct:v('f_bs_minsoc'),max_soc_pct:v('f_bs_maxsoc'),degradation_rate_pct_per_year:v('f_bs_deg'),bess_availability_pct:v('f_bs_avail')},
           costs:{
@@ -541,7 +657,7 @@ function buildJSON(){
           marketing:{type:v('f_mkt_type'),floor_price_eur_per_kwh:v('f_mkt_floor'),fixed_price_years:v('f_mkt_fpyrs'),eeg_inflation:v('f_mkt_eeginfl')},
           ppa:{type:v('f_ppa_type'),pay_as_produced_price_eur_per_kwh:v('f_ppa_pap'),baseload_mw:v('f_ppa_bl'),floor_price_eur_per_kwh:v('f_ppa_floor'),cap_price_eur_per_kwh:v('f_ppa_cap'),duration_years:v('f_ppa_dur'),inflation_on_ppa:v('f_ppa_infl'),guarantee_of_origin_eur_per_kwh:v('f_ppa_goo')}
         },
-        price_inputs:{scenarios:[]},
+        price_inputs:{scenarios:getDefaultPriceScenarios()},
         tax:{afa_years_pv:v('f_tx_afapv'),afa_years_bess:v('f_tx_afabs'),gewerbesteuer_hebesatz:v('f_tx_hebe'),gewerbesteuer_messzahl:v('f_tx_mess'),koerperschaftsteuer_pct:v('f_tx_kst'),solidaritaetszuschlag_pct:v('f_tx_soli')}
       }
     }
@@ -591,14 +707,22 @@ function loadFromJSON(j){
   sv('f_mc_sopv',mc.sigma_opex_pv_pct);sv('f_mc_sob',mc.sigma_opex_bess_pct);
   sv('f_mc_spva',mc.sigma_pv_availability_pct);sv('f_mc_sba',mc.sigma_bess_availability_pct);
   sv('f_lifetime',p.lifetime_years);sv('f_comyear',p.commissioning_year);
-  sv('f_discount',p.discount_rate*100);sv('f_opmode',p.operating_mode);
+  sv('f_discount',p.discount_rate!=null?p.discount_rate*100:null);sv('f_opmode',p.operating_mode);
   const loc=p.location||{};sv('f_lat',loc.latitude);sv('f_lon',loc.longitude);sv('f_pvgis',loc.pvgis_database);
   const pv=(p.technology||{}).pv||{};const pvd=pv.design||{};const pvp=pv.performance||{};const pvc=pv.costs||{};
-  sv('f_pv_kwp',pvd.peak_power_kwp);sv('f_pv_mount',pvd.mounting_type);sv('f_pv_azi',pvd.azimuth_deg);sv('f_pv_tilt',pvd.tilt_deg);
+  // Detect PV/BESS case from imported data
+  const pvKwp=pvd.peak_power_kwp;
+  if(pvKwp===0){sv('f_pv_case',false);}else{sv('f_pv_case',true);}
+  sv('f_pv_kwp',pvKwp||5000);
+  sv('f_pv_mount',pvd.mounting_type);sv('f_pv_azi',pvd.azimuth_deg);sv('f_pv_tilt',pvd.tilt_deg);
   sv('f_pv_deg',pvp.degradation_rate_pct_per_year);sv('f_pv_avail',pvp.pv_availability_pct);
   sv('f_pv_cx_fix',(pvc.capex||{}).fixed_eur);sv('f_pv_cx_kw',(pvc.capex||{}).eur_per_kw);sv('f_pv_cx_kwh',(pvc.capex||{}).eur_per_kwh);sv('f_pv_cx_pct',(pvc.capex||{}).pct_of_capex);
   sv('f_pv_ox_fix',(pvc.opex||{}).fixed_eur);sv('f_pv_ox_kw',(pvc.opex||{}).eur_per_kw);sv('f_pv_ox_kwh',(pvc.opex||{}).eur_per_kwh);sv('f_pv_ox_pct',(pvc.opex||{}).pct_of_capex);
   const bs=(p.technology||{}).bess||{};const bsd=bs.design_space||{};const bsp=bs.performance||{};const bsc=bs.costs||{};
+  // Detect BESS case: if absolute_power_kw is 0 and scale list only has 0 => BESS-only off
+  const bessAbsPow=bsd.absolute_power_kw;
+  const bessScales=bsd.scale_pct_of_pv||[];
+  if(bessAbsPow===0||(bessScales.length===1&&bessScales[0]===0&&bessAbsPow==null)){sv('f_bess_case',false);}else{sv('f_bess_case',true);}
   setListValues('lst_bscale',bsd.scale_pct_of_pv);setListValues('lst_epr',bsd.e_to_p_ratio_hours);
   sv('f_bs_abskw',bsd.absolute_power_kw);sv('f_bs_abskwh',bsd.absolute_capacity_kwh);
   sv('f_bs_rte',bsp.round_trip_efficiency_pct);sv('f_bs_minsoc',bsp.min_soc_pct);sv('f_bs_maxsoc',bsp.max_soc_pct);
@@ -614,7 +738,7 @@ function loadFromJSON(j){
   sv('f_gr_ox_fix',(grc.opex||{}).fixed_eur);sv('f_gr_ox_kw',(grc.opex||{}).eur_per_kw);sv('f_gr_ox_kwh',(grc.opex||{}).eur_per_kwh);sv('f_gr_ox_pct',(grc.opex||{}).pct_of_capex);
   const fi=p.finance||{};
   sv('f_fi_lev',fi.leverage_pct);sv('f_fi_ir',fi.interest_rate_pct);sv('f_fi_tenor',fi.loan_tenor_years);
-  sv('f_fi_irrtgt',fi.equity_irr_target);sv('f_fi_p90',fi.debt_uses_p90);sv('f_fi_dsds',fi.debt_sizing_downside_pct);sv('f_fi_infl',fi.inflation_rate*100);
+  sv('f_fi_irrtgt',fi.equity_irr_target);sv('f_fi_p90',fi.debt_uses_p90);sv('f_fi_dsds',fi.debt_sizing_downside_pct);sv('f_fi_infl',fi.inflation_rate!=null?fi.inflation_rate*100:null);
   const mkt=(fi.revenue_streams||{}).marketing||{};
   sv('f_mkt_type',mkt.type);sv('f_mkt_floor',mkt.floor_price_eur_per_kwh);sv('f_mkt_fpyrs',mkt.fixed_price_years);sv('f_mkt_eeginfl',mkt.eeg_inflation);
   const ppa=(fi.revenue_streams||{}).ppa||{};
@@ -628,6 +752,7 @@ function loadFromJSON(j){
   if(an.eeg_sensitivity){sv('f_an_eeg_en',an.eeg_sensitivity.enabled);setListValues('lst_eeg_fp',an.eeg_sensitivity.floor_prices_eur_per_kwh);}
   if(an.ppa_collar){sv('f_an_col_en',an.ppa_collar.enabled);sv('f_an_col_dur',an.ppa_collar.duration_years);sv('f_an_col_infl',an.ppa_collar.inflation_on_ppa);sv('f_an_col_goo',an.ppa_collar.goo_premium_eur_per_kwh);setListValues('lst_col_fp',an.ppa_collar.floor_prices_eur_per_kwh);setListValues('lst_col_cs',an.ppa_collar.cap_spreads_eur_per_kwh);}
   if(an.ppa_baseload){sv('f_an_bl_en',an.ppa_baseload.enabled);sv('f_an_bl_dur',an.ppa_baseload.duration_years);sv('f_an_bl_infl',an.ppa_baseload.inflation_on_ppa);sv('f_an_bl_goo',an.ppa_baseload.goo_premium_eur_per_kwh);setListValues('lst_bl_pp',an.ppa_baseload.ppa_prices_eur_per_kwh);setListValues('lst_bl_lv',an.ppa_baseload.baseload_levels_mw);}
+  updateCaseTabs();
   goStep(1);
 }
 
@@ -642,6 +767,8 @@ function buildReview(){
     ['Laufzeit',fmt(ps.lifetime_years,'Jahre')],
     ['Inbetriebnahme',ps.commissioning_year],
     ['Modus',ps.operating_mode==='green'?'Green':'Grey'],
+    ['PV-Case',v('f_pv_case')?'Ja':'Nein'],
+    ['BESS-Case',v('f_bess_case')?'Ja':'Nein'],
     ['Standort',fmt(ps.location.latitude)+' / '+fmt(ps.location.longitude)],
     ['PV Peak Power',fmt(t.pv.design.peak_power_kwp,'kWp')],
     ['PV Degradation',fmt(t.pv.performance.degradation_rate_pct_per_year,'%/a')],
@@ -651,6 +778,7 @@ function buildReview(){
     ['Netz max. Export',fmt(t.grid_connection.max_export_kw,'kW')],
     ['FK-Anteil',fmt(ps.finance.leverage_pct,'%')],
     ['Zinssatz',fmt(ps.finance.interest_rate_pct,'%')],
+    ['Diskontsatz',fmt(ps.finance.discount_rate!=null?ps.finance.discount_rate*100:null,'%')],
     ['Vermarktung',ps.finance.revenue_streams.marketing.type],
     ['PPA-Typ',ps.finance.revenue_streams.ppa?.type||'none'],
     ['Inflation',fmt(ps.finance.inflation_rate)],
@@ -666,6 +794,8 @@ function persist(){
   try{
     const j=buildJSON();
     j._step=curStep;
+    j._pvCase=v('f_pv_case');
+    j._bessCase=v('f_bess_case');
     j._lists={
       bscale:getListValues('lst_bscale'),epr:getListValues('lst_epr'),
       eeg:getListValues('lst_eeg_fp'),col_fp:getListValues('lst_col_fp'),
@@ -680,6 +810,9 @@ function restore(){
     if(!raw)return;
     const j=JSON.parse(raw);
     loadFromJSON(j);
+    if(j._pvCase!==undefined)sv('f_pv_case',j._pvCase);
+    if(j._bessCase!==undefined)sv('f_bess_case',j._bessCase);
+    updateCaseTabs();
     if(j._step)goStep(j._step);
   }catch(e){}
 }
@@ -702,6 +835,7 @@ if(!localStorage.getItem(LS_KEY)){
   setListValues('lst_epr',[1,2,4]);
 }
 restore();
+updateCaseTabs();
 </script>
 </body>
 </html>

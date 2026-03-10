@@ -1013,6 +1013,10 @@ def run(args: argparse.Namespace) -> int:
         annual_dscr=optimal_setup.metrics.annual_dscr,
         commissioning_year=scenario.commissioning_year,
         config=csv_config,
+        annual_revenue_pv_eur=[r.revenue_pv_export for r in optimal_setup.run_result.annual_results],
+        annual_revenue_bess_green_eur=[r.revenue_bess_green for r in optimal_setup.run_result.annual_results],
+        annual_revenue_bess_grey_eur=[r.revenue_bess_grey for r in optimal_setup.run_result.annual_results],
+        annual_pv_grid_export_kwh=[r.pv_export for r in optimal_setup.run_result.annual_results],
     )
 
     if len(grid_result.points) > 1:

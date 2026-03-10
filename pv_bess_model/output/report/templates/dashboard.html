@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <title>PV+BESS Ergebnis-Report – {{scenario_name}}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <style>
     /* ===== Corporate Design ===== */
     :root {
@@ -52,14 +54,15 @@
 
     /* ===== Header ===== */
     .report-header {
-      display: flex; align-items: center; justify-content: space-between; gap: 16px;
-      padding-bottom: 16px; border-bottom: 2px solid var(--corp-darkblue); flex-wrap: wrap;
+      display: flex; align-items: center; gap: 16px;
+      padding: 16px 0; border-bottom: 3px solid var(--corp-orange); margin-bottom: 20px;
     }
     .report-header .logo { height: 48px; max-width: 200px; object-fit: contain; }
-    .report-header .title-block { flex: 1; min-width: 200px; text-align: center; }
-    .report-header h1 { font-size: 20px; margin: 0; color: var(--corp-darkblue); }
+    .report-header .title-block { flex: 1; min-width: 200px; }
+    .report-header h1 { font-size: 18px; margin: 0; color: var(--corp-darkblue); font-weight: 700; }
     [data-theme="dark"] .report-header h1 { color: var(--corp-lightblue); }
-    .report-header .subtitle { color: var(--muted); font-size: 13px; }
+    .report-header .subtitle { color: var(--muted); font-size: 12px; }
+    .report-header .hdr-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
     /* ===== Toolbar ===== */
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; justify-content: flex-end; }
