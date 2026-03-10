@@ -97,7 +97,7 @@
             "pct_of_capex": 0
           }
         },
-        "system_loss_pct": 7.679
+        "system_loss_pct": 7.4
       }
     },
     "finance": {
@@ -106,6 +106,7 @@
       "loan_tenor_years": 25,
       "equity_irr_target": 0.081,
       "debt_uses_p90": true,
+      "debt_sizing_downside_pct": 15,
       "inflation_rate": 0.015,
       "revenue_streams": {
         "marketing": {

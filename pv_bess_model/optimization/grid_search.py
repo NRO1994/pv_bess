@@ -482,7 +482,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
 
     # Optional downside simulation – used for conservative DSCR calculation, P90 only on PV revenue
     annual_revenues_downside = [
-        (r.revenue_pv_export * args.debt_sizing_downside_pct / 100) +
+        (r.revenue_pv_export * (1 - args.debt_sizing_downside_pct / 100)) +
         r.bess_spot_revenue - r.grid_import_cost for r in sim_p50.annual_results]
 
     # Debt schedule (always based on CAPEX × leverage)

@@ -56,39 +56,25 @@
               positiv dargestellt ist, und alle Ausgaben (Capex, OPEX, Debt, Tax, sowie gegebenenfalls auch grid costs
               und ppa-balance costs) als negative Säulen. Der Text der LLM soll dabei alle KPI's des "metric" objects
               beinhalten, und beschreiben, wie der Cashflow einzuschätzen ist.
-- [ ] Die höchste Priorität hat es, den Code auf ein Level zu bringen, in dem alle Unit-Tests erfolgreich laufen. Ich
+- [x] Die höchste Priorität hat es, den Code auf ein Level zu bringen, in dem alle Unit-Tests erfolgreich laufen. Ich
   habe durch die Integration Test Suite manuell viele kleinere Fehler behoben, aber nicht die Unit Tests-angepasst.
   Deine Aufgabe ist es, die Unit-Tests so anzupassen, dass sie alle wieder erfolgreich sind. Verändere nicht die Logik!
   Diese läuft nun korrekt. Prüfe die Code Coverage durch die Unit-Tests, und schlage weitere Unit tests vor, um die
   Test-Coverage zu verbessern. Vor allem für kritische Funktionen wie zum Beispiel
   timeseries.align_weather_to_forecast_year, oder für _effective_green_price, der alle Market Szenarien (Market, EEG,
-  PPA floor, PPA Collar, PPA baseload, PPA pay-as-produced) abdeckt
-- [ ] Der nächste wichtige Schritt ist es ein generelles Clean-Up durchzuführen. Es gibt viele redundante
+  PPA floor, PPA Collar, PPA baseload, PPA pay-as-produced) abdeckt (Feature_11-Phase_A)
+- [x] Der nächste wichtige Schritt ist es ein generelles Clean-Up durchzuführen. Es gibt viele redundante
   Berechnungen, zum Beispiel für den Cashflow. Suche nach weiteren und vereinheitliche diese. Achte dabei besonders
   darauf, dass alle Tests weiterhin erfolgreich sind. Dies ist nur ein Refactoring bestehender Logik, und nicht die
   Erweiterung! Zudem gibt es vielen ungenutzten Code (zum Beispiel der price_loader). Prüfe auf weitere solcher Fälle.
   Prüfe jeweils, ob sich diese noch in die Logik integrieren lassen, oder ob sie gelöscht werden sollten. Überarbeite
   ebenfalls die Unit-Tests, falls sich dort ebenfalls Tests befinden, die entweder nicht mehr relevant sind, oder
   helper-functions die nicht mehr benötigt werden. Prüfe zu letzten noch das linting, und ergänze an Stellen, an denen
-  es nicht eingehalten wird.
+  es nicht eingehalten wird. (Feature_11-Phase_B)
 
 ## Logik
 
-- [ ] Es soll in der daily-optimization der Solver aus ortools.linear_solver import pywraplp
-  ,pywraplp.Solver.CreateSolver('HiGHS') verwendet werden. Beachte, dass alle anderen Unit Tests sowie Integration Tests
-  weiterhin erfolgreich sein sollen
-- [ ] der BESS darf in einem Zeitpunkt nur entweder laden, oder entladen werden - aber nicht beides gleichzeitig.
-  Überlege wie sich diese Nebenbedingung gut in das Problem einarbeiten lässt. Als mögliche Vereinfachung könnte bei
-  negativen Preisen das `discharging = 0` festgelegt werden, da dieses Phänomen nur in solchen Fällen auftritt. Es
-  erwirtschaftet dabei durch die Ineffizienzen des Speichers Gewinne, die aber nicht realisierbar sind.
-- [ ] Der Vermarktungsmodus "PPA-Baseload" ist an diversen Stellen noch nicht korrekt implementiert. Er soll zunächst in
-  LP optimization mit aufgenommen werden. Dies ist notwendig, da im PV/BESS Case der Speicher dient den Baseload länger
-  zu halten, als es nur durch die PV Anlage möglich ist. Das bedeutet, die zusätzlichen Einkäufe, durch zu niedrigen
-  Baseload müssen in der täglichen Optimierung berücksichtigt werden. Der Revenue berechnet sich dann in Zeitpunkten,
-  bei denen genug Einspeisung (durch PV und/oder BESS) vorliegt durch: `max(spot_price, effective_price)`. In Zeiten wo
-  nicht ausreichend Einspeisung vorliegt, müssen die Einkaufskosten berücksichtigt werden. Diese berechnen sich durch
-  `(baseload - grid_export) * (spot_price - effective_price)`. Die Variablen dazu sollen dann ebenfalls im CSV Dispatch
-  und Cashflow zu sehen sein.
+- [ ] 
 
 ## Kosmetik
 

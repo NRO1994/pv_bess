@@ -578,6 +578,8 @@ class TestHtmlReportDataToJson:
             metrics={"equity_irr": 8.5},
             tool_logo_b64=None,
             company_logo_b64=None,
+            ppa_collar_duration=2,
+            ppa_baseload_duration=2
         )
         raw = data.to_json()
         parsed = json.loads(raw)
@@ -616,6 +618,8 @@ class TestHtmlReportDataToJson:
             eeg_sensitivity=None,
             ppa_collar=None,
             ppa_baseload=None,
+            ppa_collar_duration=2,
+            ppa_baseload_duration=2,
             grid_search_points=[],
             optimal_scale_pct=0,
             optimal_ep_ratio=0,
@@ -661,6 +665,7 @@ class TestCollectReportData:
                 weather_data_for_report={2020: np.ones(8760) * 1000},
                 scenario_prices=[price_sc],
                 commissioning_year=2027,
+                analyses={"ppa_collar": {"duration_years":1}, "ppa_baseload": {"duration_years":1}},
             )
 
         assert data.scenario_name == "test_scenario"

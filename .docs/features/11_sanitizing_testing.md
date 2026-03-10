@@ -76,6 +76,7 @@ Es gibt drei Kategorien: **Integration/Testing**, **Logik** und **HTML-Report** 
   - `optimizer._effective_green_price` – alle 6 Vermarktungsszenarien abdecken (Market, EEG, PPA-Floor, PPA-Collar, PPA-Baseload, PPA-Pay-as-Produced)
   - `cashflow.py` – Verlustvortrag ueber mehrere Jahre
   - `costs.py` – Unified Cost Schema mit fehlenden Feldern = 0
+  - `tax.py` - Wird aktuell gar nicht getestet
 - [ ] Neue Unit-Tests schreiben fuer identifizierte Luecken
 
 ---

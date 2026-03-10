@@ -1,4 +1,4 @@
-# Feature 08: PDF-Report im Präsentationsformat
+# Feature 08: PDF-Report im Präsentationsformat - VERALTET, durch HTML Report ersetzt
 
 ## Priorität: Niedrig (nach allen anderen Features)
 ## Aufwand: Groß (12-16h)

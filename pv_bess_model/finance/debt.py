@@ -56,7 +56,7 @@ def build_annuity_schedule(
     leverage_pct: float,
     annual_interest_rate: float,
     tenor_years: int,
-    depreciation_period:int
+    depreciation_period:int=0
 ) -> AnnuitySchedule:
     """Build the full year-by-year annuity schedule.
 
