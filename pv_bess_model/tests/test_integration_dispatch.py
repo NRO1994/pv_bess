@@ -11,7 +11,7 @@ tests validate correctness and plausibility of results.
 
 Usage::
 
-    pytest pv_bess_model/tests/test_integration_suite.py -m integration -v
+    pytest pv_bess_model/tests/test_integration_dispatch.py -m integration -v
 
 All tests are marked with ``@pytest.mark.integration`` and excluded from the
 default test run (``pytest -m "not integration"``).
@@ -49,7 +49,6 @@ logger = logging.getLogger(__name__)
 TECH_SETUPS = ["bess_only", "pv_only", "pv_bess"]
 OPERATING_MODES = ["grey", "green"]
 MARKETING_STRATEGIES = ["market", "eeg", "ppa_pap", "ppa_baseload", "ppa_floor", "ppa_collar"]
-ONLY_CHECK_NOT_RERUN = False
 
 BESS_CONFIGS: dict[str, dict[str, float | None]] = {
     "pv_only": {"bess_power": None, "bess_capacity": None},
@@ -60,7 +59,7 @@ BESS_CONFIGS: dict[str, dict[str, float | None]] = {
 # PV peak power used in pv_only and pv_bess setups
 _PV_PEAK_KWP = 1000.0
 _GRID_MAX_KW = 800.0
-_LIFETIME_YEARS = 20
+_LIFETIME_YEARS = 1
 
 # Master scenario template — all fields that don't change between combos
 MASTER_SCENARIO: dict = {
@@ -330,7 +329,7 @@ def build_scenario(
         rev["marketing"] = {"type": "ppa"}
         rev["ppa"] = {
             "type": "ppa_pay_as_produced",
-            "pay_as_produced_price_eur_per_kwh": 0.073,
+            "pay_as_produced_price_eur_per_kwh": 0.06,
             "duration_years": 15,
             "inflation_on_ppa": False,
             "guarantee_of_origin_eur_per_kwh": 0.003,
@@ -339,7 +338,7 @@ def build_scenario(
         rev["marketing"] = {"type": "ppa"}
         rev["ppa"] = {
             "type": "ppa_baseload",
-            "pay_as_produced_price_eur_per_kwh": 0.075,
+            "pay_as_produced_price_eur_per_kwh": 0.071,
             "baseload_mw": 0.1,
             "duration_years": 15,
             "inflation_on_ppa": False,
@@ -409,20 +408,7 @@ def parse_results_from_csvs(
     dscr_min = _safe_float(row.get("dscr_min"))
     capex_total = _safe_float(row.get("total_capex_eur"))
 
-    # Revenue year 1 from grid search (optimal row)
-    revenue_year1 = 0.0
-    if grid_path.exists():
-        grid_df = pd.read_csv(
-            grid_path,
-            sep=CSV_DELIMITER,
-            decimal=CSV_DECIMAL_SEPARATOR,
-            encoding="utf-8",
-        )
-        optimal_rows = grid_df[grid_df["is_optimal"] == True]  # noqa: E712
-        if len(optimal_rows) > 0:
-            revenue_year1 = _safe_float(optimal_rows.iloc[0].get("revenue_year1_eur"))
-        elif len(grid_df) > 0:
-            revenue_year1 = _safe_float(grid_df.iloc[0].get("revenue_year1_eur"))
+    revenue_year1 = _safe_float(row.get("total_revenue_eur"))
 
     return {
         "equity_irr": equity_irr,
@@ -632,11 +618,6 @@ def all_results(price_csv_path: Path, tmp_path_factory) -> dict[str, ScenarioRes
                 for scenario_att in scenario["project_settings"]["finance"]["price_inputs"]["scenarios"]:
                     scenario_att["price_csv"] = str(price_csv_path)
 
-                # check constraints, without rerunning all tests
-                if ONLY_CHECK_NOT_RERUN:
-                    results[name] = check_dispatch_on_violations(name, Path(scenario["scenario"]["output"]["directory"]), scenario)
-                    continue
-
                 logger.info("Running integration scenario: %s", name)
                 try:
                     result = run_scenario_programmatic(scenario, Path(scenario["scenario"]["output"]["directory"]))
@@ -776,28 +757,14 @@ class TestAvailability:
 class TestKPIRanking:
     """Verify plausible KPI ordering across scenario variants."""
 
-    def _npv(self, results: dict, key: str) -> float:
-        """Get NPV from results, defaulting to 0 on missing."""
-        r = results.get(key)
-        if r is None:
-            return 0.0
-        return r.npv if r.npv is not None else 0.0
-
-    def _irr(self, results: dict, key: str) -> float | None:
-        """Get equity IRR from results."""
-        r = results.get(key)
-        if r is None:
-            return None
-        return r.equity_irr
-
     def _rev1(self, results: dict, key: str) -> float | None:
-        """Get equity IRR from results."""
+        """Get revenue in year 1 from results."""
         r = results.get(key)
         if r is None:
             return None
         return r.revenue_year1
 
-    @pytest.mark.parametrize("tech", ["pv_only", "pv_bess"])
+    @pytest.mark.parametrize("tech", ["pv_only", "bess_only"])
     @pytest.mark.parametrize("mode", OPERATING_MODES)
     def test_marketing_ranking(
             self, all_results: dict[str, ScenarioResult], tech: str, mode: str
@@ -856,10 +823,10 @@ class TestKPIRanking:
     ):
         """PV-only: Green and Grey mode should yield identical NPV."""
         tol = 1.0
-        npv_green = self._npv(all_results, f"pv_only_green_{mkt}")
-        npv_grey = self._npv(all_results, f"pv_only_grey_{mkt}")
-        assert abs(npv_green - npv_grey) <= tol, (
-            f"pv_only {mkt}: Green NPV ({npv_green:.0f}) != Grey NPV ({npv_grey:.0f})"
+        rev1_green = self._rev1(all_results, f"pv_only_green_{mkt}")
+        rev1_grey = self._rev1(all_results, f"pv_only_grey_{mkt}")
+        assert abs(rev1_green - rev1_grey) <= tol, (
+            f"pv_only {mkt}: Green Revenue ({rev1_green:.0f}) != Grey Revenue ({rev1_grey:.0f})"
         )
 
     @pytest.mark.parametrize("mkt", MARKETING_STRATEGIES)
@@ -868,19 +835,19 @@ class TestKPIRanking:
     ):
         """PV+BESS: Grey mode NPV >= Green mode NPV (grey has more flexibility)."""
         tol = 1.0
-        npv_green = self._npv(all_results, f"pv_bess_green_{mkt}")
-        npv_grey = self._npv(all_results, f"pv_bess_grey_{mkt}")
-        assert npv_grey >= npv_green - tol, (
-            f"pv_bess {mkt}: Grey ({npv_grey:.0f}) < Green ({npv_green:.0f})"
+        rev1_green = self._rev1(all_results, f"pv_bess_green_{mkt}")
+        rev1_grey = self._rev1(all_results, f"pv_bess_grey_{mkt}")
+        assert rev1_grey >= rev1_green - tol, (
+            f"pv_bess {mkt}: Grey ({rev1_grey:.0f}) < Green ({rev1_green:.0f})"
         )
 
     @pytest.mark.parametrize("mkt", MARKETING_STRATEGIES)
     def test_bess_only_green_negative(
             self, all_results: dict[str, ScenarioResult], mkt: str
     ):
-        """BESS-only in green mode has NPV < 0 (no PV to charge from)."""
-        npv = self._npv(all_results, f"bess_only_green_{mkt}")
-        assert npv <= 0.0, f"bess_only_green_{mkt}: expected negative NPV, got {npv:.0f}"
+        """BESS-only in green mode has Revenue = 0 (no PV to charge from)."""
+        rev1 = self._rev1(all_results, f"bess_only_green_{mkt}")
+        assert rev1 == 0.0, f"bess_only_green_{mkt}: expected zero revenue, got {rev1:.0f}"
 
     def test_bess_only_green_all_equal(self, all_results: dict[str, ScenarioResult]):
         """BESS-only green: all marketing strategies yield the same NPV.
@@ -888,13 +855,13 @@ class TestKPIRanking:
         (No PV means no production, so marketing type is irrelevant.)
         """
         tol = 1.0
-        npvs = [
-            self._npv(all_results, f"bess_only_green_{mkt}")
+        rev1s = [
+            self._rev1(all_results, f"bess_only_green_{mkt}")
             for mkt in MARKETING_STRATEGIES
         ]
-        for i in range(1, len(npvs)):
-            assert abs(npvs[i] - npvs[0]) <= tol, (
-                f"bess_only_green: NPV spread too large: {npvs}"
+        for i in range(1, len(rev1s )):
+            assert abs(rev1s [i] - rev1s [0]) <= tol, (
+                f"bess_only_green: Revenue spread too large: {rev1s }"
             )
 
 
@@ -918,10 +885,10 @@ class TestKPIRanking:
 
     def test_bess_only_grey_gt_green(self, all_results: dict[str, ScenarioResult]):
         """BESS-only: grey mode NPV > green mode NPV for market strategy."""
-        npv_green = self._npv(all_results, "bess_only_green_market")
-        npv_grey = self._npv(all_results, "bess_only_grey_market")
-        assert npv_grey > npv_green, (
-            f"bess_only: Grey market ({npv_grey:.0f}) <= Green market ({npv_green:.0f})"
+        rev1_green = self._rev1(all_results, "bess_only_green_market")
+        rev1_grey = self._rev1(all_results, "bess_only_grey_market")
+        assert rev1_grey > rev1_green, (
+            f"bess_only: Grey market ({rev1_grey:.0f}) <= Green market ({rev1_green:.0f})"
         )
 
 

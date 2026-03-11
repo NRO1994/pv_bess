@@ -1,8 +1,9 @@
+
 <!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>PV+BESS Ergebnis-Report – {{scenario_name}}</title>
+  <title>PV/BESS Ergebnis-Report – {{scenario_name}}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
@@ -155,6 +156,13 @@
     .llm-text p:last-child { margin-bottom: 0; }
     .llm-text .fallback { color: var(--muted); font-style: italic; }
 
+    /* ===== LLM Hinweis ===== */
+    .llm-hint {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
     /* ===== Two-column layout ===== */
     .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
     @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
@@ -204,6 +212,13 @@
   </div>
 
   <script>
+
+    const LLM_HINT_HTML = `
+      <div class="llm-hint">
+        Hinweis: Die schriftliche Analyse wurde mithilfe künstlicher Intelligenz erstellt.
+      </div>
+    `;
+
     // ================================================================
     //  DATA INJECTION (replaced at build time by Python)
     // ================================================================
@@ -269,7 +284,7 @@
     //  MARKDOWN-LIGHT RENDERER
     // ================================================================
     function renderMarkdownLight(text) {
-      if (!text) return '<p class="fallback">Textbeschreibung nicht verfuegbar. Bitte fuehren Sie den LLM-Prompt-Workflow durch.</p>';
+      if (!text) return '<p class="fallback">Textbeschreibung nicht verfügbar. Bitte führen Sie den LLM-Prompt-Workflow durch.</p>';
       // Split paragraphs, bold, return HTML
       return text.split(/\n{2,}/).map(para => {
         let html = para.trim().replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
@@ -726,6 +741,7 @@
     const D = REPORT_DATA;
     const TAB_DEFS = [];
     const allCharts = [];
+ const allMaps = [];
 
     function addTab(id, title, condition, buildFn) {
       if (!condition) return;
@@ -761,7 +777,10 @@
         btn.addEventListener('click', () => {
           $$('.tab', tablist).forEach(t => t.setAttribute('aria-selected', String(t === btn)));
           $$('.tabpanel', panels).forEach(p => p.hidden = (p !== panel));
-          setTimeout(() => allCharts.forEach(c => c.chart.render()), 0);
+          setTimeout(() => {
+      allCharts.forEach(c => c.chart.render());
+      allMaps.forEach(m => m.invalidateSize && m.invalidateSize());
+    }, 0);
         });
       });
     }
@@ -795,7 +814,7 @@
         ['Zinssatz', fmtNum(D.interest_rate_pct, 1) + ' %'],
         ['Kreditlaufzeit', D.loan_tenor_years + ' Jahre'],
         ['Inflation', fmtNum(D.inflation_rate * 100, 1) + ' %'],
-        ['Standort', fmtNum(D.latitude, 4) + ', ' + fmtNum(D.longitude, 4)],
+        ['Standort', fmtNum(D.latitude, 4) + ' N - ' + fmtNum(D.longitude, 4) + 'E'],
       ];
       tbl.innerHTML = params.map(([k,v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('');
       paramDiv.appendChild(tbl);
@@ -805,26 +824,38 @@
       const mapDiv = document.createElement('div');
       mapDiv.style.display = 'flex'; mapDiv.style.flexDirection = 'column'; mapDiv.style.alignItems = 'center'; mapDiv.style.gap = '8px';
       const mapC = document.createElement('div'); mapC.className = 'map-container'; mapC.id = 'mapContainer';
-      // Try loading OSM tile
-      const z = 10;
-      const latRad = D.latitude * Math.PI / 180;
-      const n = Math.pow(2, z);
-      const xtile = Math.floor((D.longitude + 180) / 360 * n);
-      const ytile = Math.floor((1 - Math.log(Math.tan(latRad) + 1/Math.cos(latRad)) / Math.PI) / 2 * n);
-      const tileUrl = `https://tile.openstreetmap.org/${z}/${xtile}/${ytile}.png`;
-      mapC.innerHTML = `
-        <img src="${tileUrl}" alt="Standort" onerror="this.parentElement.innerHTML='<div class=\\'map-fallback\\'>Standort: ${fmtNum(D.latitude,4)}, ${fmtNum(D.longitude,4)}</div>'" crossorigin="anonymous">
-        <div class="map-marker">\ud83d\udccd</div>
-      `;
-      mapDiv.appendChild(mapC);
-      mapDiv.innerHTML += `<div class="small muted">\u00a9 OpenStreetMap contributors</div>`;
+      // --- Leaflet: Interaktive OSM-Karte, Marker wird einmal aus Daten gesetzt ---
+      const lat = D.latitude;
+      const lon = D.longitude;
+      const zoom = 10;
+
+      const map = L.map(mapC, {
+        center: [lat, lon],
+        zoom: zoom,
+        zoomControl: true,
+        attributionControl: true,
+        dragging: true,
+        scrollWheelZoom: false,
+        doubleClickZoom: true,
+        boxZoom: true,
+        keyboard: false
+      });
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 13,
+      }).addTo(map);
+
+      L.marker([lat, lon], { draggable: false, keyboard: false }).addTo(map);
+
+      // Für Tab-Layout/Hidden Panels: nach Tab-Wechsel Karte neu layouten
+      allMaps.push(map);
       row.appendChild(mapDiv);
 
       panel.appendChild(row);
 
       // LLM text
       const llm = document.createElement('div'); llm.className = 'llm-text';
-      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_1_overview);
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_1_overview) + LLM_HINT_HTML;
       panel.appendChild(llm);
     });
 
@@ -925,7 +956,7 @@
 
       // LLM text
       const llm = document.createElement('div'); llm.className = 'llm-text';
-      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_2_timeseries);
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_2_timeseries) + LLM_HINT_HTML;
       panel.appendChild(llm);
     });
 
@@ -1002,7 +1033,7 @@
 
       // LLM text
       const llm = document.createElement('div'); llm.className = 'llm-text';
-      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_3_gridsearch);
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_3_gridsearch) + LLM_HINT_HTML;
       panel.appendChild(llm);
     });
 
@@ -1053,7 +1084,7 @@
       }
 
       const llm = document.createElement('div'); llm.className = 'llm-text';
-      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_4_eeg);
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_4_eeg) + LLM_HINT_HTML;
       panel.appendChild(llm);
     });
 
@@ -1114,7 +1145,7 @@
       }
 
       const llm = document.createElement('div'); llm.className = 'llm-text';
-      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_5_collar);
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_5_collar) + LLM_HINT_HTML;
       panel.appendChild(llm);
     });
 
@@ -1172,7 +1203,7 @@
       }
 
       const llm = document.createElement('div'); llm.className = 'llm-text';
-      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_6_baseload);
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_6_baseload) + LLM_HINT_HTML;
       panel.appendChild(llm);
     });
 
@@ -1247,7 +1278,7 @@
 
       // LLM text
       const llm = document.createElement('div'); llm.className = 'llm-text';
-      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_7_cashflow);
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_7_cashflow) + LLM_HINT_HTML;
       panel.appendChild(llm);
     });
 

@@ -688,8 +688,8 @@ class TestGreyModeArbitrage:
             grid_max_kw=500.0,
             mode="grey",
             start_soc_kwh=20.0,
-            start_soc_green_kwh=20.0,
-            start_soc_grey_kwh=0.0,
+            start_soc_green_kwh=0.0,
+            start_soc_grey_kwh=20.0,
         )
 
         # Charge at t=0: 100 kWh from grid

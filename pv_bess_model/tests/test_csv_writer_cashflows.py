@@ -18,7 +18,6 @@ from pv_bess_model.config.defaults import CSV_DELIMITER
 from pv_bess_model.finance.cashflow import AnnualCashflow, CashflowProjection
 from pv_bess_model.output.csv_writer import write_cashflows_csv
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -92,7 +91,7 @@ class TestCashflowCsvYearColumn:
         return [1.5, 1.6, 1.7]
 
     def test_calendar_years_with_commissioning_year(
-        self, tmp_path, projection, pv_kwh, bess_kwh, dscr,
+            self, tmp_path, projection, pv_kwh, bess_kwh, dscr,
     ) -> None:
         """With commissioning_year=2027, years should be 2027, 2028, 2029."""
         path = tmp_path / "cashflows.csv"
@@ -111,7 +110,7 @@ class TestCashflowCsvYearColumn:
         assert rows[2]["year"] == "2029"
 
     def test_project_year_indices_without_commissioning_year(
-        self, tmp_path, projection, pv_kwh, bess_kwh, dscr,
+            self, tmp_path, projection, pv_kwh, bess_kwh, dscr,
     ) -> None:
         """Without commissioning_year (None), years should be 1, 2, 3."""
         path = tmp_path / "cashflows.csv"
@@ -129,7 +128,7 @@ class TestCashflowCsvYearColumn:
         assert rows[2]["year"] == "3"
 
     def test_calendar_year_formula(
-        self, tmp_path, projection, pv_kwh, bess_kwh, dscr,
+            self, tmp_path, projection, pv_kwh, bess_kwh, dscr,
     ) -> None:
         """Calendar year = commissioning_year + project_year - 1."""
         commissioning = 2030
@@ -171,7 +170,7 @@ class TestCashflowCsvYearColumn:
         assert rows[-1]["year"] == str(2027 + lifetime - 1)
 
     def test_row_count_matches_lifetime(
-        self, tmp_path, projection, pv_kwh, bess_kwh, dscr,
+            self, tmp_path, projection, pv_kwh, bess_kwh, dscr,
     ) -> None:
         """Number of CSV rows equals the number of project years."""
         path = tmp_path / "cashflows.csv"
@@ -187,7 +186,7 @@ class TestCashflowCsvYearColumn:
         assert len(rows) == len(projection.years)
 
     def test_other_columns_still_present(
-        self, tmp_path, projection, pv_kwh, bess_kwh, dscr,
+            self, tmp_path, projection, pv_kwh, bess_kwh, dscr,
     ) -> None:
         """All expected columns are present regardless of commissioning_year."""
         path = tmp_path / "cashflows.csv"
@@ -206,6 +205,7 @@ class TestCashflowCsvYearColumn:
             "debt_interest_eur", "debt_repayment_eur",
             "depreciation_eur", "gewerbesteuer_eur", "koerperschaftsteuer_eur",
             "solidaritaetszuschlag_eur", "total_tax_eur",
-            "project_cf_eur", "equity_cf_eur", "cumulative_equity_cf_eur", "dscr",
+            "project_cf_eur", "equity_cf_eur", "cumulative_equity_cf_eur", "dscr", 'pv_grid_export_mwh',
+            'revenue_bess_green_eur', 'revenue_bess_grey_eur', 'revenue_pv_eur',
         }
         assert set(rows[0].keys()) == expected_cols

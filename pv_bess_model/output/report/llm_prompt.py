@@ -82,7 +82,7 @@ def render_prompt(data: Any) -> str:
         winter_mean_prod = (sum(prod[:3]) + sum(prod[9:])) / 6
         summer_mean_prod = sum(prod[3:9]) / 6
         weather_years.append(f"  - {year}: durchschnittliche Monatsproduktion im Winter: {winter_mean_prod:.2f} GWh,"
-                             f" im Sommer {summer_mean_prod:.2f} GWh")
+                             f" im Sommer {summer_mean_prod:.2f} GWh, Jährliche Produktion: {sum(prod):.2f} GWh")
     weather_stats = "\n".join(weather_years) if weather_years else ""
 
     # Price scenarios summary
@@ -115,9 +115,9 @@ def render_prompt(data: Any) -> str:
         for pt in data.eeg_sensitivity:
             floor = pt.get("floor_price_eur_per_kwh", 0) * 100
             irr_mean = pt.get("irr_mean", 0)
-            irr_std = pt.get("equity_irr_std", 0)
+            irr_std = pt.get("irr_std", 0)
             sens_lines.append(f"- Floor {floor:.2f} ct/kWh -> "
-                              f"durchschnittlicher IRR {irr_mean:.2f} %, Std.Abweichung eq.IRR {irr_std:.2f} %")
+                              f"durchschnittlicher eq.IRR {irr_mean:.2f} %, Std.Abweichung eq.IRR {irr_std:.2f} %")
     if data.ppa_collar:
         sens_lines.append(f"### PPA-Collar-Analyse ({data.ppa_collar_duration} Jahre Laufzeit)")
         for pt in data.ppa_collar:

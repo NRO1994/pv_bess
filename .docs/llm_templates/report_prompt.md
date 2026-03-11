@@ -114,9 +114,9 @@ Wenn Kennzahlen „nicht zusammenpassen“, musst du das ausdrücklich thematisi
 - PV-Produktionsmodell: {{pv_production_model}}
 - Preisdatenquelle: {{price_origin}}
 - Wetterjahre:
-  {{weather_years}}
+{{weather_years}}
 - Preisszenarien:
-  {{price_scenarios_summary}}
+{{price_scenarios_summary}}
 
 {{sensitivity_section}}
 

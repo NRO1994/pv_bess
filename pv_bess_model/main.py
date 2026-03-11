@@ -1008,7 +1008,7 @@ def run(args: argparse.Namespace) -> int:
     write_cashflows_csv(
         path=output_dir / f"{scenario.name}_cashflows.csv",
         cashflow=optimal_setup.cashflow,
-        annual_pv_production_kwh=[r.pv_export for r in optimal_setup.run_result.annual_results],
+        annual_pv_production_kwh=[r.pv_production for r in optimal_setup.run_result.annual_results],
         annual_bess_throughput_kwh=[r.bess_throughput for r in optimal_setup.run_result.annual_results],
         annual_dscr=optimal_setup.metrics.annual_dscr,
         commissioning_year=scenario.commissioning_year,
@@ -1278,7 +1278,7 @@ def _resolve_llm_texts(
 
     for attempt in range(_MAX_LLM_INPUT_RETRIES):
         try:
-            user_input = input("    Pfad zur LLM-Antwort-Datei (Enter zum Ueberspringen): ").strip()
+            user_input = input("    Pfad zur LLM-Antwort-Datei (Enter zum Überspringen): ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             logger.info("Input interrupted. Using placeholder texts.")

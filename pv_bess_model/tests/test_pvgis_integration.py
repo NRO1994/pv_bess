@@ -27,7 +27,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pv_bess_model.config.defaults import HOURS_PER_YEAR
+from pv_bess_model.config.defaults import HOURS_PER_YEAR, INTERVALS_PER_YEAR
 from pv_bess_model.pv.pvgis_client import PVGISClient
 
 # ---------------------------------------------------------------------------
@@ -187,10 +187,10 @@ class TestPVGISClientIntegration:
 
         price_data = load_price_csv(
             csv_path,
-            required_columns=["low", "mid", "high"],
-            price_unit="eur_per_mwh",
+            required_columns=["LOW", "MID", "HIGH"],
+            decimal=","
         )
-        assert price_data.n_hours == HOURS_PER_YEAR
-        assert "low" in price_data.columns
-        assert "mid" in price_data.columns
-        assert "high" in price_data.columns
+        assert price_data.n_hours == HOURS_PER_YEAR * 20
+        assert "LOW" in price_data.columns
+        assert "MID" in price_data.columns
+        assert "HIGH" in price_data.columns

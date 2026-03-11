@@ -125,7 +125,7 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
 
 <!-- TOOLBAR -->
 <div class="tb">
-  <label class="sw"><input type="checkbox" id="chkPersist" checked/> Eingaben merken</label>
+  <label class="sw"><input type="checkbox" id="chkPersist" checked style="display: none;"/></label>
   <span class="tb-info">Alle Eingaben bleiben lokal im Browser.</span>
   <input type="file" id="fileImport" accept=".json" style="display:none"/>
   <button class="btn" onclick="document.getElementById('fileImport').click()">JSON importieren</button>
@@ -151,7 +151,6 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
   <div class="sec-title">Szenario-Definition</div>
   <div class="g g2">
     <div><label class="req">Szenario-Name</label><input id="f_name" type="text" placeholder="z.B. EEG_Green_2027"/><div class="hint">Eindeutiger Name für dieses Szenario</div></div>
-    <div style="display:flex;align-items:end"><label class="sw"><input type="checkbox" id="f_skip_baseline"/> Baseline (nur PV, ohne BESS) ueberspringen</label></div>
   </div>
   <hr class="sep"/>
   <div class="sub-title">Betriebsmodus &amp; Anlagentypen</div>
@@ -222,6 +221,7 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
       <div class="dyn-list" id="lst_bscale"></div>
       <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="addListItem('lst_bscale',0)">+ Wert</button>
       <div class="hint">Mehrere Stufen möglich, z.B. 0, 20, 40, 60, 80, 100</div>
+        <div style="display:flex;align-items:end"><label class="sw"><input type="checkbox" id="f_skip_baseline"/> Baseline (nur PV, ohne BESS) überspringen</label></div>
     </div>
     <div>
       <label class="req">E/P-Ratio (Stunden)</label>

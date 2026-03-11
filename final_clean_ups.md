@@ -1,0 +1,15 @@
+- [ ] (CLAUDE) MC Framework anpassen, Plan5 1-4
+- [ ] (CLAUDE) Smoke Test implementation (Requirements in FIXES), FIX-S2-02
+- [ ] Equity IRR passt nicht
+- [ ] baseload MUSS in die LP Optimierung aufgenommen werden, wenn es sich um einen PV/BESS Case handelt. PLan5 1-3
+- [ ] PaP Preise in Integration suite stimmen nicht
+- [ ] Financial Model integration Test: Logik ist falsch, mit Steffen klären 
+- [ ] Report
+  - [ ] Leaflet wird nicht richtig angezeigt
+  - [ ] Heder Input_wizard/Dashboard sind nicht identisch
+  - [ ] Format der Tabs soll vom Input_wizard übernommen werden
+  - [ ] LLM Text
+    - [x] Wetterjahre miteinander vergleichen, nicht nur Sommer/winter
+    - [ ] EEG Standard Abweichung fehlt im Prompt
+- [ ] CSV Export
+  - [x] pv production in CSV Cashflow ist falsch

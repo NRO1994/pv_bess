@@ -103,6 +103,7 @@ def check_dispatch_constraints(
     discharge_grey = dispatch_df["bess_discharge_grey_kwh"].values.astype(float)
     soc = dispatch_df["bess_soc_kwh"].values.astype(float)
     curtail = dispatch_df["curtailed_kwh"].values.astype(float)
+    effective_price = dispatch_df["price_effective_eur_per_kwh"].values.astype(float)
 
     soc_min_kwh = bess_capacity_kwh * min_soc_pct / 100.0
     soc_max_kwh = bess_capacity_kwh * max_soc_pct / 100.0
@@ -147,6 +148,14 @@ def check_dispatch_constraints(
                     constraint="soc_limits",
                     timestep=t,
                     expected=f"soc <= {soc_max_kwh:.2f}",
+                    actual=soc[t],
+                    severity="error",
+                ))
+            if abs(soc[t] - dispatch_df["bess_soc_green_kwh"][t] - dispatch_df["bess_soc_grey_kwh"][t]) > tolerance:
+                violations.append(ConstraintViolation(
+                    constraint="soc_limits_sum_up",
+                    timestep=t,
+                    expected=f"soc = soc_green + soc_grey = {dispatch_df["bess_soc_green_kwh"][t] - dispatch_df["bess_soc_grey_kwh"][t]:.2f}",
                     actual=soc[t],
                     severity="error",
                 ))
@@ -237,17 +246,24 @@ def check_dispatch_constraints(
         for t in range(n):
             previous_soc = soc[max(t-1, 0)]
             total_charge = charge_grid[t] + charge_pv[t]
-            total_discharge = -(discharge_green[t] - discharge_grey[t]) / rte
+            total_discharge = (discharge_green[t] / grid_loss_factor + discharge_grey[t]) / rte
 
-            if (total_charge > 0) and (total_discharge > 0):
+            if (effective_price[t] < 0) and (total_discharge > 0):
                 violations.append(ConstraintViolation(
-                        constraint="charging_soc_simultaneously",
+                        constraint="discharging_at_neg_price",
                         timestep=t,
-                        expected=f"only total_discharge > 0 or only total_charge > 0",
-                        actual=total_charge,
-                        severity="warning",))
+                        expected=f"only discharge, if effective price is > 0",
+                        actual=total_discharge,
+                        severity="error",))
+            if (total_discharge > 0) and (total_charge > 0):
+                violations.append(ConstraintViolation(
+                    constraint="charging_discharging_simultaneously",
+                    timestep=t,
+                    expected=f"only discharge, or charge",
+                    actual=total_discharge,
+                    severity="warning", ))
             else:
-                if (total_charge > 0) and (abs(previous_soc - soc[t]) > total_charge + tolerance):
+                if (total_charge > 0) and (abs(previous_soc + total_charge - soc[t]) > tolerance):
                     violations.append(ConstraintViolation(
                         constraint="charging_soc_cumulative",
                         timestep=t,
@@ -255,11 +271,11 @@ def check_dispatch_constraints(
                         actual=soc[t],
                         severity="error",))
 
-                if (total_discharge > 0) and (abs(previous_soc - soc[t]) > total_discharge + tolerance):
+                if (total_discharge > 0) and (abs(previous_soc - total_discharge - soc[t]) > tolerance):
                     violations.append(ConstraintViolation(
                         constraint="discharging_soc_cumulative",
                         timestep=t,
-                        expected=f"prev_soc - discharge_green + discharge_grey = soc {previous_soc + total_discharge}",
+                        expected=f"prev_soc - discharge_green + discharge_grey = soc {previous_soc - total_discharge}",
                         actual=soc[t],
                         severity="error",))
 
