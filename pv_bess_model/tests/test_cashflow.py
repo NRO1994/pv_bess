@@ -154,7 +154,7 @@ class TestYear1Capex:
         )
         y1 = proj.years[0]
         equity_investment = capex * 0.25  # 25 % equity
-        expected = y1.revenue - y1.opex - y1.debt_interest - y1.total_tax - equity_investment
+        expected = y1.revenue - y1.opex - y1.debt_service - y1.total_tax - equity_investment
         assert math.isclose(y1.equity_cf, expected, rel_tol=1e-9)
 
     def test_project_cf_year1(self) -> None:
@@ -216,7 +216,7 @@ class TestEquityCfIdentity:
             assert math.isclose(y.equity_cf, expected, rel_tol=1e-9)
 
     def test_equity_cf_with_debt(self) -> None:
-        """With debt, equity CF = revenue - opex - debt_interest - tax (years 2+)."""
+        """With debt, equity CF = revenue - opex - debt_service - tax (years 2+)."""
         proj = _build_simple_projection(
             lifetime=3,
             revenues=[300_000.0] * 3,
@@ -226,7 +226,7 @@ class TestEquityCfIdentity:
             leverage=75.0,
         )
         for y in proj.years[1:]:
-            expected = y.revenue - y.opex - y.debt_interest - y.total_tax
+            expected = y.revenue - y.opex - y.debt_service - y.total_tax
             assert math.isclose(y.equity_cf, expected, rel_tol=1e-9)
 
     def test_equity_cf_array_matches_year_objects(self) -> None:

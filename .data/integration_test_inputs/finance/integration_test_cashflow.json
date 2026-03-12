@@ -103,7 +103,7 @@
     "finance": {
       "leverage_pct": 80,
       "interest_rate_pct": 3.8,
-      "loan_tenor_years": 25,
+      "loan_tenor_years": 20,
       "equity_irr_target": 0.081,
       "debt_uses_p90": true,
       "debt_sizing_downside_pct": 15,
@@ -135,7 +135,7 @@
             "weight": 0.33,
             "is_central": false,
             "price_csv": ".data/integration_test_inputs/finance/eeg_fixed_54_20y_22_5y.csv",
-            "inflation_on_input_data": false,
+            "inflation_on_input_data": true,
             "csv_separator": ";",
             "csv_decimal": ",",
             "csv_timestamp_column": "timestamp",
@@ -148,7 +148,7 @@
             "weight": 0.34,
             "is_central": true,
             "price_csv": ".data/integration_test_inputs/finance/eeg_fixed_54_20y_22_5y.csv",
-            "inflation_on_input_data": false,
+            "inflation_on_input_data": true,
             "csv_separator": ";",
             "csv_decimal": ",",
             "csv_timestamp_column": "timestamp",
@@ -161,7 +161,7 @@
             "weight": 0.33,
             "is_central": false,
             "price_csv": ".data/integration_test_inputs/finance/eeg_fixed_54_20y_22_5y.csv",
-            "inflation_on_input_data": false,
+            "inflation_on_input_data": true,
             "csv_separator": ";",
             "csv_decimal": ",",
             "csv_timestamp_column": "timestamp",
@@ -170,10 +170,12 @@
         ]
       },
       "tax": {
-        "afa_years_pv": 25,
+        "afa_years_pv": 20,
         "afa_years_bess": 10,
         "gewerbesteuer_hebesatz": 450,
-        "gewerbesteuer_messzahl": 0.035
+        "gewerbesteuer_messzahl": 0.035,
+        "koerperschaftsteuer_pct": 15.0,
+        "solidaritaetszuschlag_pct": 5.5
       }
     }
   }

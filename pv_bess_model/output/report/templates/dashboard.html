@@ -978,7 +978,7 @@
         <div class="kpi-card"><div class="label">Opt. BESS-Scale</div><div class="value">${fmtNum(D.optimal_scale_pct,0)} %</div></div>
         <div class="kpi-card"><div class="label">Opt. E/P-Ratio</div><div class="value">${fmtNum(D.optimal_ep_ratio,1)} h</div></div>
         <div class="kpi-card"><div class="label">BESS-Leistung</div><div class="value">${fmtNum(D.optimal_bess_power_kw,0)} kW</div></div>
-        <div class="kpi-card"><div class="label">BESS-Kapazitaet</div><div class="value">${fmtNum(D.optimal_bess_capacity_kwh,0)} kWh</div></div>
+        <div class="kpi-card"><div class="label">BESS-Kapazität</div><div class="value">${fmtNum(D.optimal_bess_capacity_kwh,0)} kWh</div></div>
       `;
       panel.appendChild(kpiGrid);
 
@@ -1211,7 +1211,7 @@
     //  TAB 7: Cashflow-Analyse
     // ================================================================
     addTab('cashflow', 'Cashflow-Analyse', true, (panel) => {
-      panel.innerHTML = `<h2>Cashflow-Analyse</h2>`;
+      panel.innerHTML = `<h2>Cashflow-Analyse des Base Cases</h2>`;
 
       // KPI cards
       const m = D.metrics || {};
