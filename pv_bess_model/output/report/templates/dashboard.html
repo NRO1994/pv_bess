@@ -113,7 +113,7 @@
     .legend-item { display: flex; align-items: center; gap: 5px; }
     .legend-box { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
     .tooltip {
-      position: absolute; pointer-events: none; z-index: 10; display: none;
+      position: absolute; top: 0; left: 0; pointer-events: none; z-index: 10; display: none;
       background: var(--tooltip-bg); color: var(--tooltip-fg);
       border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px;
       white-space: nowrap; box-shadow: 0 6px 20px rgba(0,0,0,0.25); max-width: 350px;
@@ -142,7 +142,7 @@
     .param-table th { color: var(--muted); font-weight: 600; width: 40%; }
 
     /* ===== Map ===== */
-    .map-container { position: relative; width: 300px; height: 200px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+    .map-container { position: relative; width: 100%; height: 100%; min-height: 200px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
     .map-container img { width: 100%; height: 100%; object-fit: cover; }
     .map-fallback { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; background: var(--surface-2); color: var(--muted); font-size: 13px; }
     .map-marker { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); font-size: 28px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
@@ -818,7 +818,7 @@
 
       // Map
       const mapDiv = document.createElement('div');
-      mapDiv.style.display = 'flex'; mapDiv.style.flexDirection = 'column'; mapDiv.style.alignItems = 'center'; mapDiv.style.gap = '8px';
+      mapDiv.style.display = 'flex'; mapDiv.style.flexDirection = 'column'; mapDiv.style.alignItems = 'stretch'; mapDiv.style.gap = '8px';
       const mapC = document.createElement('div'); mapC.className = 'map-container'; mapC.id = 'mapContainer';
       // --- Leaflet: Interaktive OSM-Karte, Marker wird einmal aus Daten gesetzt ---
       const lat = D.latitude;
