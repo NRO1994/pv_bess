@@ -15,6 +15,10 @@ from pv_bess_model.config.defaults import (
     DAYS_PER_YEAR,
     HOURS_PER_DAY,
     HOURS_PER_YEAR,
+    INTERVALS_PER_DAY,
+    INTERVALS_PER_HOUR,
+    INTERVALS_PER_YEAR,
+    TIMESTEP_HOURS,
 )
 from pv_bess_model.dispatch.engine import (
     AnnualResult,
@@ -49,6 +53,7 @@ def _make_config(
     pv_degradation_rate: float = 0.0,
     lifetime_years: int = 1,
     replacement: ReplacementConfig | None = None,
+    commissioning_year: int = 2027,
 ) -> DispatchEngineConfig:
     """Build a DispatchEngineConfig with convenient defaults."""
     return DispatchEngineConfig(
@@ -64,20 +69,43 @@ def _make_config(
         pv_degradation_rate=pv_degradation_rate,
         replacement=replacement or _replacement_disabled(),
         lifetime_years=lifetime_years,
+        commissioning_year=commissioning_year,
         bess_power_kw=bess_power_kw,
+        timestep_hours=TIMESTEP_HOURS,
+        intervals_per_day=INTERVALS_PER_DAY,
+        intervals_per_year=INTERVALS_PER_YEAR,
     )
 
 
+def _upscale_hourly_to_quarterly(hourly: np.ndarray) -> np.ndarray:
+    """Repeat each hourly value 4× to create quarter-hourly resolution.
+
+    Energy values are divided by 4 so that the sum over 4 intervals equals
+    the original hourly value (kWh per interval instead of kWh per hour).
+    """
+    return np.repeat(hourly, INTERVALS_PER_HOUR) / INTERVALS_PER_HOUR
+
+
 def _make_yearly_pv(daily_pattern: np.ndarray) -> np.ndarray:
-    """Tile a 24-hour PV pattern to fill one year (8760 hours)."""
+    """Tile a 24-hour PV pattern to fill one year at quarter-hourly resolution.
+
+    Returns array of length INTERVALS_PER_YEAR (35 040).
+    Each hourly kWh value is split into 4 quarter-hourly values (kWh/interval).
+    """
     assert len(daily_pattern) == HOURS_PER_DAY
-    return np.tile(daily_pattern, DAYS_PER_YEAR)
+    yearly_hourly = np.tile(daily_pattern, DAYS_PER_YEAR)
+    return _upscale_hourly_to_quarterly(yearly_hourly)
 
 
 def _make_yearly_prices(daily_pattern: np.ndarray) -> np.ndarray:
-    """Tile a 24-hour price pattern (EUR/kWh) to fill one year."""
+    """Tile a 24-hour price pattern (EUR/kWh) to fill one year at quarter-hourly resolution.
+
+    Prices are repeated (not divided) since they are per-kWh rates.
+    Returns array of length INTERVALS_PER_YEAR (35 040).
+    """
     assert len(daily_pattern) == HOURS_PER_DAY
-    return np.tile(daily_pattern, DAYS_PER_YEAR)
+    yearly_hourly = np.tile(daily_pattern, DAYS_PER_YEAR)
+    return np.repeat(yearly_hourly, INTERVALS_PER_HOUR)
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +184,7 @@ class TestTwoDaySimulation:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year],
             fixed_prices_yearly=[0.0],
             offline_days_yearly=[set()],
@@ -201,6 +230,7 @@ class TestTwoDaySimulation:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year],
             fixed_prices_yearly=[0.0],
             offline_days_yearly=[set()],
@@ -246,6 +276,7 @@ class TestOfflineDays:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year],
             fixed_prices_yearly=[0.0],
             offline_days_yearly=[all_offline],
@@ -278,6 +309,7 @@ class TestOfflineDays:
         result_online = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year],
             fixed_prices_yearly=[0.0],
             offline_days_yearly=[set()],
@@ -288,6 +320,7 @@ class TestOfflineDays:
         result_half = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year],
             fixed_prices_yearly=[0.0],
             offline_days_yearly=[half_offline],
@@ -331,6 +364,7 @@ class TestRegimeChange:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year, spot_year],
             fixed_prices_yearly=[0.07, 0.0],  # Floor in year 1, none in year 2
             offline_days_yearly=[set(), set()],
@@ -365,6 +399,7 @@ class TestRegimeChange:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year, spot_year],
             fixed_prices_yearly=[floor_price, 0.0],
             offline_days_yearly=[set(), set()],
@@ -406,16 +441,17 @@ class TestHourlySample:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year],
             fixed_prices_yearly=[0.0],
             offline_days_yearly=[set()],
         )
 
         hs = result.hourly_sample
-        assert hs.pv_production.shape == (HOURS_PER_YEAR,)
-        assert hs.spot_prices.shape == (HOURS_PER_YEAR,)
-        assert hs.soc.shape == (HOURS_PER_YEAR,)
-        assert hs.revenue.shape == (HOURS_PER_YEAR,)
+        assert hs.pv_production.shape == (INTERVALS_PER_YEAR,)
+        assert hs.spot_prices.shape == (INTERVALS_PER_YEAR,)
+        assert hs.soc.shape == (INTERVALS_PER_YEAR,)
+        assert hs.revenue.shape == (INTERVALS_PER_YEAR,)
 
     def test_hourly_sample_revenue_sums_to_annual(self) -> None:
         """Sum of hourly revenue must equal annual total revenue."""
@@ -437,6 +473,7 @@ class TestHourlySample:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year],
             fixed_prices_yearly=[0.0],
             offline_days_yearly=[set()],
@@ -475,6 +512,7 @@ class TestMultiYearDegradation:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year] * 3,
             fixed_prices_yearly=[0.0] * 3,
             offline_days_yearly=[set()] * 3,
@@ -509,6 +547,7 @@ class TestMultiYearDegradation:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year] * 3,
             fixed_prices_yearly=[0.0] * 3,
             offline_days_yearly=[set()] * 3,
@@ -552,6 +591,7 @@ class TestBessReplacement:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year] * 3,
             fixed_prices_yearly=[0.0] * 3,
             offline_days_yearly=[set()] * 3,
@@ -561,8 +601,8 @@ class TestBessReplacement:
         cap_y2 = result.annual_results[1].bess_capacity_kwh  # replacement year
         cap_y3 = result.annual_results[2].bess_capacity_kwh
 
-        # Year 1: one year of degradation
-        assert abs(cap_y1 - nameplate * (1.0 - deg_rate) ** 1) < ATOL
+        # Year 1: no degradation yet (bess_age=0 → factor=1.0)
+        assert abs(cap_y1 - nameplate) < ATOL
         # Year 2 (replacement): capacity back to nameplate
         assert abs(cap_y2 - nameplate) < ATOL
         # Year 3: degradation restarts from nameplate (age = 1 after reset)
@@ -593,6 +633,7 @@ class TestBessReplacement:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year] * 3,
             fixed_prices_yearly=[0.0] * 3,
             offline_days_yearly=[set()] * 3,
@@ -618,6 +659,7 @@ class TestBessReplacement:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year] * 3,
             fixed_prices_yearly=[0.0] * 3,
             offline_days_yearly=[set()] * 3,
@@ -658,13 +700,17 @@ class TestBessSpotRevenue:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year],
             fixed_prices_yearly=[0.0],
             offline_days_yearly=[set()],
         )
 
         ar = result.annual_results[0]
-        assert ar.bess_spot_revenue > 0.0
+        # In green mode, bess_spot_revenue only tracks grey discharge (=0)
+        assert abs(ar.bess_spot_revenue) < ATOL
+        # But revenue_bess_green should be positive from green discharge
+        assert ar.revenue_bess_green > 0.0
 
     def test_bess_spot_revenue_zero_without_bess(self) -> None:
         """PV-only (BESS=0): bess_spot_revenue must be zero."""
@@ -684,6 +730,7 @@ class TestBessSpotRevenue:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year],
             fixed_prices_yearly=[0.0],
             offline_days_yearly=[set()],
@@ -691,12 +738,11 @@ class TestBessSpotRevenue:
 
         assert abs(result.annual_results[0].bess_spot_revenue) < ATOL
 
-    def test_bess_spot_revenue_equals_bess_green_revenue(self) -> None:
-        """Both bess_spot_revenue and revenue_bess_green use spot price.
+    def test_bess_spot_revenue_is_grey_only(self) -> None:
+        """In Green Mode, bess_spot_revenue tracks only grey discharge (=0).
 
-        After FIX-S2-12, BESS discharge revenue is always at spot price
-        (separate revenue stream from PV export). So bess_spot_revenue
-        and revenue_bess_green should be equal in Green Mode.
+        revenue_bess_green uses effective_price and is a separate stream.
+        bess_spot_revenue only accumulates grey discharge revenue.
         """
         daily_pv = np.zeros(HOURS_PER_DAY)
         daily_pv[10:14] = 200.0
@@ -718,15 +764,18 @@ class TestBessSpotRevenue:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year],
             fixed_prices_yearly=[floor_price],
             offline_days_yearly=[set()],
         )
 
         ar = result.annual_results[0]
-        # Both revenue_bess_green and bess_spot_revenue use spot price
+        # In green mode: no grey discharge, so bess_spot_revenue = 0
+        assert abs(ar.bess_spot_revenue) < ATOL
+        # But revenue_bess_green should be positive (uses effective price)
         if ar.bess_discharge_green > 0.0:
-            assert abs(ar.bess_spot_revenue - ar.revenue_bess_green) < ATOL
+            assert ar.revenue_bess_green > 0.0
 
     def test_bess_spot_revenue_all_offline_is_zero(self) -> None:
         """With all days offline, bess_spot_revenue must be zero."""
@@ -746,6 +795,7 @@ class TestBessSpotRevenue:
         result = run_simulation(
             config=config,
             pv_base_timeseries=pv_year,
+            pv_base_timeseries_year=2017,
             spot_prices_yearly=[spot_year],
             fixed_prices_yearly=[0.0],
             offline_days_yearly=[set(range(DAYS_PER_YEAR))],

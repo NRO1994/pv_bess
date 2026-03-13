@@ -1,1 +1,1 @@
-"""PDF report generation for PV + BESS scenario analysis."""
+"""Report generation for PV + BESS scenario analysis."""

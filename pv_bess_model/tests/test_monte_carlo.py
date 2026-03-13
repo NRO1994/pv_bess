@@ -11,6 +11,12 @@ import math
 import numpy as np
 import pytest
 
+from pv_bess_model.config.defaults import (
+    INTERVALS_PER_HOUR,
+    INTERVALS_PER_YEAR,
+    TIMESTEP_HOURS,
+)
+from pv_bess_model.config.loader import PriceWeatherScenario
 from pv_bess_model.optimization.grid_search import (
     GridSearchConfig,
     GridPointResult,
@@ -35,17 +41,49 @@ MC_ITERATIONS = 15   # fast yet enough for variance checks
 
 
 def _make_price_array(price_eur_per_kwh: float = 0.06) -> np.ndarray:
-    return np.full(8760, price_eur_per_kwh, dtype=float)
+    return np.full(INTERVALS_PER_YEAR, price_eur_per_kwh, dtype=float)
 
 
 def _make_pv_array(peak_kwh: float = 25.0) -> np.ndarray:
-    hour_of_day = np.arange(8760) % 24
+    hour_of_day = np.arange(INTERVALS_PER_YEAR) % (24 * INTERVALS_PER_HOUR) // INTERVALS_PER_HOUR
     daylight = np.where(
         (hour_of_day >= 6) & (hour_of_day <= 18),
         np.sin(np.pi * (hour_of_day - 6) / 12),
         0.0,
     )
-    return (peak_kwh * daylight).astype(float)
+    return (peak_kwh / INTERVALS_PER_HOUR * daylight).astype(float)
+
+
+def _make_price_weather_scenario(
+    name: str,
+    csv_column: str,
+    weight: float,
+    pv_timeseries: np.ndarray,
+    price_per_year: np.ndarray,
+    weather_year: int = 2020,
+) -> PriceWeatherScenario:
+    """Build a PriceWeatherScenario for testing."""
+    return PriceWeatherScenario(
+        name=name,
+        label=name,
+        csv_column=csv_column,
+        weather_year=weather_year,
+        weight=weight,
+        is_central=(name == "mid"),
+        pv_timeseries_15min=pv_timeseries,
+        price_per_year=price_per_year,
+    )
+
+
+def _make_single_mid_scenario_list() -> list[PriceWeatherScenario]:
+    """Build a single-element list with a 'mid' PriceWeatherScenario (weight=1.0)."""
+    pv = _make_pv_array(25.0)
+    return [PriceWeatherScenario(
+        name="mid", label="mid", csv_column="MID",
+        weather_year=2020, weight=1.0, is_central=True,
+        pv_timeseries_15min=pv,
+        price_per_year=None,  # will be set from base_config in fixtures
+    )]
 
 
 def _zero_sigma_params(
@@ -55,6 +93,18 @@ def _zero_sigma_params(
     **overrides,
 ) -> MCParams:
     """Build MCParams with all sigmas at zero (deterministic) unless overridden."""
+    # Build default price_scenarios as list[PriceWeatherScenario]
+    if "price_scenarios" not in overrides:
+        pv = _make_pv_array(25.0)
+        default_scenarios = [PriceWeatherScenario(
+            name="mid", label="mid", csv_column="MID",
+            weather_year=2020, weight=1.0, is_central=True,
+            pv_timeseries_15min=pv,
+            price_per_year=None,
+        )]
+    else:
+        default_scenarios = overrides.pop("price_scenarios")
+
     defaults = dict(
         iterations=iterations,
         sigma_capex_pv=0.0,
@@ -64,7 +114,7 @@ def _zero_sigma_params(
         sigma_pv_availability=0.0,
         mu_bess_availability=mu_bess_availability,
         sigma_bess_availability=0.0,
-        price_scenarios={"mid": {"csv_column": "MID", "weight": 1.0}},
+        price_scenarios=default_scenarios,
         seed=seed,
         max_workers=1,
     )
@@ -125,6 +175,13 @@ def base_config() -> GridSearchConfig:
         koerperschaftsteuer_pct=15.0,
         solidaritaetszuschlag_pct=5.5,
 
+        pv_base_timeseries_year=2020,
+        pv_availability_pct=100.0,
+        baseload_mw=0.0,
+        commissioning_year=2027,
+        timestep_hours=TIMESTEP_HOURS,
+        intervals_per_day=INTERVALS_PER_HOUR * 24,
+        intervals_per_year=INTERVALS_PER_YEAR,
         max_workers=1,
     )
 
@@ -138,9 +195,15 @@ def deterministic_optimal(base_config: GridSearchConfig) -> GridPointResult:
 
 
 @pytest.fixture(scope="module")
-def mid_scenario_prices(base_config: GridSearchConfig) -> dict[str, list[np.ndarray]]:
+def mid_scenario_prices(base_config: GridSearchConfig) -> list[PriceWeatherScenario]:
     """Single 'mid' price scenario matching the base_config spot prices."""
-    return {"mid": base_config.spot_prices_yearly}
+    pv = base_config.pv_base_timeseries
+    return [PriceWeatherScenario(
+        name="mid", label="mid", csv_column="MID",
+        weather_year=2020, weight=1.0, is_central=True,
+        pv_timeseries_15min=pv,
+        price_per_year=base_config.spot_prices_yearly,
+    )]
 
 
 # ---------------------------------------------------------------------------
@@ -151,60 +214,79 @@ def mid_scenario_prices(base_config: GridSearchConfig) -> dict[str, list[np.ndar
 class TestMCParamsValidation:
     def test_single_scenario_weight_one(self) -> None:
         """Single scenario with weight=1.0 is valid."""
+        pv = _make_pv_array()
         params = MCParams(
             iterations=5,
-            price_scenarios={"mid": {"csv_column": "MID", "weight": 1.0}},
+            price_scenarios=[PriceWeatherScenario(
+                name="mid", label="mid", csv_column="MID",
+                weather_year=2020, weight=1.0, is_central=True,
+                pv_timeseries_15min=pv,
+            )],
         )
-        assert params.price_scenarios["mid"]["weight"] == pytest.approx(1.0)
+        assert params.price_scenarios[0].weight == pytest.approx(1.0)
 
     def test_weights_not_summing_to_one_raises(self) -> None:
         """Weights that do not sum to 1.0 raise ValueError."""
+        pv = _make_pv_array()
         with pytest.raises(ValueError, match="weights must sum to 1.0"):
             MCParams(
-                price_scenarios={
-                    "low":  {"csv_column": "LOW",  "weight": 0.3},
-                    "high": {"csv_column": "HIGH", "weight": 0.3},
-                }
+                price_scenarios=[
+                    PriceWeatherScenario(name="low", label="low", csv_column="LOW", weather_year=2020, weight=0.3, pv_timeseries_15min=pv),
+                    PriceWeatherScenario(name="high", label="high", csv_column="HIGH", weather_year=2020, weight=0.3, pv_timeseries_15min=pv),
+                ]
             )
 
     def test_two_scenarios_valid(self) -> None:
         """Two scenarios summing to 1.0 do not raise."""
+        pv = _make_pv_array()
         params = MCParams(
-            price_scenarios={
-                "low":  {"csv_column": "LOW",  "weight": 0.4},
-                "high": {"csv_column": "HIGH", "weight": 0.6},
-            }
+            price_scenarios=[
+                PriceWeatherScenario(name="low", label="low", csv_column="LOW", weather_year=2020, weight=0.4, pv_timeseries_15min=pv),
+                PriceWeatherScenario(name="high", label="high", csv_column="HIGH", weather_year=2020, weight=0.6, pv_timeseries_15min=pv),
+            ]
         )
-        total = sum(v["weight"] for v in params.price_scenarios.values())
+        total = sum(s.weight for s in params.price_scenarios)
         assert total == pytest.approx(1.0)
 
     def test_three_scenarios_valid(self) -> None:
+        pv = _make_pv_array()
         params = MCParams(
-            price_scenarios={
-                "low":  {"csv_column": "LOW",  "weight": 0.25},
-                "mid":  {"csv_column": "MID",  "weight": 0.50},
-                "high": {"csv_column": "HIGH", "weight": 0.25},
-            }
+            price_scenarios=[
+                PriceWeatherScenario(name="low", label="low", csv_column="LOW", weather_year=2020, weight=0.25, pv_timeseries_15min=pv),
+                PriceWeatherScenario(name="mid", label="mid", csv_column="MID", weather_year=2020, weight=0.50, pv_timeseries_15min=pv),
+                PriceWeatherScenario(name="high", label="high", csv_column="HIGH", weather_year=2020, weight=0.25, pv_timeseries_15min=pv),
+            ]
         )
-        total = sum(v["weight"] for v in params.price_scenarios.values())
+        total = sum(s.weight for s in params.price_scenarios)
         assert total == pytest.approx(1.0)
 
-    def test_missing_scenario_key_raises(
+    def test_mismatched_scenario_count_raises(
         self,
         base_config: GridSearchConfig,
         deterministic_optimal: GridPointResult,
     ) -> None:
-        """A scenario name present in MCParams but absent from scenario_prices raises."""
+        """MCParams with 2 scenarios but scenario_prices with 1 entry raises an error."""
+        pv = _make_pv_array()
+        two_param_scenarios = [
+            PriceWeatherScenario(name="low", label="low", csv_column="LOW", weather_year=2020, weight=0.5, pv_timeseries_15min=pv),
+            PriceWeatherScenario(name="high", label="high", csv_column="HIGH", weather_year=2020, weight=0.5, pv_timeseries_15min=pv),
+        ]
         params = MCParams(
             iterations=2,
-            price_scenarios={"unknown": {"csv_column": "X", "weight": 1.0}},
+            price_scenarios=two_param_scenarios,
         )
-        with pytest.raises(ValueError, match="not found in scenario_prices"):
+        one_scenario = [PriceWeatherScenario(
+            name="mid", label="mid", csv_column="MID",
+            weather_year=2020, weight=1.0, is_central=True,
+            pv_timeseries_15min=base_config.pv_base_timeseries,
+            price_per_year=base_config.spot_prices_yearly,
+        )]
+        with pytest.raises((ValueError, IndexError)):
             run_monte_carlo(
                 base_config=base_config,
                 optimal=deterministic_optimal,
                 mc_params=params,
-                scenario_prices={"mid": base_config.spot_prices_yearly},
+                scenario_prices=one_scenario,
             )
 
 
@@ -231,7 +313,7 @@ class TestDeterministicWithZeroSigma:
             mc_params=params,
             scenario_prices=mid_scenario_prices,
         )
-        det_irr = deterministic_optimal.equity_irr
+        det_irr = deterministic_optimal.metrics.equity_irr
         assert det_irr is not None, "Deterministic IRR must be computable"
         for it in result.iterations:
             assert it.equity_irr is not None
@@ -472,24 +554,30 @@ class TestPerScenarioBreakdown:
         deterministic_optimal: GridPointResult,
     ) -> None:
         """With two price scenarios, per_scenario_stats has exactly two keys."""
+        pv = base_config.pv_base_timeseries
         spot_lo = _make_price_array(0.04)
         spot_hi = _make_price_array(0.08)
-        two_prices = {
-            "low":  [spot_lo.copy() for _ in range(LIFETIME_YEARS)],
-            "high": [spot_hi.copy() for _ in range(LIFETIME_YEARS)],
-        }
+        two_scenarios = [
+            PriceWeatherScenario(
+                name="low", label="low", csv_column="LOW", weather_year=2020, weight=0.5,
+                pv_timeseries_15min=pv,
+                price_per_year=[spot_lo.copy() for _ in range(LIFETIME_YEARS)],
+            ),
+            PriceWeatherScenario(
+                name="high", label="high", csv_column="HIGH", weather_year=2020, weight=0.5,
+                pv_timeseries_15min=pv,
+                price_per_year=[spot_hi.copy() for _ in range(LIFETIME_YEARS)],
+            ),
+        ]
         params = _zero_sigma_params(
             iterations=20, seed=11,
-            price_scenarios={
-                "low":  {"csv_column": "LOW",  "weight": 0.5},
-                "high": {"csv_column": "HIGH", "weight": 0.5},
-            },
+            price_scenarios=two_scenarios,
         )
         result = run_monte_carlo(
             base_config=base_config,
             optimal=deterministic_optimal,
             mc_params=params,
-            scenario_prices=two_prices,
+            scenario_prices=two_scenarios,
         )
         assert set(result.per_scenario_stats.keys()) == {"low", "high"}
 
@@ -499,24 +587,30 @@ class TestPerScenarioBreakdown:
         deterministic_optimal: GridPointResult,
     ) -> None:
         """Higher prices → higher median IRR in per_scenario_stats."""
+        pv = base_config.pv_base_timeseries
         spot_lo = _make_price_array(0.03)
         spot_hi = _make_price_array(0.10)
-        two_prices = {
-            "low":  [spot_lo.copy() for _ in range(LIFETIME_YEARS)],
-            "high": [spot_hi.copy() for _ in range(LIFETIME_YEARS)],
-        }
+        two_scenarios = [
+            PriceWeatherScenario(
+                name="low", label="low", csv_column="LOW", weather_year=2020, weight=0.5,
+                pv_timeseries_15min=pv,
+                price_per_year=[spot_lo.copy() for _ in range(LIFETIME_YEARS)],
+            ),
+            PriceWeatherScenario(
+                name="high", label="high", csv_column="HIGH", weather_year=2020, weight=0.5,
+                pv_timeseries_15min=pv,
+                price_per_year=[spot_hi.copy() for _ in range(LIFETIME_YEARS)],
+            ),
+        ]
         params = _zero_sigma_params(
             iterations=40, seed=22,
-            price_scenarios={
-                "low":  {"csv_column": "LOW",  "weight": 0.5},
-                "high": {"csv_column": "HIGH", "weight": 0.5},
-            },
+            price_scenarios=two_scenarios,
         )
         result = run_monte_carlo(
             base_config=base_config,
             optimal=deterministic_optimal,
             mc_params=params,
-            scenario_prices=two_prices,
+            scenario_prices=two_scenarios,
         )
         lo_stats = result.per_scenario_stats.get("low", {}).get("equity_irr")
         hi_stats = result.per_scenario_stats.get("high", {}).get("equity_irr")

@@ -81,16 +81,14 @@ class TestValidScenario:
         )
         validate_scenario(cfg)  # must not raise
 
-    def test_mc_disabled_weights_not_checked(self, sample_scenario_config_green):
-        """MC weight validation is skipped when MC is disabled."""
+    def test_mc_disabled_weight_sum_not_checked_in_mc_block(
+        self, sample_scenario_config_green
+    ):
+        """MC can be disabled without affecting price_inputs.scenarios weight check."""
         cfg = copy.deepcopy(sample_scenario_config_green)
         mc = cfg["scenario"].setdefault("monte_carlo", {})
         mc["enabled"] = False
-        mc["price_scenarios"] = {
-            "a": {"csv_column": "A", "weight": 0.3},
-            "b": {"csv_column": "B", "weight": 0.3},
-        }
-        validate_scenario(cfg)  # sum=0.6, but MC disabled → no error
+        validate_scenario(cfg)  # must not raise
 
 
 # ---------------------------------------------------------------------------
@@ -510,27 +508,41 @@ class TestFinanceTax:
 
 
 class TestPriceInputs:
-    def test_invalid_price_unit_rejected(self, sample_scenario_config_green):
-        bad = _deep_set(
-            sample_scenario_config_green,
-            "eur_per_twh",
-            "project_settings",
-            "finance",
-            "price_inputs",
-            "price_unit",
-        )
-        with pytest.raises(jsonschema.ValidationError, match="'eur_per_twh'"):
-            validate_scenario(bad)
-
-    def test_missing_day_ahead_csv(self, sample_scenario_config_green):
+    def test_missing_scenarios_key_rejected(self, sample_scenario_config_green):
         bad = _deep_del(
             sample_scenario_config_green,
             "project_settings",
             "finance",
             "price_inputs",
-            "day_ahead_csv",
+            "scenarios",
         )
-        with pytest.raises(jsonschema.ValidationError, match="day_ahead_csv"):
+        with pytest.raises(jsonschema.ValidationError, match="scenarios"):
+            validate_scenario(bad)
+
+    def test_empty_scenarios_list_rejected(self, sample_scenario_config_green):
+        bad = _deep_set(
+            sample_scenario_config_green,
+            [],
+            "project_settings",
+            "finance",
+            "price_inputs",
+            "scenarios",
+        )
+        with pytest.raises(jsonschema.ValidationError):
+            validate_scenario(bad)
+
+    def test_scenario_missing_price_csv_rejected(self, sample_scenario_config_green):
+        bad = copy.deepcopy(sample_scenario_config_green)
+        scenarios = bad["project_settings"]["finance"]["price_inputs"]["scenarios"]
+        del scenarios[0]["price_csv"]
+        with pytest.raises(jsonschema.ValidationError, match="price_csv"):
+            validate_scenario(bad)
+
+    def test_scenario_missing_csv_column_rejected(self, sample_scenario_config_green):
+        bad = copy.deepcopy(sample_scenario_config_green)
+        scenarios = bad["project_settings"]["finance"]["price_inputs"]["scenarios"]
+        del scenarios[0]["csv_column"]
+        with pytest.raises(jsonschema.ValidationError, match="csv_column"):
             validate_scenario(bad)
 
 
@@ -619,12 +631,11 @@ class TestBaseloadPpaValidation:
         with pytest.raises(ValueError, match="baseload_mw is required"):
             validate_scenario(cfg)
 
-    def test_baseload_mw_exceeds_pv_peak_raises(
+    def test_baseload_mw_large_value_accepted(
         self, sample_scenario_config_green
     ):
-        """baseload_mw * 1000 > pv_peak_kwp must raise."""
+        """baseload_mw > pv_peak is now accepted by the schema validator."""
         cfg = copy.deepcopy(sample_scenario_config_green)
-        # PV peak = 5000 kWp in the fixture, so 6.0 MW = 6000 kW > 5000 kWp
         cfg["project_settings"]["finance"]["revenue_streams"]["ppa"] = {
             "type": "ppa_baseload",
             "baseload_mw": 6.0,
@@ -632,8 +643,7 @@ class TestBaseloadPpaValidation:
             "inflation_on_ppa": False,
             "guarantee_of_origin_eur_per_kwh": 0.005,
         }
-        with pytest.raises(ValueError, match="exceeds PV peak power"):
-            validate_scenario(cfg)
+        validate_scenario(cfg)  # must not raise
 
     def test_baseload_mw_equals_pv_peak_passes(
         self, sample_scenario_config_green
@@ -683,44 +693,69 @@ class TestBaseloadPpaValidation:
 
 
 class TestMCWeights:
-    def _mc_scenario(self, base, weights: dict[str, float]) -> dict:
-        cfg = copy.deepcopy(base)
-        mc = cfg["scenario"].setdefault("monte_carlo", {})
-        mc["enabled"] = True
-        mc["price_scenarios"] = {
-            k: {"csv_column": k.upper(), "weight": w} for k, w in weights.items()
+    """Weights are now on price_inputs.scenarios[*].weight, not MC price_scenarios."""
+
+    def _base_scenario_template(self) -> dict:
+        """Return a minimal scenario dict for building weight tests."""
+        return {
+            "name": "mid",
+            "csv_column": "MID",
+            "weather_year": 2017,
+            "weight": 1.0,
+            "is_central": True,
+            "price_csv": "data/day_ahead_prices.csv",
+            "inflation_on_input_data": True,
+            "csv_separator": ";",
+            "csv_decimal": ".",
+            "csv_timestamp_column": "timestamp",
+            "csv_timestamp_format": "ISO8601",
         }
+
+    def _set_scenarios(self, base, scenario_list: list[dict]) -> dict:
+        cfg = copy.deepcopy(base)
+        cfg["project_settings"]["finance"]["price_inputs"]["scenarios"] = scenario_list
         return cfg
 
     def test_weights_sum_to_1_passes(self, sample_scenario_config_green):
-        cfg = self._mc_scenario(
-            sample_scenario_config_green,
-            {"low": 0.25, "mid": 0.50, "high": 0.25},
-        )
+        tpl = self._base_scenario_template()
+        scenarios = [
+            {**tpl, "name": "low", "csv_column": "LOW", "weight": 0.25, "is_central": False},
+            {**tpl, "name": "mid", "csv_column": "MID", "weight": 0.50, "is_central": True},
+            {**tpl, "name": "high", "csv_column": "HIGH", "weight": 0.25, "is_central": False},
+        ]
+        cfg = self._set_scenarios(sample_scenario_config_green, scenarios)
         validate_scenario(cfg)
 
     def test_weights_sum_below_1_raises(self, sample_scenario_config_green):
-        cfg = self._mc_scenario(
-            sample_scenario_config_green,
-            {"low": 0.25, "mid": 0.25},
-        )
+        tpl = self._base_scenario_template()
+        scenarios = [
+            {**tpl, "name": "low", "csv_column": "LOW", "weight": 0.25, "is_central": False},
+            {**tpl, "name": "mid", "csv_column": "MID", "weight": 0.25, "is_central": True},
+        ]
+        cfg = self._set_scenarios(sample_scenario_config_green, scenarios)
         with pytest.raises(ValueError, match="sum to 1"):
             validate_scenario(cfg)
 
     def test_weights_sum_above_1_raises(self, sample_scenario_config_green):
-        cfg = self._mc_scenario(
-            sample_scenario_config_green,
-            {"low": 0.5, "mid": 0.5, "high": 0.1},
-        )
+        tpl = self._base_scenario_template()
+        scenarios = [
+            {**tpl, "name": "low", "csv_column": "LOW", "weight": 0.5, "is_central": False},
+            {**tpl, "name": "mid", "csv_column": "MID", "weight": 0.5, "is_central": True},
+            {**tpl, "name": "high", "csv_column": "HIGH", "weight": 0.1, "is_central": False},
+        ]
+        cfg = self._set_scenarios(sample_scenario_config_green, scenarios)
         with pytest.raises(ValueError, match="sum to 1"):
             validate_scenario(cfg)
 
     def test_single_weight_1_passes(self, sample_scenario_config_green):
-        cfg = self._mc_scenario(sample_scenario_config_green, {"mid": 1.0})
+        tpl = self._base_scenario_template()
+        cfg = self._set_scenarios(sample_scenario_config_green, [tpl])
         validate_scenario(cfg)
 
     def test_weight_negative_rejected_by_schema(self, sample_scenario_config_green):
-        cfg = self._mc_scenario(sample_scenario_config_green, {"a": -0.5, "b": 1.5})
+        tpl = self._base_scenario_template()
+        scenarios = [{**tpl, "weight": -0.5}]
+        cfg = self._set_scenarios(sample_scenario_config_green, scenarios)
         with pytest.raises(jsonschema.ValidationError):
             validate_scenario(cfg)
 

@@ -190,6 +190,10 @@ def write_cashflows_csv(
     annual_dscr: list[float | None],
     commissioning_year: int | None = None,
     config: CsvConfig | None = None,
+    annual_revenue_pv_eur: list[float] | None = None,
+    annual_revenue_bess_green_eur: list[float] | None = None,
+    annual_revenue_bess_grey_eur: list[float] | None = None,
+    annual_pv_grid_export_kwh: list[float] | None = None,
 ) -> None:
     """Write the per-year cashflow table.
 
@@ -211,6 +215,18 @@ def write_cashflows_csv(
         year indices (1, 2, …).
     config:
         CSV formatting settings. Uses defaults when None.
+    annual_revenue_pv_eur:
+        PV direct export revenue per year in EUR (same indexing).
+        If None, the column is omitted.
+    annual_revenue_bess_green_eur:
+        BESS green discharge revenue per year in EUR (same indexing).
+        If None, the column is omitted.
+    annual_revenue_bess_grey_eur:
+        BESS grey discharge revenue per year in EUR (same indexing).
+        If None, the column is omitted.
+    annual_pv_grid_export_kwh:
+        PV energy exported directly to grid per year in kWh (same indexing).
+        Written as MWh in the CSV. If None, the column is omitted.
     """
     cfg = config or CsvConfig()
     d = cfg.decimal
@@ -237,12 +253,38 @@ def write_cashflows_csv(
         else:
             year_label = str(y.year)
 
-        rows.append({
+        # Revenue breakdown columns (optional, only when data is provided)
+        rev_pv = (
+            annual_revenue_pv_eur[i]
+            if annual_revenue_pv_eur is not None and i < len(annual_revenue_pv_eur)
+            else None
+        )
+        rev_bess_green = (
+            annual_revenue_bess_green_eur[i]
+            if annual_revenue_bess_green_eur is not None and i < len(annual_revenue_bess_green_eur)
+            else None
+        )
+        rev_bess_grey = (
+            annual_revenue_bess_grey_eur[i]
+            if annual_revenue_bess_grey_eur is not None and i < len(annual_revenue_bess_grey_eur)
+            else None
+        )
+        pv_grid_export_mwh = (
+            annual_pv_grid_export_kwh[i] * KWH_TO_MWH
+            if annual_pv_grid_export_kwh is not None and i < len(annual_pv_grid_export_kwh)
+            else None
+        )
+
+        row: dict[str, str] = {
             "year": year_label,
             "capex_eur": fmt_currency(y.capex, decimal=d),
             "pv_production_mwh": fmt_float(pv_mwh, decimal=d),
+            "pv_grid_export_mwh": fmt_float(pv_grid_export_mwh, decimal=d),
             "bess_throughput_mwh": fmt_float(bess_mwh, decimal=d),
             "revenue_eur": fmt_currency(y.revenue, decimal=d),
+            "revenue_pv_eur": fmt_currency(rev_pv, decimal=d),
+            "revenue_bess_green_eur": fmt_currency(rev_bess_green, decimal=d),
+            "revenue_bess_grey_eur": fmt_currency(rev_bess_grey, decimal=d),
             "grid_import_costs": fmt_currency(y.grid_import_costs, decimal=d),
             "baseload_matching_costs": fmt_currency(y.baseload_matching_costs, decimal=d),
             "opex_eur": fmt_currency(y.opex, decimal=d),
@@ -257,7 +299,8 @@ def write_cashflows_csv(
             "equity_cf_eur": fmt_currency(y.equity_cf, decimal=d),
             "cumulative_equity_cf_eur": fmt_currency(cumulative, decimal=d),
             "dscr": fmt_float(dscr_val, decimal=d),
-        })
+        }
+        rows.append(row)
 
     _write_dicts(path, rows, delimiter=cfg.delimiter)
     logger.info("Wrote cashflows CSV (%d rows): %s", len(rows), path)
@@ -343,6 +386,8 @@ def write_monte_carlo_csv(
     rows = []
     for it in mc_result.iterations:
         rows.append({
+            "analysis_label": it.analysis_label,
+            "fixed_price_years": str(it.fixed_price_years),
             "iteration": str(it.iteration),
             "price_scenario": it.price_scenario,
             "capex_factor_pv": fmt_float(it.capex_factor_pv, decimal=d),
@@ -355,10 +400,60 @@ def write_monte_carlo_csv(
             "project_irr_pct": fmt_pct(it.project_irr, decimal=d),
             "npv_eur": fmt_currency(it.npv, decimal=d),
             "dscr_min": fmt_float(it.dscr_min, decimal=d),
+            "capture_rate_eur_per_mwh": fmt_float(it.capture_rate*1000, decimal=d),
         })
 
     _write_dicts(path, rows, delimiter=cfg.delimiter)
     logger.info("Wrote Monte Carlo CSV (%d rows): %s", len(rows), path)
+
+
+def write_combined_monte_carlo_csv(
+    path: Path | str,
+    mc_results: list[MCResult],
+    config: CsvConfig | None = None,
+) -> None:
+    """Write all MC iteration results from multiple analyses into a single CSV.
+
+    Parameters
+    ----------
+    path:
+        Destination file path.
+    mc_results:
+        List of MCResult objects from different analyses (baseline,
+        EEG sensitivity, PPA collar, PPA baseload, etc.).
+    config:
+        CSV formatting settings. Uses defaults when None.
+    """
+    cfg = config or CsvConfig()
+    d = cfg.decimal
+
+    rows = []
+    for mc_result in mc_results:
+        for it in mc_result.iterations:
+            rows.append({
+                "analysis_label": it.analysis_label,
+                "fixed_price_years": str(it.fixed_price_years),
+                "iteration": str(it.iteration),
+                "price_scenario": it.price_scenario,
+                "capex_factor_pv": fmt_float(it.capex_factor_pv, decimal=d),
+                "capex_factor_bess": fmt_float(it.capex_factor_bess, decimal=d),
+                "opex_factor_pv": fmt_float(it.opex_factor_pv, decimal=d),
+                "opex_factor_bess": fmt_float(it.opex_factor_bess, decimal=d),
+                "pv_availability_factor": fmt_float(it.pv_availability_factor, decimal=d),
+                "bess_availability_factor": fmt_float(it.bess_availability_factor, decimal=d),
+                "equity_irr_pct": fmt_pct(it.equity_irr, decimal=d),
+                "project_irr_pct": fmt_pct(it.project_irr, decimal=d),
+                "npv_eur": fmt_currency(it.npv, decimal=d),
+                "dscr_min": fmt_float(it.dscr_min, decimal=d),
+                "capture_rate_eur_per_kwh": fmt_float(it.capture_rate, decimal=d),
+            })
+
+    if rows:
+        _write_dicts(path, rows, delimiter=cfg.delimiter)
+        logger.info(
+            "Wrote combined Monte Carlo CSV (%d rows from %d analyses): %s",
+            len(rows), len(mc_results), path,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -529,14 +624,14 @@ def write_ppa_collar_csv(
         npv_s = stats.get("npv")
 
         rows.append({
-            "floor_price_eur_per_mwh": fmt_float(
-                pt.params.get("floor_price_eur_per_mwh"), decimal=d
+            "floor_price_eur_per_kwh": fmt_float(
+                pt.params.get("floor_price_eur_per_kwh"), decimal=d
             ),
-            "cap_spread_eur_per_mwh": fmt_float(
-                pt.params.get("cap_spread_eur_per_mwh"), decimal=d
+            "cap_spread_eur_per_kwh": fmt_float(
+                pt.params.get("cap_spread_eur_per_kwh"), decimal=d
             ),
-            "cap_price_eur_per_mwh": fmt_float(
-                pt.params.get("cap_price_eur_per_mwh"), decimal=d
+            "cap_price_eur_per_kwh": fmt_float(
+                pt.params.get("cap_price_eur_per_kwh"), decimal=d
             ),
             "duration_years": str(duration_years),
             "equity_irr_mean": fmt_pct(eq.mean if eq else None, decimal=d),
@@ -586,8 +681,8 @@ def write_ppa_baseload_csv(
         npv_s = stats.get("npv")
 
         rows.append({
-            "ppa_price_eur_per_mwh": fmt_float(
-                pt.params.get("ppa_price_eur_per_mwh"), decimal=d
+            "ppa_price_eur_per_kwh": fmt_float(
+                pt.params.get("ppa_price_eur_per_kwh"), decimal=d
             ),
             "baseload_mw": fmt_float(
                 pt.params.get("baseload_mw"), decimal=d

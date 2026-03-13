@@ -9,21 +9,7 @@
       "sigma_opex_pv_pct": 3.0,
       "sigma_opex_bess_pct": 4.0,
       "sigma_pv_availability_pct": 0.5,
-      "sigma_bess_availability_pct": 0.8,
-      "price_scenarios": {
-        "central": {
-          "csv_column": "price_central",
-          "weight": 0.6
-        },
-        "high": {
-          "csv_column": "price_high",
-          "weight": 0.25
-        },
-        "low": {
-          "csv_column": "price_low",
-          "weight": 0.15
-        }
-      }
+      "sigma_bess_availability_pct": 0.8
     },
     "output": {
       "directory": "./outputs/pv_bess_szenario_001",
@@ -48,15 +34,15 @@
       },
       "ppa_collar": {
         "enabled": true,
-        "floor_prices_eur_per_mwh": [40, 55, 70],
-        "cap_spreads_eur_per_mwh": [20, 30],
+        "floor_prices_eur_per_kwh": [0.040, 0.055, 0.070],
+        "cap_spreads_eur_per_kwh": [0.020, 0.030],
         "duration_years": 10,
         "inflation_on_ppa": true,
         "goo_premium_eur_per_kwh": 0.003
       },
       "ppa_baseload": {
         "enabled": true,
-        "ppa_prices_eur_per_mwh": [60, 70, 80],
+        "ppa_prices_eur_per_kwh": [0.060, 0.070, 0.080],
         "baseload_levels_mw": [5.0, 7.5],
         "duration_years": 7,
         "inflation_on_ppa": false,
@@ -126,9 +112,9 @@
             "fixed_eur": 60000.0,
             "eur_per_kw": 8.0,
             "eur_per_kwh": 2.0,
-            "pct_of_capex": 0.015
+            "pct_of_capex": 0.015,
+            "optimization_fee_pct": 3.0
           },
-          "optimization_fee_pct": 3.0,
           "replacement": {
             "enabled": true,
             "year": 12,
@@ -186,13 +172,6 @@
         }
       },
       "price_inputs": {
-        "day_ahead_csv": "./inputs/day_ahead_prices.csv",
-        "price_unit": "eur_per_mwh",
-        "inflation_on_input_data": false,
-        "csv_separator": ";",
-        "csv_decimal": ",",
-        "csv_timestamp_column": "timestamp",
-        "csv_timestamp_format": "%Y-%m-%dT%H:%M:%S",
         "scenarios": [
           {
             "name": "Central",
@@ -202,7 +181,6 @@
             "weight": 0.6,
             "is_central": true,
             "price_csv": "./inputs/day_ahead_prices.csv",
-            "price_unit": "eur_per_mwh",
             "inflation_on_input_data": false,
             "csv_separator": ";",
             "csv_decimal": ",",
@@ -217,7 +195,6 @@
             "weight": 0.25,
             "is_central": false,
             "price_csv": "./inputs/day_ahead_prices.csv",
-            "price_unit": "eur_per_mwh",
             "inflation_on_input_data": false,
             "csv_separator": ";",
             "csv_decimal": ",",
@@ -232,7 +209,6 @@
             "weight": 0.15,
             "is_central": false,
             "price_csv": "./inputs/day_ahead_prices.csv",
-            "price_unit": "eur_per_mwh",
             "inflation_on_input_data": false,
             "csv_separator": ";",
             "csv_decimal": ",",

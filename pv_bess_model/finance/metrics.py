@@ -43,6 +43,8 @@ class FinancialMetrics:
     lcoe: float | None
     payback_year: int | None
     annual_dscr: list[float]
+    capture_rate: float | None
+    """Average revenue per kWh of energy fed into the grid (EUR/kWh)."""
 
 
 def safe_irr(cashflows: np.ndarray) -> float | None:
@@ -154,6 +156,36 @@ def calculate_payback_year(equity_cashflows: np.ndarray) -> int | None:
     return int(positive_years[0])
 
 
+def calculate_capture_rate(
+    annual_revenues: list[float],
+    annual_pv_production_kwh: list[float],
+    annual_bess_discharge_kwh: list[float],
+) -> float | None:
+    """Calculate the average revenue per kWh of energy fed into the grid.
+
+    For each project year the ratio ``revenue / (pv_production + bess_discharge)``
+    is computed.  The capture rate is the mean of these annual ratios.
+
+    Args:
+        annual_revenues: Total revenue per year (EUR).
+        annual_pv_production_kwh: PV production per year (kWh).
+        annual_bess_discharge_kwh: BESS discharge (green + grey) per year (kWh).
+
+    Returns:
+        Capture rate in EUR/kWh, or None if no energy was produced.
+    """
+    ratios: list[float] = []
+    for rev, pv, bess in zip(
+        annual_revenues, annual_pv_production_kwh, annual_bess_discharge_kwh
+    ):
+        energy = pv + bess
+        if energy > 0.0:
+            ratios.append(rev / energy)
+    if not ratios:
+        return None
+    return sum(ratios) / len(ratios)
+
+
 def compute_all_metrics(
     equity_cashflows: np.ndarray,
     project_cashflows: np.ndarray,
@@ -164,6 +196,8 @@ def compute_all_metrics(
     total_opex_lifetime: float,
     total_production_kwh: float,
     discount_rate: float = DEFAULT_DISCOUNT_RATE,
+    annual_pv_production_kwh: list[float] | None = None,
+    annual_bess_discharge_kwh: list[float] | None = None,
 ) -> FinancialMetrics:
     """Compute all financial metrics from cashflow data.
 
@@ -177,6 +211,8 @@ def compute_all_metrics(
         total_opex_lifetime: Sum of all OPEX over lifetime (for LCOE).
         total_production_kwh: Total energy production over lifetime (for LCOE).
         discount_rate: Discount rate for NPV.
+        annual_pv_production_kwh: PV production per year (kWh), for capture rate.
+        annual_bess_discharge_kwh: BESS discharge per year (kWh), for capture rate.
 
     Returns:
         :class:`FinancialMetrics` with all computed values.
@@ -190,6 +226,12 @@ def compute_all_metrics(
     lcoe = calculate_lcoe(total_capex + total_opex_lifetime, total_production_kwh)
     payback = calculate_payback_year(equity_cashflows)
 
+    capture_rate: float | None = None
+    if annual_pv_production_kwh is not None and annual_bess_discharge_kwh is not None:
+        capture_rate = calculate_capture_rate(
+            annual_revenues, annual_pv_production_kwh, annual_bess_discharge_kwh,
+        )
+
     return FinancialMetrics(
         equity_irr=equity_irr,
         project_irr=project_irr,
@@ -198,5 +240,6 @@ def compute_all_metrics(
         dscr_avg=dscr_avg,
         lcoe=lcoe,
         payback_year=payback,
-        annual_dscr=annual_dscr
+        annual_dscr=annual_dscr,
+        capture_rate=capture_rate,
     )

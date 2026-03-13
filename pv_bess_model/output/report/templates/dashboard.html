@@ -1,0 +1,1358 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>PV/BESS Ergebnis-Report – {{scenario_name}}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <style>
+    /* ===== Corporate Design ===== */
+    :root {
+      --corp-orange: #FF8200;
+      --corp-red: #F73E5E;
+      --corp-purple: #A51BA7;
+      --corp-darkblue: #00467A;
+      --corp-midblue: #006EB2;
+      --corp-lightblue: #00BDDC;
+
+      --bg: #ffffff;
+      --fg: #0f172a;
+      --muted: #475569;
+      --primary: var(--corp-darkblue);
+      --primary-contrast: #ffffff;
+      --border: #e2e8f0;
+      --surface: #f8fafc;
+      --surface-2: #eef2ff;
+      --grid: #e5e7eb;
+      --focus: #93c5fd;
+      --tooltip-bg: rgba(15, 23, 42, 0.92);
+      --tooltip-fg: #e5e7eb;
+      --kpi-bg: #f1f5f9;
+    }
+    [data-theme="dark"] {
+      --bg: #0b1220;
+      --fg: #e5e7eb;
+      --muted: #94a3b8;
+      --primary: #60a5fa;
+      --primary-contrast: #0b1220;
+      --border: #1f2937;
+      --surface: #111827;
+      --surface-2: #0f172a;
+      --grid: #1f2937;
+      --focus: #60a5fa;
+      --tooltip-bg: rgba(229, 231, 235, 0.95);
+      --tooltip-fg: #0f172a;
+      --kpi-bg: #1e293b;
+    }
+
+    /* ===== Base ===== */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+      font-family: -apple-system, Segoe UI, Roboto, Inter, system-ui, Arial, sans-serif; line-height: 1.5; }
+    .container { max-width: 1280px; margin: 0 auto; padding: 24px 20px 80px; }
+
+    /* ===== Header ===== */
+    .report-header {
+      display: flex; align-items: center; gap: 16px;
+      padding: 16px 0; border-bottom: 3px solid var(--corp-orange); margin-bottom: 20px;
+    }
+    .report-header .logo { height: 48px; max-width: 200px; object-fit: contain; }
+    .report-header .title-block { flex: 1; min-width: 200px; }
+    .report-header h1 { font-size: 18px; margin: 0; color: var(--corp-darkblue); font-weight: 700; }
+    [data-theme="dark"] .report-header h1 { color: var(--corp-lightblue); }
+    .report-header .subtitle { color: var(--muted); font-size: 12px; }
+    .report-header .hdr-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+    /* ===== Toolbar ===== */
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; justify-content: flex-end; }
+    .switch { display: inline-flex; align-items: center; gap: 6px; user-select: none; cursor: pointer; font-size: 13px; }
+    .switch input { accent-color: var(--corp-orange); }
+    .muted { color: var(--muted); }
+    .small { font-size: 12px; }
+
+    /* ===== Tabs (stepper style) ===== */
+    .tabs { margin-top: 16px; }
+    .tablist {
+      display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px;
+    }
+    .tab {
+      padding: 6px 16px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      border: 2px solid var(--border); color: var(--muted); cursor: pointer;
+      white-space: nowrap; transition: all 0.2s; background: transparent;
+    }
+    .tab:hover { border-color: var(--corp-midblue); }
+    .tab[aria-selected="true"] {
+      border-color: var(--corp-orange); color: var(--corp-orange);
+      background: rgba(255, 130, 0, 0.08);
+    }
+
+    .tabpanel {
+      border: 1px solid var(--border); border-radius: 12px;
+      margin-top: 8px; background: var(--surface); padding: 16px;
+    }
+    .tabpanel h2 { font-size: 17px; margin: 0 0 12px 0; color: var(--corp-darkblue); }
+    [data-theme="dark"] .tabpanel h2 { color: var(--corp-lightblue); }
+
+    /* ===== Panel Layout ===== */
+    .panel-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    button {
+      border: 1px solid var(--border); background: var(--surface); color: var(--fg);
+      padding: 6px 10px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 12px;
+    }
+    button:hover { background: var(--surface-2); }
+    button.primary { background: var(--corp-orange); color: #fff; border-color: var(--corp-orange); }
+    button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+    /* ===== Chart ===== */
+    .chart-wrap { position: relative; width: 100%; height: 420px; margin-bottom: 8px; }
+    .chart-wrap canvas { width: 100%; height: 100%; border-radius: 8px; background: var(--bg); display: block; }
+    .legend { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: 8px 0; font-size: 13px; }
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .legend-box { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+    .tooltip {
+      position: absolute; top: 0; left: 0; pointer-events: none; z-index: 10; display: none;
+      background: var(--tooltip-bg); color: var(--tooltip-fg);
+      border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px;
+      white-space: nowrap; box-shadow: 0 6px 20px rgba(0,0,0,0.25); max-width: 350px;
+    }
+    .rubberband {
+      position: absolute; border: 2px dashed var(--corp-orange); background: rgba(255,130,0,0.08);
+      pointer-events: none; display: none; z-index: 5; border-radius: 6px;
+    }
+
+    /* ===== KPI Cards ===== */
+    .kpi-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px; margin: 16px 0;
+    }
+    .kpi-card {
+      background: var(--kpi-bg); border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px 14px; text-align: center;
+    }
+    .kpi-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .kpi-card .value { font-size: 20px; font-weight: 700; color: var(--corp-darkblue); margin-top: 2px; }
+    [data-theme="dark"] .kpi-card .value { color: var(--corp-lightblue); }
+
+    /* ===== Parameter Table ===== */
+    .param-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; }
+    .param-table th, .param-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+    .param-table th { color: var(--muted); font-weight: 600; width: 40%; }
+
+    /* ===== Map ===== */
+    .map-container { position: relative; width: 100%; height: 100%; min-height: 200px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+    .map-container img { width: 100%; height: 100%; object-fit: cover; }
+    .map-fallback { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; background: var(--surface-2); color: var(--muted); font-size: 13px; }
+    .map-marker { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); font-size: 28px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
+
+    /* ===== LLM Text ===== */
+    .llm-text { margin: 16px 0; padding: 16px; background: var(--surface-2); border-radius: 10px; border-left: 4px solid var(--corp-orange); line-height: 1.7; font-size: 14px; }
+    .llm-text p { margin: 0 0 10px 0; }
+    .llm-text p:last-child { margin-bottom: 0; }
+    .llm-text .fallback { color: var(--muted); font-style: italic; }
+
+    /* ===== LLM Hinweis ===== */
+    .llm-hint {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    /* ===== Two-column layout ===== */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+
+    /* ===== Footer ===== */
+    footer {
+      margin-top: 32px; color: var(--muted); font-size: 11px;
+      border-top: 1px solid var(--border); padding-top: 12px; text-align: center;
+    }
+
+    /* ===== Print ===== */
+    @media print {
+      .toolbar, .actions, .tab { page-break-inside: avoid; }
+      .chart-wrap { height: 300px; }
+    }
+
+    .hr { height: 1px; background: var(--border); border: 0; margin: 12px 0; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); font-size: 11px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- ===== Header ===== -->
+    <div class="report-header">
+      <div id="toolLogo"></div>
+      <div class="title-block">
+        <h1>PV+BESS Ergebnis-Report</h1>
+        <div class="subtitle" id="headerSubtitle"></div>
+      </div>
+      <div id="companyLogo"></div>
+    </div>
+
+    <div class="toolbar" role="toolbar" aria-label="Globale Aktionen">
+      <span class="pill">Hover: Tooltip &middot; Rad: Zoom &middot; Mausklick: Verschieben &middot; Shift+Ziehen: Bereich &middot; Doppelklick: Reset</span>
+    </div>
+
+    <div class="hr"></div>
+
+    <!-- ===== Tabs ===== -->
+    <div class="tabs">
+      <div class="tablist" role="tablist" aria-label="Report-Tabs" id="tablist"></div>
+      <div id="panels"></div>
+    </div>
+
+    <!-- ===== Footer ===== -->
+    <footer id="reportFooter"></footer>
+  </div>
+
+  <script>
+
+    const LLM_HINT_HTML = `
+      <div class="llm-hint">
+        Hinweis: Die schriftliche Analyse wurde mithilfe künstlicher Intelligenz erstellt.
+      </div>
+    `;
+
+    // ================================================================
+    //  DATA INJECTION (replaced at build time by Python)
+    // ================================================================
+    const REPORT_DATA = {{REPORT_DATA_JSON}};
+
+    // ================================================================
+    //  HELPERS
+    // ================================================================
+    const $ = (sel, el=document) => el.querySelector(sel);
+    const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+    const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    const fmtNum = (v, d=2) => v == null ? 'n/a' : Number(v).toLocaleString('de-DE', {minimumFractionDigits: d, maximumFractionDigits: d});
+    const fmtEur = (v) => v == null ? 'n/a' : Number(v).toLocaleString('de-DE', {minimumFractionDigits: 0, maximumFractionDigits: 0}) + ' \u20ac';
+    const fmtPct = (v) => v == null ? 'n/a' : fmtNum(v, 2) + ' %';
+
+    const CORP_COLORS = ['#FF8200', '#F73E5E', '#A51BA7', '#00467A', '#006EB2', '#00BDDC'];
+    const MONTHS = ['Jan','Feb','Mar','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+
+    function fitCanvasToContainer(canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return ctx;
+    }
+
+    function downloadFile(filename, mime, content) {
+      const blob = new Blob([content], {type: mime});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    }
+    function downloadCanvasPNG(canvas, filename) {
+      const url = canvas.toDataURL('image/png');
+      const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+    }
+    function arrayToCSV(headers, rows) {
+      const esc = (s) => { const t = String(s ?? '').replace(/,/g, '.'); return /[";;\n]/.test(t) ? `"${t.replace(/"/g,'""')}"` : t; };
+      const lines = [];
+      if (headers?.length) lines.push(headers.map(esc).join(';'));
+      for (const r of rows) lines.push(r.map(esc).join(';'));
+      return lines.join('\n');
+    }
+
+    function niceTicks(min, max, n=6) {
+      if (!isFinite(min) || !isFinite(max)) return [0];
+      if (min === max) { min -= 1; max += 1; }
+      const span = max - min;
+      const step = Math.pow(10, Math.floor(Math.log10(span / n)));
+      const err = (n * step) / span;
+      const fact = err <= 0.15 ? 10 : err <= 0.35 ? 5 : err <= 0.75 ? 2 : 1;
+      const niceStep = step * fact;
+      const niceMin = Math.floor(min / niceStep) * niceStep;
+      const niceMax = Math.ceil(max / niceStep) * niceStep;
+      const ticks = [];
+      for (let v = niceMin; v <= niceMax + 1e-12; v += niceStep) ticks.push(Math.abs(v) < 1e-9 ? 0 : Number(v.toFixed(6)));
+      return ticks;
+    }
+
+    // ================================================================
+    //  MARKDOWN-LIGHT RENDERER
+    // ================================================================
+    function renderMarkdownLight(text) {
+      if (!text) return '<p class="fallback">Textbeschreibung nicht verfügbar. Bitte führen Sie den LLM-Prompt-Workflow durch.</p>';
+      // Split paragraphs, bold, return HTML
+      return text.split(/\n{2,}/).map(para => {
+        let html = para.trim().replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        // single newlines -> <br>
+        html = html.replace(/\n/g, '<br>');
+        return '<p>' + html + '</p>';
+      }).join('');
+    }
+
+    // ================================================================
+    //  INTERACTIVE CARTESIAN CHART (Multi-Series)
+    // ================================================================
+    class InteractiveCartesianChart {
+      constructor({wrap, canvas, tooltipEl, rubberEl, margin, getSeriesData, drawContent, xLabelFormatter, yLabelFormatter}) {
+        this.wrap = wrap;
+        this.canvas = canvas;
+        this.ctx = fitCanvasToContainer(canvas);
+        this.tooltipEl = tooltipEl;
+        this.rubberEl = rubberEl;
+        this.getSeriesData = getSeriesData;
+        this.drawContent = drawContent;
+        this.xLabelFormatter = xLabelFormatter || (v => String(v));
+        this.yLabelFormatter = yLabelFormatter || (v => String(v));
+        this.margin = margin || {top: 20, right: 20, bottom: 40, left: 60};
+        this.resetView();
+        this.isPanning = false; this.isRubber = false; this.start = null; this.startView = null;
+        this.attachEvents();
+        this.render();
+      }
+
+      resetView() {
+        const data = this.getSeriesData();
+        if (!data || !data.length) { this.viewX = [0,1]; this.viewY = [0,1]; return; }
+        let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+        for (const s of data) {
+          for (let i = 0; i < s.x.length; i++) {
+            if (s.x[i] < xMin) xMin = s.x[i];
+            if (s.x[i] > xMax) xMax = s.x[i];
+            const yv = s.y[i];
+            if (yv != null && isFinite(yv)) {
+              if (yv < yMin) yMin = yv;
+              if (yv > yMax) yMax = yv;
+            }
+            // bands
+            if (s.yLow && s.yLow[i] != null && s.yLow[i] < yMin) yMin = s.yLow[i];
+            if (s.yHigh && s.yHigh[i] != null && s.yHigh[i] > yMax) yMax = s.yHigh[i];
+          }
+        }
+        if (!isFinite(xMin)) { xMin = 0; xMax = 1; }
+        if (!isFinite(yMin)) { yMin = 0; yMax = 1; }
+        if (xMin === xMax) { xMin -= 0.5; xMax += 0.5; }
+        if (yMin === yMax) { yMin -= 1; yMax += 1; }
+        const yPad = (yMax - yMin) * 0.08;
+        this.viewX = [xMin, xMax];
+        this.viewY = [yMin - yPad, yMax + yPad];
+      }
+
+      chartRect() {
+        const rect = this.canvas.getBoundingClientRect();
+        return { left: this.margin.left, right: rect.width - this.margin.right,
+          top: this.margin.top, bottom: rect.height - this.margin.bottom,
+          width: rect.width, height: rect.height };
+      }
+
+      dataXToCanvas(x) { const cr = this.chartRect(); return cr.left + (x - this.viewX[0]) / (this.viewX[1] - this.viewX[0]) * (cr.right - cr.left); }
+      dataYToCanvas(y) { const cr = this.chartRect(); return cr.bottom - (y - this.viewY[0]) / (this.viewY[1] - this.viewY[0]) * (cr.bottom - cr.top); }
+      canvasXToData(px) { const cr = this.chartRect(); return this.viewX[0] + (px - cr.left) / (cr.right - cr.left) * (this.viewX[1] - this.viewX[0]); }
+      canvasYToData(py) { const cr = this.chartRect(); return this.viewY[0] + (cr.bottom - py) / (cr.bottom - cr.top) * (this.viewY[1] - this.viewY[0]); }
+
+      attachEvents() {
+        const ro = new ResizeObserver(() => { this.ctx = fitCanvasToContainer(this.canvas); this.render(); });
+        ro.observe(this.wrap);
+
+        this.canvas.addEventListener('wheel', (e) => {
+          e.preventDefault();
+          const factor = Math.exp(-e.deltaY * 0.0015);
+          const cx = this.canvasXToData(e.offsetX), cy = this.canvasYToData(e.offsetY);
+          const [x0,x1] = this.viewX, [y0,y1] = this.viewY;
+          const nx0 = cx + (x0-cx)*factor, nx1 = cx + (x1-cx)*factor;
+          if (nx1 - nx0 < 1e-3) return;
+          this.viewX = [nx0, nx1];
+          const fy = Math.pow(factor, 0.5);
+          const ny0 = cy + (y0-cy)*fy, ny1 = cy + (y1-cy)*fy;
+          if (ny1 - ny0 > 1e-6) this.viewY = [ny0, ny1];
+          this.render();
+        }, {passive: false});
+
+        this.canvas.addEventListener('mousedown', (e) => {
+          this.start = {x: e.offsetX, y: e.offsetY};
+          this.startView = {x: [...this.viewX], y: [...this.viewY]};
+          if (e.shiftKey) { this.isRubber = true; this.rubberEl.style.display = 'block'; }
+          else { this.isPanning = true; }
+        });
+        window.addEventListener('mousemove', (e) => {
+          if (e.target === this.canvas) this.render(e.offsetX, e.offsetY);
+          else this.hideTooltip();
+          if (this.isPanning && this.start) {
+            const dx = e.offsetX - this.start.x, dy = e.offsetY - this.start.y;
+            const cr = this.chartRect();
+            const [x0,x1] = this.startView.x, [y0,y1] = this.startView.y;
+            const dxD = (x1-x0) * dx / (cr.right-cr.left), dyD = (y1-y0) * dy / (cr.bottom-cr.top);
+            this.viewX = [x0-dxD, x1-dxD]; this.viewY = [y0+dyD, y1+dyD];
+            this.render();
+          }
+          if (this.isRubber && this.start) {
+            const rb = this.rubberEl;
+            rb.style.left = Math.min(this.start.x, e.offsetX) + 'px';
+            rb.style.top = Math.min(this.start.y, e.offsetY) + 'px';
+            rb.style.width = Math.abs(e.offsetX - this.start.x) + 'px';
+            rb.style.height = Math.abs(e.offsetY - this.start.y) + 'px';
+          }
+        });
+        window.addEventListener('mouseup', (e) => {
+          if (this.isRubber && this.start) {
+            this.rubberEl.style.display = 'none';
+            const cr = this.chartRect();
+            const rx1 = Math.max(cr.left, Math.min(this.start.x, e.offsetX));
+            const rx2 = Math.min(cr.right, Math.max(this.start.x, e.offsetX));
+            const ry1 = Math.max(cr.top, Math.min(this.start.y, e.offsetY));
+            const ry2 = Math.min(cr.bottom, Math.max(this.start.y, e.offsetY));
+            if (rx2-rx1>10 && ry2-ry1>10) {
+              this.viewX = [this.canvasXToData(rx1), this.canvasXToData(rx2)];
+              this.viewY = [this.canvasYToData(ry2), this.canvasYToData(ry1)];
+              this.render();
+            }
+          }
+          this.isPanning = false; this.isRubber = false; this.start = null;
+        });
+        this.canvas.addEventListener('dblclick', () => { this.resetView(); this.render(); });
+      }
+
+      showTooltip(px, py, html) {
+        const tip = this.tooltipEl; tip.style.display = 'block'; tip.innerHTML = html;
+        const wr = this.wrap.getBoundingClientRect();
+        let tx = px + 8, ty = py + 8;
+        const tw = tip.offsetWidth || 200, th = tip.offsetHeight || 40;
+        if (tx + tw > wr.width - 8) tx = px - tw - 8;
+        if (ty + th > wr.height - 8) ty = py - th - 8;
+        tip.style.transform = `translate(${tx}px, ${ty}px)`;
+      }
+      hideTooltip() { this.tooltipEl.style.display = 'none'; }
+
+      render(mouseX=null, mouseY=null) {
+        this.ctx = fitCanvasToContainer(this.canvas);
+        const cr = this.chartRect();
+        this.ctx.clearRect(0, 0, cr.width, cr.height);
+        this.drawAxes();
+        this.drawContent(this.ctx, this, mouseX, mouseY);
+        if (mouseX != null) this.drawCrosshair(mouseX);
+      }
+
+      drawAxes() {
+        const ctx = this.ctx, cr = this.chartRect();
+        // Y grid
+        ctx.strokeStyle = cssVar('--grid'); ctx.lineWidth = 1;
+        const yTicks = niceTicks(this.viewY[0], this.viewY[1], 6);
+        ctx.beginPath();
+        yTicks.forEach(t => { const py = this.dataYToCanvas(t); ctx.moveTo(cr.left, py); ctx.lineTo(cr.right, py); });
+        ctx.stroke();
+        // Axes
+        ctx.strokeStyle = cssVar('--muted'); ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(cr.left, cr.bottom); ctx.lineTo(cr.right, cr.bottom);
+        ctx.moveTo(cr.left, cr.top); ctx.lineTo(cr.left, cr.bottom); ctx.stroke();
+        // Y labels
+        ctx.fillStyle = cssVar('--muted'); ctx.font = '11px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+        ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        yTicks.forEach(t => { ctx.fillText(this.yLabelFormatter(t), cr.left - 8, this.dataYToCanvas(t)); });
+        // X labels
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        const xTicks = niceTicks(this.viewX[0], this.viewX[1], 8);
+        xTicks.forEach(t => { const px = this.dataXToCanvas(t); if (px >= cr.left && px <= cr.right) ctx.fillText(this.xLabelFormatter(t), px, cr.bottom + 6); });
+      }
+
+      drawCrosshair(mouseX) {
+        const ctx = this.ctx, cr = this.chartRect();
+        const x = Math.max(cr.left, Math.min(mouseX, cr.right));
+        ctx.strokeStyle = cssVar('--primary'); ctx.lineWidth = 1;
+        ctx.setLineDash([4,3]); ctx.beginPath(); ctx.moveTo(x, cr.top); ctx.lineTo(x, cr.bottom); ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
+
+    // ================================================================
+    //  MULTI-LINE CHART FACTORY
+    // ================================================================
+    function createMultiLineChart(containerId, series, {xLabel, yLabel, xFormatter, yFormatter, markerPoint, bandSeries, hLines} = {}) {
+      // series: [{label, x, y, color, yLow?, yHigh?}]
+      const container = document.getElementById(containerId);
+      if (!container) return null;
+
+      const wrap = document.createElement('div'); wrap.className = 'chart-wrap';
+      const canvas = document.createElement('canvas'); canvas.setAttribute('role', 'img');
+      const tip = document.createElement('div'); tip.className = 'tooltip';
+      const rb = document.createElement('div'); rb.className = 'rubberband';
+      wrap.append(canvas, tip, rb);
+      container.appendChild(wrap);
+
+      const chart = new InteractiveCartesianChart({
+        wrap, canvas, tooltipEl: tip, rubberEl: rb,
+        xLabelFormatter: xFormatter || (v => String(Math.round(v))),
+        yLabelFormatter: yFormatter || (v => fmtNum(v, 1)),
+        getSeriesData: () => series,
+        drawContent: (ctx, ch, mouseX, mouseY) => {
+          const cr = ch.chartRect();
+          // Draw bands first (behind lines)
+          for (const s of series) {
+            if (s.yLow && s.yHigh) {
+              ctx.fillStyle = (s.color || CORP_COLORS[0]) + '20';
+              ctx.beginPath();
+              for (let i = 0; i < s.x.length; i++) {
+                const px = ch.dataXToCanvas(s.x[i]), py = ch.dataYToCanvas(s.yHigh[i]);
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+              }
+              for (let i = s.x.length - 1; i >= 0; i--) {
+                ctx.lineTo(ch.dataXToCanvas(s.x[i]), ch.dataYToCanvas(s.yLow[i]));
+              }
+              ctx.closePath(); ctx.fill();
+            }
+          }
+          // Lines
+          for (const s of series) {
+            ctx.strokeStyle = s.color || CORP_COLORS[0]; ctx.lineWidth = 2;
+            ctx.beginPath();
+            let started = false;
+            for (let i = 0; i < s.x.length; i++) {
+              if (s.y[i] == null) { started = false; continue; }
+              const px = ch.dataXToCanvas(s.x[i]), py = ch.dataYToCanvas(s.y[i]);
+              if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+            // Points
+            ctx.fillStyle = s.color || CORP_COLORS[0];
+            for (let i = 0; i < s.x.length; i++) {
+              if (s.y[i] == null) continue;
+              const px = ch.dataXToCanvas(s.x[i]), py = ch.dataYToCanvas(s.y[i]);
+              if (px >= cr.left && px <= cr.right && py >= cr.top && py <= cr.bottom) {
+                ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI*2); ctx.fill();
+              }
+            }
+          }
+          // Optimal marker
+          if (markerPoint) {
+            const mpx = ch.dataXToCanvas(markerPoint.x), mpy = ch.dataYToCanvas(markerPoint.y);
+            if (mpx >= cr.left && mpx <= cr.right && mpy >= cr.top && mpy <= cr.bottom) {
+              ctx.strokeStyle = '#F73E5E'; ctx.lineWidth = 2.5;
+              ctx.beginPath(); ctx.arc(mpx, mpy, 8, 0, Math.PI*2); ctx.stroke();
+              ctx.fillStyle = '#F73E5E'; ctx.font = 'bold 11px system-ui';
+              ctx.textAlign = 'left'; ctx.fillText('Optimum', mpx + 12, mpy - 4);
+            }
+          }
+          // Horizontal reference lines
+          if (hLines && hLines.length) {
+            for (const hl of hLines) {
+              const py = ch.dataYToCanvas(hl.y);
+              if (py >= cr.top && py <= cr.bottom) {
+                ctx.save();
+                ctx.strokeStyle = hl.color || '#888';
+                ctx.lineWidth = 1.2;
+                ctx.setLineDash(hl.dash || [6, 4]);
+                ctx.globalAlpha = 0.85;
+                ctx.beginPath();
+                ctx.moveTo(cr.left, py);
+                ctx.lineTo(cr.right, py);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.fillStyle = hl.color || '#888';
+                ctx.font = '10px system-ui';
+                ctx.textAlign = 'right';
+                ctx.fillText(hl.label + ' (' + fmtNum(hl.y, 1) + ' %)', cr.right - 4, py - 4);
+                ctx.restore();
+              }
+            }
+          }
+          // Tooltip – show all series at nearest x position
+          if (mouseX != null && mouseY != null) {
+            const xData = ch.canvasXToData(mouseX);
+            // Find nearest x index per series
+            let bestXDist = Infinity, bestXVal = null;
+            for (const s of series) {
+              for (let i = 0; i < s.x.length; i++) {
+                const d = Math.abs(s.x[i] - xData);
+                if (d < bestXDist) { bestXDist = d; bestXVal = s.x[i]; }
+              }
+            }
+            if (bestXVal != null) {
+              const pxCross = ch.dataXToCanvas(bestXVal);
+              if (pxCross >= cr.left - 20 && pxCross <= cr.right + 20) {
+                let html = `<b>${xLabel || 'X'}: ${ch.xLabelFormatter(bestXVal)}</b><br>`;
+                let anyHit = false;
+                for (const s of series) {
+                  // Find closest index to bestXVal in this series
+                  let ci = -1, cd = Infinity;
+                  for (let i = 0; i < s.x.length; i++) {
+                    const d = Math.abs(s.x[i] - bestXVal);
+                    if (d < cd) { cd = d; ci = i; }
+                  }
+                  if (ci >= 0 && cd < bestXDist * 1.5 + 0.01 && s.y[ci] != null) {
+                    const py = ch.dataYToCanvas(s.y[ci]);
+                    ctx.fillStyle = s.color || CORP_COLORS[0];
+                    ctx.beginPath(); ctx.arc(pxCross, py, 5, 0, Math.PI*2); ctx.fill();
+                    html += `<span style="color:${s.color || CORP_COLORS[0]}">\u25A0</span> ${s.label}: <b>${ch.yLabelFormatter(s.y[ci])}</b><br>`;
+                    anyHit = true;
+                  }
+                }
+                if (anyHit) ch.showTooltip(mouseX, mouseY, html);
+                else ch.hideTooltip();
+              } else ch.hideTooltip();
+            } else ch.hideTooltip();
+          } else ch.hideTooltip();
+        }
+      });
+
+      // Legend
+      const leg = document.createElement('div'); leg.className = 'legend';
+      for (const s of series) {
+        const item = document.createElement('span'); item.className = 'legend-item';
+        item.innerHTML = `<span class="legend-box" style="background:${s.color || CORP_COLORS[0]}"></span> ${s.label}`;
+        leg.appendChild(item);
+      }
+      if (hLines && hLines.length) {
+        for (const hl of hLines) {
+          const item = document.createElement('span'); item.className = 'legend-item';
+          item.innerHTML = `<span class="legend-box" style="background:${hl.color || '#888'};height:2px;margin-top:5px;border-top:2px dashed ${hl.color || '#888'};background:transparent"></span> ${hl.label}`;
+          leg.appendChild(item);
+        }
+      }
+      container.appendChild(leg);
+
+      return { chart, canvas, wrap };
+    }
+
+    // ================================================================
+    //  STACKED BAR CHART
+    // ================================================================
+    function createStackedBarChart(containerId, data) {
+      // data: {years: [{year, positive: [{label, value, color}], negative: [{label, value, color}], cumulative_equity_cf}]}
+      const container = document.getElementById(containerId);
+      if (!container) return null;
+
+      const wrap = document.createElement('div'); wrap.className = 'chart-wrap';
+      const canvas = document.createElement('canvas'); canvas.setAttribute('role', 'img');
+      const tip = document.createElement('div'); tip.className = 'tooltip';
+      const rb = document.createElement('div'); rb.className = 'rubberband';
+      wrap.append(canvas, tip, rb);
+      container.appendChild(wrap);
+
+      // Compute y range
+      let yMin = 0, yMax = 0;
+      for (const yr of data.years) {
+        let posSum = 0, negSum = 0;
+        for (const p of yr.positive) posSum += p.value;
+        for (const n of yr.negative) negSum += n.value; // already negative
+        if (posSum > yMax) yMax = posSum;
+        if (negSum < yMin) yMin = negSum;
+        if (yr.cumulative_equity_cf != null) {
+          if (yr.cumulative_equity_cf > yMax) yMax = yr.cumulative_equity_cf;
+          if (yr.cumulative_equity_cf < yMin) yMin = yr.cumulative_equity_cf;
+        }
+      }
+      const yPad = (yMax - yMin) * 0.1;
+
+      const chart = new InteractiveCartesianChart({
+        wrap, canvas, tooltipEl: tip, rubberEl: rb,
+        margin: {top: 20, right: 60, bottom: 40, left: 70},
+        xLabelFormatter: v => String(Math.round(v)),
+        yLabelFormatter: v => {
+          if (Math.abs(v) >= 1e6) return (v/1e6).toFixed(1) + ' M';
+          if (Math.abs(v) >= 1e3) return (v/1e3).toFixed(0) + ' k';
+          return String(Math.round(v));
+        },
+        getSeriesData: () => {
+          // Return dummy for view calculation
+          const xs = data.years.map(y => y.year);
+          return [{x: xs, y: data.years.map(() => yMax), label: 'dummy'}];
+        },
+        drawContent: (ctx, ch, mouseX, mouseY) => {
+          // Override view to include negative
+          if (ch.viewY[0] > yMin - yPad) ch.viewY[0] = yMin - yPad;
+          if (ch.viewY[1] < yMax + yPad) ch.viewY[1] = yMax + yPad;
+
+          const cr = ch.chartRect();
+          const N = data.years.length;
+          if (N === 0) return;
+          const barSpace = (cr.right - cr.left) / N;
+          const barW = Math.max(4, barSpace * 0.65);
+          const y0px = ch.dataYToCanvas(0);
+          let hoveredYear = null;
+
+          for (let i = 0; i < N; i++) {
+            const yr = data.years[i];
+            const xCenter = cr.left + (i + 0.5) * barSpace;
+            const xLeft = xCenter - barW / 2;
+
+            // Positive stack (upward from 0)
+            let posY = y0px;
+            for (const p of yr.positive) {
+              if (p.value <= 0) continue;
+              const h = y0px - ch.dataYToCanvas(p.value);
+              ctx.fillStyle = p.color;
+              ctx.fillRect(xLeft, posY - h, barW, h);
+              posY -= h;
+            }
+
+            // Negative stack (downward from 0)
+            let negY = y0px;
+            for (const n of yr.negative) {
+              if (n.value >= 0) continue;
+              const h = ch.dataYToCanvas(n.value) - y0px;
+              ctx.fillStyle = n.color;
+              ctx.fillRect(xLeft, negY, barW, h);
+              negY += h;
+            }
+
+            // Hover detection
+            if (mouseX != null && mouseX >= xLeft && mouseX <= xLeft + barW) {
+              hoveredYear = i;
+              ctx.strokeStyle = cssVar('--fg'); ctx.lineWidth = 1.5;
+              // Highlight entire column
+              const topY = Math.min(posY, y0px);
+              const botY = Math.max(negY, y0px);
+              ctx.strokeRect(xLeft - 1, topY, barW + 2, botY - topY);
+            }
+          }
+
+          // Zero line
+          ctx.strokeStyle = cssVar('--muted'); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(cr.left, y0px); ctx.lineTo(cr.right, y0px); ctx.stroke();
+
+          // Cumulative equity CF line
+          ctx.strokeStyle = '#F73E5E'; ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          let lineStarted = false;
+          for (let i = 0; i < N; i++) {
+            const yr = data.years[i];
+            if (yr.cumulative_equity_cf == null) continue;
+            const px = cr.left + (i + 0.5) * barSpace;
+            const py = ch.dataYToCanvas(yr.cumulative_equity_cf);
+            if (!lineStarted) { ctx.moveTo(px, py); lineStarted = true; } else ctx.lineTo(px, py);
+          }
+          ctx.stroke();
+
+          // Tooltip
+          if (hoveredYear != null) {
+            const yr = data.years[hoveredYear];
+            let html = `<b>${yr.year}</b><br>`;
+            for (const p of yr.positive) { if (p.value > 0) html += `<span style="color:${p.color}">\u25A0</span> ${p.label}: <b>${fmtEur(p.value)}</b><br>`; }
+            for (const n of yr.negative) { if (n.value < 0) html += `<span style="color:${n.color}">\u25A0</span> ${n.label}: <b>${fmtEur(n.value)}</b><br>`; }
+            html += `<b>Equity CF: ${fmtEur(yr.equity_cf)}</b><br>`;
+            html += `Kumuliert: <b>${fmtEur(yr.cumulative_equity_cf)}</b>`;
+            ch.showTooltip(mouseX, mouseY, html);
+          } else if (mouseX != null) { ch.hideTooltip(); }
+        }
+      });
+
+      // Fix initial view
+      chart.viewY = [yMin - yPad, yMax + yPad];
+      chart.render();
+
+      // Legend
+      const leg = document.createElement('div'); leg.className = 'legend';
+      const allItems = [...(data.years[0]?.positive || []), ...(data.years[0]?.negative || [])];
+      for (const item of allItems) {
+        if (Math.abs(item.value) < 0.01 && data.years.every(y => {
+          const all = [...y.positive, ...y.negative];
+          const found = all.find(a => a.label === item.label);
+          return !found || Math.abs(found.value) < 0.01;
+        })) continue;
+        const el = document.createElement('span'); el.className = 'legend-item';
+        el.innerHTML = `<span class="legend-box" style="background:${item.color}"></span> ${item.label}`;
+        leg.appendChild(el);
+      }
+      // Cumulative line
+      const cumEl = document.createElement('span'); cumEl.className = 'legend-item';
+      cumEl.innerHTML = `<span class="legend-box" style="background:#F73E5E;height:3px;border-radius:0"></span> Kum. Equity CF`;
+      leg.appendChild(cumEl);
+      container.appendChild(leg);
+
+      return { chart, canvas, wrap };
+    }
+
+    // ================================================================
+    //  TAB SYSTEM
+    // ================================================================
+    const D = REPORT_DATA;
+    const TAB_DEFS = [];
+    const allCharts = [];
+ const allMaps = [];
+
+    // Build horizontal reference lines for IRR charts
+    const irrHLines = [];
+    if (D.baseline_market_irr != null) {
+      irrHLines.push({y: D.baseline_market_irr, label: 'Direktvermarktung', color: '#888888', dash: [6, 4]});
+    }
+    if (D.equity_irr_target != null) {
+      irrHLines.push({y: D.equity_irr_target, label: 'Min. IRR', color: '#E74C3C', dash: [8, 3, 2, 3]});
+    }
+
+    function addTab(id, title, condition, buildFn) {
+      if (!condition) return;
+      TAB_DEFS.push({id, title, buildFn});
+    }
+
+    function initTabs() {
+      const tablist = document.getElementById('tablist');
+      const panels = document.getElementById('panels');
+
+      TAB_DEFS.forEach((def, idx) => {
+        // Tab button
+        const btn = document.createElement('button');
+        btn.className = 'tab'; btn.setAttribute('role', 'tab');
+        btn.setAttribute('aria-selected', idx === 0 ? 'true' : 'false');
+        btn.setAttribute('aria-controls', 'panel-' + def.id);
+        btn.id = 'tab-' + def.id;
+        btn.textContent = def.title;
+        tablist.appendChild(btn);
+
+        // Panel
+        const panel = document.createElement('section');
+        panel.className = 'tabpanel'; panel.setAttribute('role', 'tabpanel');
+        panel.id = 'panel-' + def.id;
+        panel.setAttribute('aria-labelledby', 'tab-' + def.id);
+        if (idx !== 0) panel.hidden = true;
+        panels.appendChild(panel);
+
+        // Build content
+        def.buildFn(panel);
+
+        // Tab click
+        btn.addEventListener('click', () => {
+          $$('.tab', tablist).forEach(t => t.setAttribute('aria-selected', String(t === btn)));
+          $$('.tabpanel', panels).forEach(p => p.hidden = (p !== panel));
+          setTimeout(() => {
+      allCharts.forEach(c => c.chart.render());
+      allMaps.forEach(m => m.invalidateSize && m.invalidateSize());
+    }, 0);
+        });
+      });
+    }
+
+    // ================================================================
+    //  TAB 1: Szenario-Uebersicht
+    // ================================================================
+    addTab('overview', 'Szenario-Übersicht', true, (panel) => {
+      panel.innerHTML = `<h2>Szenario-Übersicht (Base Case)</h2>`;
+
+      // Two columns: params + map
+      const row = document.createElement('div'); row.className = 'two-col';
+
+      // Params table
+      const paramDiv = document.createElement('div');
+      const tbl = document.createElement('table'); tbl.className = 'param-table';
+      const params = [
+        ['Szenario', D.scenario_name],
+        ['Input-Datei', D.scenario_json_filename],
+        ['Erstellungsdatum', D.creation_date],
+        ['Inbetriebnahme', D.commissioning_year],
+        ['PV-Leistung', fmtNum(D.pv_peak_kwp, 0) + ' kWp'],
+        ['Azimut / Neigung', fmtNum(D.pv_azimuth, 0) + '\u00b0 / ' + fmtNum(D.pv_tilt, 0) + '\u00b0'],
+        ['PV-Degradation', fmtNum(D.pv_degradation_pct, 1) + ' %/a'],
+        ['BESS RTE', fmtNum(D.bess_rte_pct, 0) + ' %'],
+        ['Netzanschluss', fmtNum(D.grid_max_export_kw, 0) + ' kW'],
+        ['Betriebsmodus', D.operating_mode === 'green' ? 'Green' : 'Grey'],
+        ['Vermarktung', D.marketing_type],
+        ['Projektlaufzeit', D.lifetime_years + ' Jahre'],
+        ['Fremdkapital', fmtNum(D.leverage_pct, 0) + ' %'],
+        ['Zinssatz', fmtNum(D.interest_rate_pct, 1) + ' %'],
+        ['Kreditlaufzeit', D.loan_tenor_years + ' Jahre'],
+        ['Inflation', fmtNum(D.inflation_rate * 100, 1) + ' %'],
+        ['Standort', fmtNum(D.latitude, 4) + ' N - ' + fmtNum(D.longitude, 4) + 'E'],
+      ];
+      tbl.innerHTML = params.map(([k,v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('');
+      paramDiv.appendChild(tbl);
+      row.appendChild(paramDiv);
+
+      // Map
+      const mapDiv = document.createElement('div');
+      mapDiv.style.display = 'flex'; mapDiv.style.flexDirection = 'column'; mapDiv.style.alignItems = 'stretch'; mapDiv.style.gap = '8px';
+      const mapC = document.createElement('div'); mapC.className = 'map-container'; mapC.id = 'mapContainer';
+      // --- Leaflet: Interaktive OSM-Karte, Marker wird einmal aus Daten gesetzt ---
+      const lat = D.latitude;
+      const lon = D.longitude;
+      const zoom = 12;
+
+      const map = L.map(mapC, {
+        center: [lat, lon],
+        zoom: zoom,
+        zoomControl: true,
+        attributionControl: true,
+        dragging: true,
+        scrollWheelZoom: false,
+        doubleClickZoom: true,
+        boxZoom: true,
+        keyboard: false
+      });
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+      }).addTo(map);
+
+      L.marker([lat, lon], { draggable: false, keyboard: false }).addTo(map);
+
+      mapDiv.appendChild(mapC);
+      // Für Tab-Layout/Hidden Panels: nach Tab-Wechsel Karte neu layouten
+      allMaps.push(map);
+      row.appendChild(mapDiv);
+
+      panel.appendChild(row);
+
+      // Karte nach DOM-Einfügung neu layouten, damit Marker korrekt zentriert wird
+      setTimeout(() => { map.invalidateSize(); map.setView([lat, lon], zoom); }, 100);
+
+      // LLM text
+      const llm = document.createElement('div'); llm.className = 'llm-text';
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_1_overview) + LLM_HINT_HTML;
+      panel.appendChild(llm);
+    });
+
+    // ================================================================
+    //  TAB 2: Eingangszeitreihen
+    // ================================================================
+    addTab('timeseries', 'Eingangszeitreihen', true, (panel) => {
+      panel.innerHTML = `<h2>Eingangszeitreihen</h2>`;
+
+      // Downloads
+      const actions = document.createElement('div'); actions.className = 'actions';
+      const btnPng1 = document.createElement('button'); btnPng1.textContent = 'PV PNG';
+      const btnCsv1 = document.createElement('button'); btnCsv1.textContent = 'PV CSV';
+      const btnPng2 = document.createElement('button'); btnPng2.textContent = 'Preise PNG';
+      const btnCsv2 = document.createElement('button'); btnCsv2.textContent = 'Preise CSV';
+      actions.append(btnPng1, btnCsv1, btnPng2, btnCsv2);
+      panel.appendChild(actions);
+
+      // PV yield chart
+      const pvTitle = document.createElement('h3');
+      pvTitle.textContent = 'Brutto PV-Ertrag nach Wetterjahr';
+      pvTitle.style.fontSize = '14px'; pvTitle.style.marginTop = '12px';
+      panel.appendChild(pvTitle);
+
+      const info_pv = document.createElement('div'); info_pv.className = 'small muted';
+      info_pv.textContent = `Produktionsmodell: ${D.pv_production_model}, Diagrammwerte in GWh`;
+      panel.appendChild(info_pv);
+
+      const pvChartDiv = document.createElement('div'); pvChartDiv.id = 'chart-pv-yield';
+      panel.appendChild(pvChartDiv);
+
+      const pvYears = Object.keys(D.pv_monthly_by_year || {}).sort();
+      const pvSeries = pvYears.map((year, i) => ({
+        label: String(year),
+        x: Array.from({length: 12}, (_, m) => m + 1),
+        y: D.pv_monthly_by_year[year],
+        color: CORP_COLORS[i % CORP_COLORS.length]
+      }));
+
+      if (pvSeries.length > 0) {
+        const r = createMultiLineChart('chart-pv-yield', pvSeries, {
+          xLabel: 'Monat', yLabel: 'GWh',
+          xFormatter: v => MONTHS[Math.round(v) - 1] || '',
+          yFormatter: v => fmtNum(v, 3)
+        });
+        if (r) {
+          allCharts.push(r);
+          btnPng1.onclick = () => downloadCanvasPNG(r.canvas, D.scenario_name + '_pv_ertrag.png');
+          btnCsv1.onclick = () => {
+            const h = ['Monat', ...pvYears.map(y => 'Wetterjahr_' + y)];
+            const rows = MONTHS.map((m, mi) => [m, ...pvYears.map(y => (D.pv_monthly_by_year[y][mi] || 0).toFixed(4).replace('.', ','))]);
+            downloadFile(D.scenario_name + '_pv_ertrag.csv', 'text/csv', arrayToCSV(h, rows));
+          };
+        }
+      }
+
+      // Price chart
+      const priceTitle = document.createElement('h3');
+      priceTitle.textContent = 'Strompreisszenarien (Jahresmittel)';
+      priceTitle.style.fontSize = '14px'; priceTitle.style.marginTop = '16px';
+      panel.appendChild(priceTitle);
+
+      const info = document.createElement('div'); info.className = 'small muted';
+      info.textContent = `Preisdatenquelle: ${D.price_origin}, Diagrammwerte in EUR/MWh`;
+      panel.appendChild(info);
+
+      const priceChartDiv = document.createElement('div'); priceChartDiv.id = 'chart-prices';
+      panel.appendChild(priceChartDiv);
+
+      const priceSeries = (D.price_scenario_annual_means || []).map((sc, i) => ({
+        label: sc.name,
+        x: sc.means.map((_, yi) => D.commissioning_year + yi),
+        y: sc.means,
+        color: CORP_COLORS[i % CORP_COLORS.length]
+      }));
+
+      if (priceSeries.length > 0) {
+        const r2 = createMultiLineChart('chart-prices', priceSeries, {
+          xLabel: 'Jahr', yLabel: 'EUR/MWh',
+          xFormatter: v => String(Math.round(v)),
+          yFormatter: v => fmtNum(v, 1)
+        });
+        if (r2) {
+          allCharts.push(r2);
+          btnPng2.onclick = () => downloadCanvasPNG(r2.canvas, D.scenario_name + '_preise.png');
+          btnCsv2.onclick = () => {
+            const scNames = priceSeries.map(s => s.label);
+            const h = ['Jahr', ...scNames.map(n => n + '_EUR_MWh')];
+            const nYears = priceSeries[0].x.length;
+            const rows = [];
+            for (let y = 0; y < nYears; y++) {
+              rows.push([priceSeries[0].x[y], ...priceSeries.map(s => (s.y[y] || 0).toFixed(2).replace('.', ','))]);
+            }
+            downloadFile(D.scenario_name + '_preise.csv', 'text/csv', arrayToCSV(h, rows));
+          };
+        }
+      }
+
+      // LLM text
+      const llm = document.createElement('div'); llm.className = 'llm-text';
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_2_timeseries) + LLM_HINT_HTML;
+      panel.appendChild(llm);
+    });
+
+    // ================================================================
+    //  TAB 3: Grid-Search-Ergebnis
+    // ================================================================
+    addTab('gridsearch', 'Grid-Search', D.grid_search_points && D.grid_search_points.length > 1, (panel) => {
+      panel.innerHTML = `<h2>BESS-Dimensionierung (Grid Search)</h2>`;
+
+      const actions = document.createElement('div'); actions.className = 'actions';
+      const btnPng = document.createElement('button'); btnPng.textContent = 'PNG';
+      const btnCsv = document.createElement('button'); btnCsv.textContent = 'CSV';
+      actions.append(btnPng, btnCsv);
+      panel.appendChild(actions);
+
+      // KPIs
+      const kpiGrid = document.createElement('div'); kpiGrid.className = 'kpi-grid';
+      kpiGrid.innerHTML = `
+        <div class="kpi-card"><div class="label">Opt. BESS-Scale in rel. zu PV</div><div class="value">${fmtNum(D.optimal_scale_pct,0)} %</div></div>
+        <div class="kpi-card"><div class="label">Opt. E/P-Ratio</div><div class="value">${fmtNum(D.optimal_ep_ratio,1)} h</div></div>
+        <div class="kpi-card"><div class="label">BESS-Leistung</div><div class="value">${fmtNum(D.optimal_bess_power_kw,0)} kW</div></div>
+        <div class="kpi-card"><div class="label">BESS-Kapazität</div><div class="value">${fmtNum(D.optimal_bess_capacity_kwh,0)} kWh</div></div>
+      `;
+      panel.appendChild(kpiGrid);
+
+      const chartDiv = document.createElement('div'); chartDiv.id = 'chart-gridsearch';
+      panel.appendChild(chartDiv);
+
+      // Group by E/P ratio
+      const byEP = {};
+      for (const pt of D.grid_search_points) {
+        const key = pt.ep_ratio;
+        if (!byEP[key]) byEP[key] = [];
+        byEP[key].push(pt);
+      }
+
+      const epKeys = Object.keys(byEP).sort((a,b) => Number(a) - Number(b));
+      const gsSeries = epKeys.map((ep, i) => {
+        const pts = byEP[ep].sort((a,b) => a.scale_pct - b.scale_pct);
+        return {
+          label: 'E/P = ' + ep + ' h',
+          x: pts.map(p => p.scale_pct),
+          y: pts.map(p => p.equity_irr),
+          color: CORP_COLORS[i % CORP_COLORS.length]
+        };
+      });
+
+      let marker = null;
+      const optPt = D.grid_search_points.find(p => p.is_optimal);
+      if (optPt && optPt.equity_irr != null) {
+        marker = {x: optPt.scale_pct, y: optPt.equity_irr};
+      }
+
+      const r = createMultiLineChart('chart-gridsearch', gsSeries, {
+        xLabel: 'BESS-Scale', yLabel: 'Equity IRR',
+        xFormatter: v => fmtNum(v, 0) + ' %',
+        yFormatter: v => fmtNum(v, 2) + ' %',
+        markerPoint: marker,
+        hLines: irrHLines
+      });
+      if (r) {
+        allCharts.push(r);
+        btnPng.onclick = () => downloadCanvasPNG(r.canvas, D.scenario_name + '_gridsearch.png');
+        btnCsv.onclick = () => {
+          const h = ['Scale_%', 'EP_Ratio_h', 'BESS_kW', 'BESS_kWh', 'CAPEX', 'OPEX', 'Revenue_Y1', 'Equity_IRR_%', 'Optimal'];
+          const rows = D.grid_search_points.map(p => [
+            p.scale_pct, p.ep_ratio, p.bess_power_kw, p.bess_capacity_kwh,
+            (p.capex_total||0).toFixed(0), (p.opex_base||0).toFixed(0),
+            (p.revenue_year1||0).toFixed(0), (p.equity_irr||0).toFixed(2).replace('.',','),
+            p.is_optimal ? '1' : '0'
+          ]);
+          downloadFile(D.scenario_name + '_gridsearch.csv', 'text/csv', arrayToCSV(h, rows));
+        };
+      }
+
+      // LLM text
+      const llm = document.createElement('div'); llm.className = 'llm-text';
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_3_gridsearch) + LLM_HINT_HTML;
+      panel.appendChild(llm);
+    });
+
+    // ================================================================
+    //  TAB 4: EEG-Sensitivitaet
+    // ================================================================
+    addTab('eeg', 'EEG-Analyse', D.eeg_sensitivity != null, (panel) => {
+      panel.innerHTML = `<h2>EEG-Sensitivitätsanalyse</h2>`;
+
+      const actions = document.createElement('div'); actions.className = 'actions';
+      const btnPng = document.createElement('button'); btnPng.textContent = 'PNG';
+      const btnCsv = document.createElement('button'); btnCsv.textContent = 'CSV';
+      actions.append(btnPng, btnCsv);
+      panel.appendChild(actions);
+
+      const chartDiv = document.createElement('div'); chartDiv.id = 'chart-eeg';
+      panel.appendChild(chartDiv);
+
+      const pts = D.eeg_sensitivity || [];
+      const sorted = [...pts].sort((a,b) => (a.floor_price_eur_per_kwh || 0) - (b.floor_price_eur_per_kwh || 0));
+
+      const series = [{
+        label: 'Equity IRR (Median)',
+        x: sorted.map(p => (p.floor_price_eur_per_kwh || 0) * 100),
+        y: sorted.map(p => p.irr_median != null ? p.irr_median : p.irr_mean),
+        yLow: sorted.map(p => p.irr_p10 != null ? p.irr_p10 : (p.irr_mean || 0) - (p.irr_std || 0)),
+        yHigh: sorted.map(p => p.irr_p90 != null ? p.irr_p90 : (p.irr_mean || 0) + (p.irr_std || 0)),
+        color: CORP_COLORS[0]
+      }];
+
+      const r = createMultiLineChart('chart-eeg', series, {
+        xLabel: 'Floor-Preis', yLabel: 'Equity IRR',
+        xFormatter: v => fmtNum(v, 2) + ' ct/kWh',
+        yFormatter: v => fmtNum(v, 2) + ' %',
+        hLines: irrHLines
+      });
+      if (r) {
+        allCharts.push(r);
+        btnPng.onclick = () => downloadCanvasPNG(r.canvas, D.scenario_name + '_eeg.png');
+        btnCsv.onclick = () => {
+          const h = ['Floor_ct_kWh', 'IRR_Median_%', 'IRR_P10_%', 'IRR_P90_%', 'IRR_Mean_%', 'IRR_Std_%'];
+          const rows = sorted.map(p => [
+            ((p.floor_price_eur_per_kwh||0)*100).toFixed(2).replace('.',','),
+            (p.irr_median!=null?p.irr_median:p.irr_mean||0).toFixed(2).replace('.',','),
+            (p.irr_p10!=null?p.irr_p10:0).toFixed(2).replace('.',','),
+            (p.irr_p90!=null?p.irr_p90:0).toFixed(2).replace('.',','),
+            (p.irr_mean||0).toFixed(2).replace('.',','),
+            (p.irr_std||0).toFixed(2).replace('.',',')
+          ]);
+          downloadFile(D.scenario_name + '_eeg_sensitivity.csv', 'text/csv', arrayToCSV(h, rows));
+        };
+      }
+
+      const llm = document.createElement('div'); llm.className = 'llm-text';
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_4_eeg) + LLM_HINT_HTML;
+      panel.appendChild(llm);
+    });
+
+    // ================================================================
+    //  TAB 5: PPA-Collar-Analyse
+    // ================================================================
+    addTab('collar', 'PPA-Collar', D.ppa_collar != null, (panel) => {
+      panel.innerHTML = `<h2>PPA-Collar-Analyse</h2>`;
+
+      const actions = document.createElement('div'); actions.className = 'actions';
+      const btnPng = document.createElement('button'); btnPng.textContent = 'PNG';
+      const btnCsv = document.createElement('button'); btnCsv.textContent = 'CSV';
+      actions.append(btnPng, btnCsv);
+      panel.appendChild(actions);
+
+      const chartDiv = document.createElement('div'); chartDiv.id = 'chart-collar';
+      panel.appendChild(chartDiv);
+
+      // Group by cap spread
+      const pts = D.ppa_collar || [];
+      const bySpread = {};
+      for (const p of pts) {
+        const spread = ((p.cap_price_eur_per_kwh || 0) - (p.floor_price_eur_per_kwh || 0)) * 100;
+        const key = spread.toFixed(1);
+        if (!bySpread[key]) bySpread[key] = [];
+        bySpread[key].push(p);
+      }
+
+      const spreadKeys = Object.keys(bySpread).sort((a,b) => Number(a) - Number(b));
+      const collarSeries = spreadKeys.map((sp, i) => {
+        const group = bySpread[sp].sort((a,b) => (a.floor_price_eur_per_kwh||0) - (b.floor_price_eur_per_kwh||0));
+        return {
+          label: 'Spread ' + sp + ' ct/kWh',
+          x: group.map(p => (p.floor_price_eur_per_kwh || 0) * 100),
+          y: group.map(p => p.irr_median),
+          color: CORP_COLORS[i % CORP_COLORS.length]
+        };
+      });
+
+      const r = createMultiLineChart('chart-collar', collarSeries, {
+        xLabel: 'Floor-Preis', yLabel: 'Equity IRR',
+        xFormatter: v => fmtNum(v, 2) + ' ct/kWh',
+        yFormatter: v => fmtNum(v, 2) + ' %',
+        hLines: irrHLines
+      });
+      if (r) {
+        allCharts.push(r);
+        btnPng.onclick = () => downloadCanvasPNG(r.canvas, D.scenario_name + '_collar.png');
+        btnCsv.onclick = () => {
+          const h = ['Floor_ct_kWh', 'Cap_ct_kWh', 'Spread_ct_kWh', 'IRR_Mean_%'];
+          const rows = pts.map(p => [
+            ((p.floor_price_eur_per_kwh||0)*100).toFixed(2).replace('.',','),
+            ((p.cap_price_eur_per_kwh||0)*100).toFixed(2).replace('.',','),
+            (((p.cap_price_eur_per_kwh||0)-(p.floor_price_eur_per_kwh||0))*100).toFixed(2).replace('.',','),
+            (p.irr_median||0).toFixed(2).replace('.',',')
+          ]);
+          downloadFile(D.scenario_name + '_ppa_collar.csv', 'text/csv', arrayToCSV(h, rows));
+        };
+      }
+
+      const llm = document.createElement('div'); llm.className = 'llm-text';
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_5_collar) + LLM_HINT_HTML;
+      panel.appendChild(llm);
+    });
+
+    // ================================================================
+    //  TAB 6: PPA-Baseload-Analyse
+    // ================================================================
+    addTab('baseload', 'PPA-Baseload', D.ppa_baseload != null, (panel) => {
+      panel.innerHTML = `<h2>PPA-Baseload-Analyse</h2>`;
+
+      const actions = document.createElement('div'); actions.className = 'actions';
+      const btnPng = document.createElement('button'); btnPng.textContent = 'PNG';
+      const btnCsv = document.createElement('button'); btnCsv.textContent = 'CSV';
+      actions.append(btnPng, btnCsv);
+      panel.appendChild(actions);
+
+      const chartDiv = document.createElement('div'); chartDiv.id = 'chart-baseload';
+      panel.appendChild(chartDiv);
+
+      // Group by baseload MW
+      const pts = D.ppa_baseload || [];
+      const byBL = {};
+      for (const p of pts) {
+        const key = String(p.baseload_mw || 0);
+        if (!byBL[key]) byBL[key] = [];
+        byBL[key].push(p);
+      }
+
+      const blKeys = Object.keys(byBL).sort((a,b) => Number(a) - Number(b));
+      const blSeries = blKeys.map((bl, i) => {
+        const group = byBL[bl].sort((a,b) => (a.ppa_price_eur_per_kwh||0) - (b.ppa_price_eur_per_kwh||0));
+        return {
+          label: 'Baseload ' + bl + ' MW',
+          x: group.map(p => (p.ppa_price_eur_per_kwh || 0) * 100),
+          y: group.map(p => p.irr_median),
+          color: CORP_COLORS[i % CORP_COLORS.length]
+        };
+      });
+
+      const r = createMultiLineChart('chart-baseload', blSeries, {
+        xLabel: 'PPA-Preis', yLabel: 'Equity IRR',
+        xFormatter: v => fmtNum(v, 2) + ' ct/kWh',
+        yFormatter: v => fmtNum(v, 2) + ' %',
+        hLines: irrHLines
+      });
+      if (r) {
+        allCharts.push(r);
+        btnPng.onclick = () => downloadCanvasPNG(r.canvas, D.scenario_name + '_baseload.png');
+        btnCsv.onclick = () => {
+          const h = ['Baseload_MW', 'PPA_Preis_ct_kWh', 'IRR_Mean_%'];
+          const rows = pts.map(p => [
+            (p.baseload_mw||0), ((p.ppa_price_eur_per_kwh||0)*100).toFixed(2).replace('.',','),
+            (p.irr_median||0).toFixed(2).replace('.',',')
+          ]);
+          downloadFile(D.scenario_name + '_ppa_baseload.csv', 'text/csv', arrayToCSV(h, rows));
+        };
+      }
+
+      const llm = document.createElement('div'); llm.className = 'llm-text';
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_6_baseload) + LLM_HINT_HTML;
+      panel.appendChild(llm);
+    });
+
+    // ================================================================
+    //  TAB 7: Cashflow-Analyse
+    // ================================================================
+    addTab('cashflow', 'Cashflow-Analyse', true, (panel) => {
+      panel.innerHTML = `<h2>Cashflow-Analyse des Base Cases</h2>`;
+
+      // KPI cards
+      const m = D.metrics || {};
+      const kpiGrid = document.createElement('div'); kpiGrid.className = 'kpi-grid';
+      kpiGrid.innerHTML = `
+        <div class="kpi-card"><div class="label">Equity IRR</div><div class="value">${fmtPct(m.equity_irr)}</div></div>
+        <div class="kpi-card"><div class="label">Project IRR</div><div class="value">${fmtPct(m.project_irr)}</div></div>
+        <div class="kpi-card"><div class="label">NPV</div><div class="value">${fmtEur(m.npv)}</div></div>
+        <div class="kpi-card"><div class="label">Capture Rate</div><div class="value">${m.capture_rate != null ? fmtNum(m.capture_rate, 2) + ' ct/kWh' : 'n/a'}</div></div>
+        <div class="kpi-card"><div class="label">Avg DSCR</div><div class="value">${fmtNum(m.dscr_avg, 2)}</div></div>
+        <div class="kpi-card"><div class="label">LCOE</div><div class="value">${m.lcoe != null ? fmtNum(m.lcoe, 3) + ' ct/kWh' : 'n/a'}</div></div>
+        <div class="kpi-card"><div class="label">Payback</div><div class="value">${m.payback_year != null ? m.payback_year + ' Jahre' : 'n/a'}</div></div>
+      `;
+      panel.appendChild(kpiGrid);
+
+      const actions = document.createElement('div'); actions.className = 'actions';
+      const btnPng = document.createElement('button'); btnPng.textContent = 'PNG';
+      const btnCsv = document.createElement('button'); btnCsv.textContent = 'CSV';
+      actions.append(btnPng, btnCsv);
+      panel.appendChild(actions);
+
+      const chartDiv = document.createElement('div'); chartDiv.id = 'chart-cashflow';
+      panel.appendChild(chartDiv);
+
+      // Build stacked bar data
+      const cfYears = D.cashflow_years || [];
+      const barData = { years: cfYears.map(yr => ({
+        year: yr.year,
+        equity_cf: yr.equity_cf || 0,
+        cumulative_equity_cf: yr.cumulative_equity_cf || 0,
+        positive: [
+          {label: 'Revenue PV', value: yr.revenue_pv || 0, color: '#FF8200'},
+          {label: 'Revenue BESS Green', value: yr.revenue_bess_green || 0, color: '#00BDDC'},
+          {label: 'Revenue BESS Grey', value: yr.revenue_bess_grey || 0, color: '#006EB2'},
+        ],
+        negative: [
+          {label: 'CAPEX', value: yr.capex || 0, color: '#00467A'},
+          {label: 'OPEX', value: yr.opex || 0, color: '#A51BA7'},
+          {label: 'Debt Service', value: yr.debt_service || 0, color: '#F73E5E'},
+          {label: 'Steuern', value: yr.tax_total || 0, color: '#94a3b8'},
+          {label: 'Grid Import', value: yr.grid_import_cost || 0, color: '#64748b'},
+          {label: 'Baseload Matching', value: yr.baseload_matching_cost || 0, color: '#475569'},
+        ]
+      }))};
+
+      const r = createStackedBarChart('chart-cashflow', barData);
+      if (r) {
+        allCharts.push(r);
+        btnPng.onclick = () => downloadCanvasPNG(r.canvas, D.scenario_name + '_cashflow.png');
+        btnCsv.onclick = () => {
+          const h = ['Jahr', 'Revenue_PV', 'Revenue_BESS_Green', 'Revenue_BESS_Grey',
+            'CAPEX', 'OPEX', 'Debt_Service', 'Steuern', 'Grid_Import', 'Baseload_Matching',
+            'Equity_CF', 'Kum_Equity_CF'];
+          const rows = cfYears.map(yr => [
+            yr.year,
+            (yr.revenue_pv||0).toFixed(0), (yr.revenue_bess_green||0).toFixed(0), (yr.revenue_bess_grey||0).toFixed(0),
+            (yr.capex||0).toFixed(0), (yr.opex||0).toFixed(0), (yr.debt_service||0).toFixed(0),
+            (yr.tax_total||0).toFixed(0), (yr.grid_import_cost||0).toFixed(0), (yr.baseload_matching_cost||0).toFixed(0),
+            (yr.equity_cf||0).toFixed(0), (yr.cumulative_equity_cf||0).toFixed(0)
+          ]);
+          downloadFile(D.scenario_name + '_cashflow.csv', 'text/csv', arrayToCSV(h, rows));
+        };
+      }
+
+      // LLM text
+      const llm = document.createElement('div'); llm.className = 'llm-text';
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_7_cashflow) + LLM_HINT_HTML;
+      panel.appendChild(llm);
+    });
+
+    // ================================================================
+    //  INIT
+    // ================================================================
+    (function init() {
+      // Header
+      if (D.tool_logo_b64) {
+        const img = document.createElement('img'); img.src = D.tool_logo_b64; img.className = 'logo'; img.alt = 'Tool Logo';
+        document.getElementById('toolLogo').appendChild(img);
+      }
+      if (D.company_logo_b64) {
+        const img = document.createElement('img'); img.src = D.company_logo_b64; img.className = 'logo'; img.alt = 'Company Logo';
+        document.getElementById('companyLogo').appendChild(img);
+      }
+      document.getElementById('headerSubtitle').textContent =
+        `Szenario: ${D.scenario_name} | ${D.creation_date}`;
+
+      // Footer
+      document.getElementById('reportFooter').innerHTML =
+        `Modellversion ${D.model_version} | Erstellt am ${D.creation_date} | ` +
+        `Szenario: ${D.scenario_name} | ` +
+        `Nur indikative Analysen. Finale Entscheidung muss mit FiCo internen Tools gerechnet werden!`;
+
+      // Build tabs
+      initTabs();
+    })();
+  </script>
+</body>
+</html>

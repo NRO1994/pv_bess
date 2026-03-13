@@ -15,6 +15,14 @@ floor price are known constants at solve time, the effective price
 This avoids the need for revenue-helper variables and their associated
 linearisation constraints.
 
+When a **baseload PPA** is active (``baseload_kw > 0``), the LP uses raw spot
+prices for all feed-in variables (no floor/cap/goo in the objective).  The
+baseload settlement is a per-hour constant that does not affect LP decisions
+and is computed post-hoc by the dispatch engine.
+
+Simultaneous charging and discharging is prevented by fixing discharge
+variables to zero whenever the spot price is negative.
+
 Unit conventions
 ----------------
 All inputs and outputs follow a single, consistent unit scheme:
@@ -44,25 +52,32 @@ Slice        Length         Variable
 T   .. 2T-1  T              discharge_green[t]     – kWh discharged (green)
 2T  .. 3T-1  T              export_pv[t]           – kWh PV exported to grid
 3T  .. 4T-1  T              curtail[t]             – kWh PV curtailed
+4T  .. 5T-1  T              soc[t]                 – SoC at end of hour t (kWh)
 ===========  =============  ===================================================
 
-Total Green Mode variables: 4T
+Total Green Mode variables: 5T
 
-Variable indexing (Grey Mode – extends Green Mode)
----------------------------------------------------
-Green Mode variables occupy indices 0 .. 4T-1 as above, followed by:
-
+Variable indexing (Grey Mode – extends Green Mode base variables)
+-----------------------------------------------------------------
 ===========  =============  ===================================================
 Slice        Length         Variable
 ===========  =============  ===================================================
+0   .. T-1   T              charge_pv[t]           – kWh charged from PV
+T   .. 2T-1  T              discharge_green[t]     – kWh discharged (green)
+2T  .. 3T-1  T              export_pv[t]           – kWh PV exported to grid
+3T  .. 4T-1  T              curtail[t]             – kWh PV curtailed
 4T  .. 5T-1  T              charge_grid[t]         – kWh charged from grid
 5T  .. 6T-1  T              discharge_grey[t]      – kWh discharged (grey)
+6T  .. 7T-1  T              soc_green[t]           – green SoC at end of hour t
+7T  .. 8T-1  T              soc_grey[t]            – grey SoC at end of hour t
 ===========  =============  ===================================================
 
-Total Grey Mode variables: 6T
+Total Grey Mode variables: 8T
 
-SoC is tracked implicitly via cumulative charge/discharge constraints
-(no SoC decision variables needed).
+SoC is tracked via explicit decision variables with linking equality
+constraints (staircase structure) and simple variable bounds.  This replaces
+the previous cumulative-sum formulation and reduces constraint matrix density
+from O(T²) to O(T) nonzeros.
 
 Public API
 ----------
@@ -188,6 +203,10 @@ class DailyDispatchResult(TypedDict):
     effective_price: np.ndarray
     """Effective Price in EUR/kWh. shape (T,)"""
 
+    shortfall: np.ndarray
+    """kWh shortfall below baseload commitment, per hour. shape (T,)
+    Zero when no baseload PPA is active."""
+
 
 # ---------------------------------------------------------------------------
 # Helper: compute effective prices
@@ -232,7 +251,7 @@ def _effective_green_price(
 
 
 # ---------------------------------------------------------------------------
-# Helper: build Green-Mode LP
+# Helper: build Green-Mode LP (explicit SoC variables)
 # ---------------------------------------------------------------------------
 
 
@@ -249,91 +268,134 @@ def _build_green_lp(
         grid_max_kw: float,
         grid_loss_factor: float = 1.0,
         timestep_hours: float = 1.0,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Construct the Green-Mode LP matrices.
+        baseload_kwh: float = 0.0,
+        shortfall_penalty_prices: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, list]:
+    """Construct the Green-Mode LP matrices with explicit SoC variables.
 
-    Returns (c, A_ub, b_ub, A_eq, b_eq) suitable for ``scipy.optimize.linprog``.
+    Returns ``(c, A_ub, b_ub, A_eq, b_eq, bounds)`` suitable for
+    ``scipy.optimize.linprog``.
 
-    *eff_prices* (€/kWh, floor-adjusted) are used for PV direct export.
-    *spot_prices* (€/kWh, raw spot) are used for BESS discharge revenue,
-    because BESS discharge is a separate spot-market revenue stream.
-    Charging cost (opportunity cost of foregone PV export) remains at
-    *eff_prices* implicitly via the energy-balance constraint.
+    Variables without baseload: ``[charge_pv(T), discharge_green(T),
+    export_pv(T), curtail(T), soc(T)]`` — total 5T.
+
+    Variables with baseload: ``[charge_pv(T), discharge_green(T),
+    export_pv(T), curtail(T), soc(T), shortfall(T)]`` — total 6T.
+
+    When ``baseload_kwh > 0``, the LP adds shortfall variables that track
+    how much the total grid export falls below the baseload commitment.
+    The shortfall is penalised at ``shortfall_penalty_prices`` (typically
+    ``max(spot, ppa_price) + goo``) to incentivise the BESS to discharge
+    during shortfall hours.
+
+    SoC is tracked via linking equality constraints (staircase structure)
+    with variable bounds ``[soc_min, soc_max]``.
+
+    Discharge is fixed to zero for hours with negative spot prices to prevent
+    simultaneous charging and discharging.
+
+    Parameters
+    ----------
+    baseload_kwh:
+        Baseload commitment per interval in kWh.  0.0 when no baseload PPA.
+    shortfall_penalty_prices:
+        Effective PPA price array (€/kWh) for the shortfall penalty.
+        Required when ``baseload_kwh > 0``.  Typically
+        ``max(spot, ppa_price) + goo``.
     """
     T = len(pv_production_kwh)
-    n_vars = 4 * T  # charge_pv, disch_green, export_pv, curtail
+    has_baseload = baseload_kwh > 0.0
+    n_vars = 6 * T if has_baseload else 5 * T
 
-    # --- Objective: max Σ(export[t]*glf*eff[t] + disch_green[t]*RTE*glf*spot[t]) ---
-    # linprog minimises → negate
-    c = np.zeros(n_vars)
-    for t in range(T):
-        c[2 * T + t] = -(grid_loss_factor * eff_prices[t])  # export_pv[t] × glf × eff
-        c[T + t] = -(rte * grid_loss_factor * spot_prices[t])  # discharge_green[t] × RTE × glf × spot
-
-    # --- Equality constraints ---
-    # PV energy balance: export[t] + charge_pv[t] + curtail[t] = pv[t]  ∀t
-    A_eq = np.zeros((T, n_vars))
-    b_eq = np.zeros(T)
-    for t in range(T):
-        A_eq[t, 2 * T + t] = 1.0  # export_pv[t]
-        A_eq[t, t] = 1.0  # charge_pv[t]
-        A_eq[t, 3 * T + t] = 1.0  # curtail[t]
-        b_eq[t] = pv_production_kwh[t]
-
-    # --- Inequality constraints (A_ub @ x <= b_ub) ---
-    ub_rows: list[np.ndarray] = []
-    ub_rhs: list[float] = []
-
-    for t in range(T):
-        # SoC upper: start + Σ_{s=0..t}(charge_pv[s] - disch_green[s]) ≤ soc_max
-        row = np.zeros(n_vars)
-        row[0: t + 1] = 1.0  # charge_pv[0..t]
-        row[T: T + t + 1] = -1.0  # -discharge_green[0..t]
-        ub_rows.append(row)
-        ub_rhs.append(soc_max_kwh - start_soc_kwh)
-
-        # SoC lower: start + Σ(charge_pv) - Σ(disch_green) ≥ soc_min
-        # → -Σ(charge_pv) + Σ(disch_green) ≤ start - soc_min
-        row2 = np.zeros(n_vars)
-        row2[0: t + 1] = -1.0
-        row2[T: T + t + 1] = 1.0
-        ub_rows.append(row2)
-        ub_rhs.append(start_soc_kwh - soc_min_kwh)
-
-    # Energy limit per timestep = power (kW) × timestep_hours (h) → kWh
     max_charge_energy = max_charge_kw * timestep_hours
     max_discharge_energy = max_discharge_kw * timestep_hours
     grid_max_energy = grid_max_kw * timestep_hours
 
+    # --- Objective: max Σ(export[t]*glf*eff[t] + disch_green[t]*RTE*glf*spot[t]
+    #                       - shortfall[t]*shortfall_penalty[t])  ---
+    # linprog minimises → negate
+    c = np.zeros(n_vars)
     for t in range(T):
-        # Charge power limit: charge_pv[t] ≤ max_charge_energy
-        row = np.zeros(n_vars)
-        row[t] = 1.0
-        ub_rows.append(row)
-        ub_rhs.append(max_charge_energy)
+        c[2 * T + t] = -(grid_loss_factor * eff_prices[t])  # export_pv[t]
+        c[T + t] = -(rte * grid_loss_factor * spot_prices[t])  # discharge_green[t]
+    if has_baseload and shortfall_penalty_prices is not None:
+        for t in range(T):
+            # Shortfall penalty: +shortfall_penalty_prices[t] (positive = cost in minimisation)
+            c[5 * T + t] = shortfall_penalty_prices[t]
 
-        # Discharge power limit: discharge_green[t] ≤ max_discharge_energy
-        row = np.zeros(n_vars)
-        row[T + t] = 1.0
-        ub_rows.append(row)
-        ub_rhs.append(max_discharge_energy)
+    # --- Equality constraints (2T rows) ---
+    # 1. PV balance: export[t] + charge_pv[t] + curtail[t] = pv[t]     ∀t
+    # 2. SoC linking: soc[t] - soc[t-1] - charge_pv[t] + disch[t] = 0  ∀t>0
+    #                 soc[0] - charge_pv[0] + disch[0] = start_soc       t=0
+    n_eq = 2 * T
+    A_eq = np.zeros((n_eq, n_vars))
+    b_eq = np.zeros(n_eq)
 
     for t in range(T):
-        # Grid connection limit: export_pv[t] × glf + discharge_green[t] × RTE ≤ grid_max_energy
-        row = np.zeros(n_vars)
-        row[2 * T + t] = grid_loss_factor  # export_pv[t] × glf
-        row[T + t] = rte  # discharge_green[t] × RTE
-        ub_rows.append(row)
-        ub_rhs.append(grid_max_energy)
+        # PV energy balance (row t)
+        A_eq[t, t] = 1.0            # charge_pv[t]
+        A_eq[t, 2 * T + t] = 1.0    # export_pv[t]
+        A_eq[t, 3 * T + t] = 1.0    # curtail[t]
+        b_eq[t] = pv_production_kwh[t]
 
-    A_ub = np.array(ub_rows)
-    b_ub = np.array(ub_rhs)
+        # SoC linking (row T+t)
+        row = T + t
+        A_eq[row, 4 * T + t] = 1.0  # +soc[t]
+        if t > 0:
+            A_eq[row, 4 * T + t - 1] = -1.0  # -soc[t-1]
+        A_eq[row, t] = -1.0         # -charge_pv[t]
+        A_eq[row, T + t] = 1.0      # +discharge_green[t]
+        b_eq[row] = start_soc_kwh if t == 0 else 0.0
 
-    return c, A_ub, b_ub, A_eq, b_eq
+    # --- Inequality constraints ---
+    # Grid limit: export[t]*glf + discharge[t]*RTE ≤ grid_max       (T rows)
+    # Baseload shortfall: -export[t]*glf - disch[t]*RTE*glf
+    #                     - shortfall[t] ≤ -baseload_kwh              (T rows, if baseload)
+    n_ub_rows = 2 * T if has_baseload else T
+    A_ub = np.zeros((n_ub_rows, n_vars))
+    b_ub = np.zeros(n_ub_rows)
+    for t in range(T):
+        # Grid limit (row t)
+        A_ub[t, 2 * T + t] = grid_loss_factor  # export_pv[t]
+        A_ub[t, T + t] = rte                    # discharge_green[t]
+        b_ub[t] = grid_max_energy
+
+    if has_baseload:
+        for t in range(T):
+            # Shortfall constraint (row T+t):
+            # export_pv[t]*glf + discharge_green[t]*rte*glf + shortfall[t] >= baseload_kwh
+            # In ≤ form: -export_pv[t]*glf - discharge_green[t]*rte*glf - shortfall[t] ≤ -baseload_kwh
+            row = T + t
+            A_ub[row, 2 * T + t] = -grid_loss_factor       # -export_pv[t]
+            A_ub[row, T + t] = -(rte * grid_loss_factor)    # -discharge_green[t]
+            A_ub[row, 5 * T + t] = -1.0                     # -shortfall[t]
+            b_ub[row] = -baseload_kwh
+
+    # --- Variable bounds ---
+    # Charge/discharge power limits and SoC bounds as variable bounds.
+    # Discharge fixed to 0 at negative spot prices (prevents simultaneous
+    # charge/discharge).
+    bounds: list[tuple[float, float | None]] = []
+    for t in range(T):
+        bounds.append((0.0, max_charge_energy))      # charge_pv[t]
+    for t in range(T):
+        ub = 0.0 if spot_prices[t] < 0 else max_discharge_energy
+        bounds.append((0.0, ub))                      # discharge_green[t]
+    for t in range(T):
+        bounds.append((0.0, None))                    # export_pv[t]
+    for t in range(T):
+        bounds.append((0.0, None))                    # curtail[t]
+    for t in range(T):
+        bounds.append((soc_min_kwh, soc_max_kwh))    # soc[t]
+    if has_baseload:
+        for t in range(T):
+            bounds.append((0.0, None))                # shortfall[t]
+
+    return c, A_ub, b_ub, A_eq, b_eq, bounds
 
 
 # ---------------------------------------------------------------------------
-# Helper: build Grey-Mode LP
+# Helper: build Grey-Mode LP (explicit SoC variables)
 # ---------------------------------------------------------------------------
 
 
@@ -351,114 +413,164 @@ def _build_grey_lp(
         grid_max_kw: float,
         grid_loss_factor: float = 1.0,
         timestep_hours: float = 1.0,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Construct the Grey-Mode LP matrices.
+        baseload_kwh: float = 0.0,
+        shortfall_penalty_prices: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, list]:
+    """Construct the Grey-Mode LP matrices with explicit SoC variables.
 
-    Grey Mode extends Green Mode with grid charging (``charge_grid``) and
-    grey discharging (``discharge_grey``), plus dual-chamber SoC tracking.
+    Returns ``(c, A_ub, b_ub, A_eq, b_eq, bounds)`` suitable for
+    ``scipy.optimize.linprog``.
 
-    *eff_prices* are €/kWh (floor-adjusted, for green energy).
-    *spot_prices_eur_per_kwh* are raw spot (€/kWh, for grey energy).
+    Variables without baseload: ``[charge_pv(T), discharge_green(T),
+    export_pv(T), curtail(T), charge_grid(T), discharge_grey(T),
+    soc_green(T), soc_grey(T)]`` — total 8T.
+
+    Variables with baseload: same as above plus ``shortfall(T)`` — total 9T.
+
+    Dual-chamber SoC is tracked via linking equality constraints with
+    individual variable bounds ``[0, soc_max]`` and total-SoC inequality
+    constraints ``soc_min ≤ soc_green + soc_grey ≤ soc_max``.
+
+    Discharge (both green and grey) is fixed to zero for hours with negative
+    spot prices to prevent simultaneous charging and discharging.
+
+    Parameters
+    ----------
+    baseload_kwh:
+        Baseload commitment per interval in kWh.  0.0 when no baseload PPA.
+    shortfall_penalty_prices:
+        Effective PPA price array (€/kWh) for the shortfall penalty.
+        Required when ``baseload_kwh > 0``.
     """
     T = len(pv_production_kwh)
-    n_vars = 6 * T  # charge_pv, disch_green, export_pv, curtail, charge_grid, disch_grey
+    has_baseload = baseload_kwh > 0.0
+    n_vars = 9 * T if has_baseload else 8 * T
 
-    # --- Objective ---
-    # max Σ[ export[t]*glf*eff[t] + disch_green[t]*RTE*glf*spot[t]
-    #        + disch_grey[t]*RTE*spot[t] - charge_grid[t]*spot[t] ]
-    # BESS discharge (both green and grey) is valued at spot prices,
-    # because it is a separate spot-market revenue stream.
-    c = np.zeros(n_vars)
-    for t in range(T):
-        c[2 * T + t] = -(grid_loss_factor * eff_prices[t])  # export_pv × glf × eff
-        c[T + t] = -(rte * grid_loss_factor * eff_prices[t])  # discharge_green × RTE × glf × spot
-        c[5 * T + t] = -(rte * spot_prices_eur_per_kwh[t])  # discharge_grey revenue (no glf)
-        c[4 * T + t] = spot_prices_eur_per_kwh[t]  # charge_grid cost
-
-    # --- Equality constraints ---
-    # PV energy balance: export[t] + charge_pv[t] + curtail[t] = pv[t]
-    A_eq = np.zeros((T, n_vars))
-    b_eq = np.zeros(T)
-    for t in range(T):
-        A_eq[t, 2 * T + t] = 1.0  # export_pv
-        A_eq[t, t] = 1.0  # charge_pv
-        A_eq[t, 3 * T + t] = 1.0  # curtail
-        b_eq[t] = pv_production_kwh[t]
-
-    # --- Inequality constraints ---
-    ub_rows: list[np.ndarray] = []
-    ub_rhs: list[float] = []
-
-    start_total = start_soc_green_kwh + start_soc_grey_kwh
-
-    for t in range(T):
-        # soc_green[t] ≥ 0
-        # → -Σcpv + Σdg ≤ start_green
-        row = np.zeros(n_vars)
-        row[0: t + 1] = -1.0  # -charge_pv[0..t]
-        row[T: T + t + 1] = 1.0  # +discharge_green[0..t]
-        ub_rows.append(row)
-        ub_rhs.append(start_soc_green_kwh)
-
-        # soc_grey[t] ≥ 0
-        row = np.zeros(n_vars)
-        row[4 * T: 4 * T + t + 1] = -1.0  # -charge_grid[0..t]
-        row[5 * T: 5 * T + t + 1] = 1.0  # +discharge_grey[0..t]
-        ub_rows.append(row)
-        ub_rhs.append(start_soc_grey_kwh)
-
-    for t in range(T):
-        # Total SoC upper: soc_green + soc_grey ≤ soc_max
-        row = np.zeros(n_vars)
-        row[0: t + 1] = 1.0  # charge_pv
-        row[T: T + t + 1] = -1.0  # -discharge_green
-        row[4 * T: 4 * T + t + 1] = 1.0  # charge_grid
-        row[5 * T: 5 * T + t + 1] = -1.0  # -discharge_grey
-        ub_rows.append(row)
-        ub_rhs.append(soc_max_kwh - start_total)
-
-        # Total SoC lower: soc_green + soc_grey ≥ soc_min
-        row = np.zeros(n_vars)
-        row[0: t + 1] = -1.0
-        row[T: T + t + 1] = 1.0
-        row[4 * T: 4 * T + t + 1] = -1.0
-        row[5 * T: 5 * T + t + 1] = 1.0
-        ub_rows.append(row)
-        ub_rhs.append(start_total - soc_min_kwh)
-
-    # Energy limit per timestep = power (kW) × timestep_hours (h) → kWh
     max_charge_energy = max_charge_kw * timestep_hours
     max_discharge_energy = max_discharge_kw * timestep_hours
     grid_max_energy = grid_max_kw * timestep_hours
 
+    # --- Objective ---
+    c = np.zeros(n_vars)
     for t in range(T):
-        # Charge power: charge_pv[t] + charge_grid[t] ≤ max_charge_energy
-        row = np.zeros(n_vars)
-        row[t] = 1.0
-        row[4 * T + t] = 1.0
-        ub_rows.append(row)
-        ub_rhs.append(max_charge_energy)
+        c[2 * T + t] = -(grid_loss_factor * eff_prices[t])            # export_pv
+        c[T + t] = -(rte * grid_loss_factor * eff_prices[t])          # discharge_green
+        c[5 * T + t] = -(rte * spot_prices_eur_per_kwh[t])            # discharge_grey
+        c[4 * T + t] = spot_prices_eur_per_kwh[t]                     # charge_grid (cost)
+    if has_baseload and shortfall_penalty_prices is not None:
+        for t in range(T):
+            c[8 * T + t] = shortfall_penalty_prices[t]                # shortfall penalty
 
-        # Discharge power: discharge_green[t] + discharge_grey[t] ≤ max_discharge_energy
-        row = np.zeros(n_vars)
-        row[T + t] = 1.0
-        row[5 * T + t] = 1.0
-        ub_rows.append(row)
-        ub_rhs.append(max_discharge_energy)
+    # --- Equality constraints (3T rows) ---
+    # 1. PV balance (T rows)
+    # 2. SoC green linking (T rows)
+    # 3. SoC grey linking (T rows)
+    n_eq = 3 * T
+    A_eq = np.zeros((n_eq, n_vars))
+    b_eq = np.zeros(n_eq)
 
     for t in range(T):
-        # Grid connection: export_pv[t] × glf + (disch_green[t] + disch_grey[t]) × RTE ≤ grid_max_energy
-        row = np.zeros(n_vars)
-        row[2 * T + t] = grid_loss_factor  # export_pv × glf
-        row[T + t] = rte
-        row[5 * T + t] = rte
-        ub_rows.append(row)
-        ub_rhs.append(grid_max_energy)
+        # PV balance (row t)
+        A_eq[t, t] = 1.0            # charge_pv[t]
+        A_eq[t, 2 * T + t] = 1.0    # export_pv[t]
+        A_eq[t, 3 * T + t] = 1.0    # curtail[t]
+        b_eq[t] = pv_production_kwh[t]
 
-    A_ub = np.array(ub_rows)
-    b_ub = np.array(ub_rhs)
+        # SoC green linking (row T+t)
+        row_g = T + t
+        A_eq[row_g, 6 * T + t] = 1.0  # +soc_green[t]
+        if t > 0:
+            A_eq[row_g, 6 * T + t - 1] = -1.0  # -soc_green[t-1]
+        A_eq[row_g, t] = -1.0          # -charge_pv[t]
+        A_eq[row_g, T + t] = 1.0       # +discharge_green[t]
+        b_eq[row_g] = start_soc_green_kwh if t == 0 else 0.0
 
-    return c, A_ub, b_ub, A_eq, b_eq
+        # SoC grey linking (row 2T+t)
+        row_y = 2 * T + t
+        A_eq[row_y, 7 * T + t] = 1.0  # +soc_grey[t]
+        if t > 0:
+            A_eq[row_y, 7 * T + t - 1] = -1.0  # -soc_grey[t-1]
+        A_eq[row_y, 4 * T + t] = -1.0  # -charge_grid[t]
+        A_eq[row_y, 5 * T + t] = 1.0   # +discharge_grey[t]
+        b_eq[row_y] = start_soc_grey_kwh if t == 0 else 0.0
+
+    # --- Inequality constraints ---
+    # 1. Total SoC upper: soc_green[t] + soc_grey[t] ≤ soc_max      (T rows)
+    # 2. Total SoC lower: -(soc_green[t] + soc_grey[t]) ≤ -soc_min  (T rows)
+    # 3. Charge power: charge_pv[t] + charge_grid[t] ≤ max_charge    (T rows)
+    # 4. Discharge power: disch_green[t] + disch_grey[t] ≤ max_disch (T rows)
+    # 5. Grid limit: export*glf + (dg+dy)*RTE ≤ grid_max             (T rows)
+    # 6. Baseload shortfall (if active):
+    #    -export*glf - dg*rte*glf - dy*rte - shortfall ≤ -baseload    (T rows)
+    n_ub = 6 * T if has_baseload else 5 * T
+    A_ub = np.zeros((n_ub, n_vars))
+    b_ub = np.zeros(n_ub)
+
+    for t in range(T):
+        # Total SoC upper (row t)
+        A_ub[t, 6 * T + t] = 1.0       # soc_green[t]
+        A_ub[t, 7 * T + t] = 1.0       # soc_grey[t]
+        b_ub[t] = soc_max_kwh
+
+        # Total SoC lower (row T+t)
+        A_ub[T + t, 6 * T + t] = -1.0  # -soc_green[t]
+        A_ub[T + t, 7 * T + t] = -1.0  # -soc_grey[t]
+        b_ub[T + t] = -soc_min_kwh
+
+        # Charge power (row 2T+t)
+        A_ub[2 * T + t, t] = 1.0            # charge_pv[t]
+        A_ub[2 * T + t, 4 * T + t] = 1.0    # charge_grid[t]
+        b_ub[2 * T + t] = max_charge_energy
+
+        # Discharge power (row 3T+t)
+        A_ub[3 * T + t, T + t] = 1.0        # discharge_green[t]
+        A_ub[3 * T + t, 5 * T + t] = 1.0    # discharge_grey[t]
+        b_ub[3 * T + t] = max_discharge_energy
+
+        # Grid limit (row 4T+t)
+        A_ub[4 * T + t, 2 * T + t] = grid_loss_factor  # export_pv
+        A_ub[4 * T + t, T + t] = rte                    # discharge_green
+        A_ub[4 * T + t, 5 * T + t] = rte                # discharge_grey
+        b_ub[4 * T + t] = grid_max_energy
+
+    if has_baseload:
+        for t in range(T):
+            # Shortfall constraint (row 5T+t):
+            # export*glf + dg*rte*glf + dy*rte + shortfall >= baseload
+            row = 5 * T + t
+            A_ub[row, 2 * T + t] = -grid_loss_factor       # -export_pv[t]
+            A_ub[row, T + t] = -(rte * grid_loss_factor)    # -discharge_green[t]
+            A_ub[row, 5 * T + t] = -rte                     # -discharge_grey[t]
+            A_ub[row, 8 * T + t] = -1.0                     # -shortfall[t]
+            b_ub[row] = -baseload_kwh
+
+    # --- Variable bounds ---
+    # Discharge fixed to 0 at negative spot prices (prevents simultaneous
+    # charge/discharge).
+    bounds: list[tuple[float, float | None]] = []
+    for t in range(T):
+        bounds.append((0.0, None))                     # charge_pv[t]
+    for t in range(T):
+        ub = 0.0 if spot_prices_eur_per_kwh[t] < 0 else None
+        bounds.append((0.0, ub))                       # discharge_green[t]
+    for t in range(T):
+        bounds.append((0.0, None))                     # export_pv[t]
+    for t in range(T):
+        bounds.append((0.0, None))                     # curtail[t]
+    for t in range(T):
+        bounds.append((0.0, None))                     # charge_grid[t]
+    for t in range(T):
+        ub = 0.0 if spot_prices_eur_per_kwh[t] < 0 else None
+        bounds.append((0.0, ub))                       # discharge_grey[t]
+    for t in range(T):
+        bounds.append((0.0, soc_max_kwh))              # soc_green[t]
+    for t in range(T):
+        bounds.append((0.0, soc_max_kwh))              # soc_grey[t]
+    if has_baseload:
+        for t in range(T):
+            bounds.append((0.0, None))                 # shortfall[t]
+
+    return c, A_ub, b_ub, A_eq, b_eq, bounds
 
 
 # ---------------------------------------------------------------------------
@@ -466,24 +578,25 @@ def _build_grey_lp(
 # ---------------------------------------------------------------------------
 
 
-def _extract_green_result(x: np.ndarray, T: int, eff_prices: np.ndarray, rte: float, start_soc_kwh: float,
-                          grid_loss_factor: float = 1.0) -> DailyDispatchResult:
+def _extract_green_result(
+        x: np.ndarray,
+        T: int,
+        eff_prices: np.ndarray,
+        rte: float,
+        grid_loss_factor: float = 1.0,
+        has_baseload: bool = False,
+) -> DailyDispatchResult:
     """Parse the LP solution vector into a :class:`DailyDispatchResult` (Green).
 
-    PV export revenue uses *eff_prices* (floor/cap-adjusted).
-    BESS discharge revenue uses *spot_prices* (raw spot).
+    SoC is read directly from the explicit SoC decision variables (no
+    cumulative reconstruction needed).
     """
     charge_pv = x[0: T]
     discharge_green = x[T: 2 * T]
     export_pv = x[2 * T: 3 * T]
     curtail = x[3 * T: 4 * T]
-
-    # Reconstruct SoC trajectory
-    soc = np.empty(T)
-    cumulative = start_soc_kwh
-    for t in range(T):
-        cumulative += charge_pv[t] - discharge_green[t]
-        soc[t] = cumulative
+    soc = x[4 * T: 5 * T]
+    shortfall = x[5 * T: 6 * T] if has_baseload else np.zeros(T)
 
     # Add losses to the energy flow
     discharge_green = discharge_green * grid_loss_factor * rte
@@ -509,6 +622,7 @@ def _extract_green_result(x: np.ndarray, T: int, eff_prices: np.ndarray, rte: fl
         end_soc_green=float(soc[-1]),
         end_soc_grey=0.0,
         effective_price=eff_prices,
+        shortfall=shortfall,
     )
 
 
@@ -518,28 +632,22 @@ def _extract_grey_result(
         spot_prices_eur_per_kwh: np.ndarray,
         eff_prices: np.ndarray,
         rte: float,
-        start_soc_green_kwh: float,
-        start_soc_grey_kwh: float,
         grid_loss_factor: float = 1.0,
+        has_baseload: bool = False,
 ) -> DailyDispatchResult:
-    """Parse the LP solution vector into a :class:`DailyDispatchResult` (Grey)."""
+    """Parse the LP solution vector into a :class:`DailyDispatchResult` (Grey).
+
+    SoC green/grey are read directly from explicit SoC decision variables.
+    """
     charge_pv = x[0: T]
     discharge_green = x[T: 2 * T]
     export_pv = x[2 * T: 3 * T]
     curtail = x[3 * T: 4 * T]
     charge_grid = x[4 * T: 5 * T]
     discharge_grey = x[5 * T: 6 * T]
-
-    # Reconstruct SoC trajectories
-    soc_green = np.empty(T)
-    soc_grey = np.empty(T)
-    cum_green = start_soc_green_kwh
-    cum_grey = start_soc_grey_kwh
-    for t in range(T):
-        cum_green += charge_pv[t] - discharge_green[t]
-        cum_grey += charge_grid[t] - discharge_grey[t]
-        soc_green[t] = cum_green
-        soc_grey[t] = cum_grey
+    soc_green = x[6 * T: 7 * T]
+    soc_grey = x[7 * T: 8 * T]
+    shortfall = x[8 * T: 9 * T] if has_baseload else np.zeros(T)
 
     soc = soc_green + soc_grey
 
@@ -569,6 +677,7 @@ def _extract_grey_result(
         end_soc_green=float(soc_green[-1]),
         end_soc_grey=float(soc_grey[-1]),
         effective_price=eff_prices,
+        shortfall=shortfall,
     )
 
 
@@ -590,6 +699,7 @@ def optimize_day(
         goo_premium_eur_per_kwh: float = 0.0,
         price_cap_eur_per_kwh: float = 0.0,
         grid_loss_factor: float = 1.0,
+        baseload_kw: float = 0.0,
 ) -> DailyDispatchResult:
     """Solve the daily dispatch LP for one day.
 
@@ -601,7 +711,8 @@ def optimize_day(
         Day-ahead spot prices per hour in **€/kWh**.
     price_fixed_eur_per_kwh : float
         Fixed floor price in **€/kWh** for EEG/PPA (WITHOUT GoO premium).
-        Set to **0.0** when no floor is active.
+        Set to **0.0** when no floor is active.  Ignored when
+        ``baseload_kw > 0``.
     bess : BessParams
         Physical BESS parameters (power limits, RTE, SoC bounds).
     grid_max_kw : float
@@ -619,14 +730,22 @@ def optimize_day(
     goo_premium_eur_per_kwh : float
         Guarantee-of-Origin premium in **€/kWh**, added to the effective
         green price after the floor/clip comparison.  Defaults to 0.0.
+        Ignored when ``baseload_kw > 0`` (GoO is part of the baseload
+        settlement computed by the engine).
     price_cap_eur_per_kwh : float
         Cap price in **€/kWh** for PPA Collar.  Set to **0.0** when no cap
         is active (unbounded upside).  Defaults to 0.0.
+        Ignored when ``baseload_kw > 0``.
     grid_loss_factor : float
         Grid loss factor in (0, 1].  Applied to green energy (PV export and
         green BESS discharge) in the objective function, grid constraint, and
         revenue calculation.  Grey energy is **not** affected.  Defaults to
         1.0 (no losses).
+    baseload_kw : float
+        Baseload PPA commitment in **kW**.  When > 0, the LP uses raw spot
+        prices (no floor/cap/goo) because the baseload settlement is a
+        constant that does not affect LP decisions.  Defaults to 0.0
+        (no baseload PPA).
 
     Returns
     -------
@@ -641,14 +760,29 @@ def optimize_day(
     T = len(pv_production_kwh)
     rte = bess.round_trip_efficiency
 
-    # Pre-compute effective green price: clip(spot, fixed, cap) + goo — €/kWh
-    eff = _effective_green_price(
-        spot_prices_eur_per_kwh, price_fixed_eur_per_kwh,
-        goo_premium_eur_per_kwh, price_cap_eur_per_kwh,
-    )
+    # Convert baseload from MW to kWh per interval
+    baseload_kwh = baseload_kw * 1000.0 * bess.timestep_hours if baseload_kw > 0 else 0.0
+    has_baseload = baseload_kwh > 0.0
+
+    # Pre-compute effective green price
+    if has_baseload:
+        # Baseload PPA: export objective uses spot prices.
+        # Shortfall penalty uses effective PPA price (max(spot, ppa_price) + goo).
+        eff = spot_prices_eur_per_kwh.copy()
+        shortfall_penalty = _effective_green_price(
+            spot_prices_eur_per_kwh, price_fixed_eur_per_kwh,
+            goo_premium_eur_per_kwh, price_cap_eur_per_kwh,
+        )
+    else:
+        # Standard: clip(spot, fixed, cap) + goo — €/kWh
+        eff = _effective_green_price(
+            spot_prices_eur_per_kwh, price_fixed_eur_per_kwh,
+            goo_premium_eur_per_kwh, price_cap_eur_per_kwh,
+        )
+        shortfall_penalty = None
 
     if mode == "green":
-        c, A_ub, b_ub, A_eq, b_eq = _build_green_lp(
+        c, A_ub, b_ub, A_eq, b_eq, bounds = _build_green_lp(
             pv_production_kwh=pv_production_kwh,
             eff_prices=eff,
             spot_prices=spot_prices_eur_per_kwh,
@@ -661,8 +795,9 @@ def optimize_day(
             grid_max_kw=grid_max_kw,
             grid_loss_factor=grid_loss_factor,
             timestep_hours=bess.timestep_hours,
+            baseload_kwh=baseload_kwh,
+            shortfall_penalty_prices=shortfall_penalty,
         )
-        n_vars = 4 * T
         soc_green_start = start_soc_kwh
         soc_grey_start = 0.0
     elif mode == "grey":
@@ -672,7 +807,7 @@ def optimize_day(
         soc_grey_start = (
             start_soc_grey_kwh if start_soc_grey_kwh is not None else 0.0
         )
-        c, A_ub, b_ub, A_eq, b_eq = _build_grey_lp(
+        c, A_ub, b_ub, A_eq, b_eq, bounds = _build_grey_lp(
             pv_production_kwh=pv_production_kwh,
             spot_prices_eur_per_kwh=spot_prices_eur_per_kwh,
             eff_prices=eff,
@@ -686,13 +821,11 @@ def optimize_day(
             grid_max_kw=grid_max_kw,
             grid_loss_factor=grid_loss_factor,
             timestep_hours=bess.timestep_hours,
+            baseload_kwh=baseload_kwh,
+            shortfall_penalty_prices=shortfall_penalty,
         )
-        n_vars = 6 * T
     else:
         raise ValueError(f"Unknown operating mode: '{mode}'. Use 'green' or 'grey'.")
-
-    # Variable bounds: all ≥ 0
-    bounds = [(0.0, None)] * n_vars
 
     result = linprog(
         c,
@@ -722,16 +855,16 @@ def optimize_day(
             price_cap_eur_per_kwh=price_cap_eur_per_kwh,
             grid_loss_factor=grid_loss_factor,
             timestep_hours=bess.timestep_hours,
+            baseload_kw=baseload_kw,
         )
 
     x = result.x
 
     if mode == "green":
-        return _extract_green_result(x, T, eff, rte, start_soc_kwh, grid_loss_factor)
+        return _extract_green_result(x, T, eff, rte, grid_loss_factor, has_baseload)
     else:
         return _extract_grey_result(
-            x, T, spot_prices_eur_per_kwh, eff, rte,
-            soc_green_start, soc_grey_start, grid_loss_factor,
+            x, T, spot_prices_eur_per_kwh, eff, rte, grid_loss_factor, has_baseload,
         )
 
 
@@ -752,6 +885,7 @@ def dispatch_offline_day(
         price_cap_eur_per_kwh: float = 0.0,
         grid_loss_factor: float = 1.0,
         timestep_hours: float = 1.0,
+        baseload_kw: float = 0.0,
 ) -> DailyDispatchResult:
     """Produce dispatch results for a BESS-offline day.
 
@@ -767,6 +901,7 @@ def dispatch_offline_day(
         Spot prices per hour in **€/kWh**.
     price_fixed_eur_per_kwh : float
         Fixed floor price in **€/kWh** (WITHOUT GoO).  0.0 when no floor.
+        Ignored when ``baseload_kw > 0``.
     grid_max_kw : float
         Maximum grid export power in **kW**.
     start_soc_kwh : float
@@ -777,10 +912,13 @@ def dispatch_offline_day(
         Grey SoC carried over in **kWh**.  Defaults to 0.0.
     goo_premium_eur_per_kwh : float
         Guarantee-of-Origin premium in **€/kWh**, added after the floor/clip
-        comparison.  Defaults to 0.0.
+        comparison.  Defaults to 0.0.  Ignored when ``baseload_kw > 0``.
     price_cap_eur_per_kwh : float
         Cap price in **€/kWh** for PPA Collar.  0.0 means no cap.
-        Defaults to 0.0.
+        Defaults to 0.0.  Ignored when ``baseload_kw > 0``.
+    baseload_kw : float
+        Baseload PPA commitment in **kW**.  When > 0, effective price is
+        raw spot (no floor/cap/goo).  Defaults to 0.0.
 
     Returns
     -------
@@ -799,11 +937,16 @@ def dispatch_offline_day(
     export_pv = np.minimum(pv_production_kwh * grid_loss_factor, grid_max_energy)
     grid_curtail = np.maximum(pv_production_kwh * grid_loss_factor - grid_max_energy, 0)
 
-    # Effective price per kWh: clip(spot, fixed, cap) + goo
-    eff = _effective_green_price(
-        spot_prices_eur_per_kwh, price_fixed_eur_per_kwh,
-        goo_premium_eur_per_kwh, price_cap_eur_per_kwh,
-    )
+    # Effective price per kWh
+    if baseload_kw > 0:
+        # Baseload PPA: use spot prices (settlement computed by engine)
+        eff = spot_prices_eur_per_kwh.copy()
+    else:
+        # Standard: clip(spot, fixed, cap) + goo
+        eff = _effective_green_price(
+            spot_prices_eur_per_kwh, price_fixed_eur_per_kwh,
+            goo_premium_eur_per_kwh, price_cap_eur_per_kwh,
+        )
 
     # Consider negative prices as curtailment
     price_curtail = np.zeros(len(pv_production_kwh))
@@ -815,6 +958,13 @@ def dispatch_offline_day(
     curtail = grid_curtail + price_curtail
 
     revenue = export_pv * eff
+
+    # Compute shortfall for baseload PPA (BESS offline, only PV export)
+    baseload_kwh = baseload_kw * 1000.0 * timestep_hours if baseload_kw > 0 else 0.0
+    if baseload_kwh > 0:
+        shortfall = np.maximum(baseload_kwh - export_pv, 0.0)
+    else:
+        shortfall = np.zeros(T)
 
     return DailyDispatchResult(
         charge_pv=np.zeros(T),
@@ -830,5 +980,6 @@ def dispatch_offline_day(
         end_soc=start_soc_kwh,
         end_soc_green=soc_green_val,
         end_soc_grey=soc_grey_val,
-        effective_price=eff
+        effective_price=eff,
+        shortfall=shortfall,
     )

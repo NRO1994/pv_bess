@@ -56,7 +56,7 @@ from pv_bess_model.config.defaults import (
     DAYS_PER_YEAR,
     DISPATCH_SAMPLE_YEAR,
     HOURS_PER_DAY,
-    HOURS_PER_YEAR, INTERVALS_PER_HOUR, MWH_TO_KWH,
+    HOURS_PER_YEAR,
 )
 from pv_bess_model.dispatch.optimizer import (
     BessParams,
@@ -181,7 +181,7 @@ class AnnualResult:
     bess_discharge_grey: float
     """Energy removed from BESS grey chamber (SoC change, before RTE).  0.0 in green mode."""
     bess_throughput: float
-    """Total kWh through BESS (charge_pv + charge_grid + discharge_green + discharge_grey)."""
+    """Total kWh discharged from BESS (discharge_green + discharge_grey)."""
 
     # BESS state
     bess_capacity_kwh: float
@@ -471,7 +471,7 @@ def run_simulation(
                     config.bess_power_kw,
                     config.bess_nameplate_kwh,
                 )
-                logger.info(
+                logger.debug(
                     "BESS replacement at year %d: capacity set to %.1f kWh "
                     "(upgrade factor %.0f %%), cost = %.2f EUR.",
                     year,
@@ -606,12 +606,8 @@ def run_simulation(
 
             day_bess_spot_rev = day_rev_grey
 
-            # Baseload additional purchase, if necessary
-            if fixed_price > 0 and baseload_kw is not None:
-                total_feed_in = result["export_pv"] + result["discharge_green"] + result["discharge_grey"]
-                missed_baseload = np.maximum([baseload_kw/INTERVALS_PER_HOUR/MWH_TO_KWH - total_feed_in],0)
-            else:
-                missed_baseload = np.zeros(len(result["export_pv"]))
+            # Baseload shortfall cost from LP result
+            missed_baseload = result["shortfall"]
 
             year_revenue_pv += day_rev_pv
             year_revenue_green += day_rev_green
@@ -646,9 +642,7 @@ def run_simulation(
         total_revenue = (
                 year_revenue_pv + year_revenue_green + year_revenue_grey - year_import_cost - year_missing_baseload
         )
-        bess_throughput = (
-                year_charge_pv + year_charge_grid + year_discharge_green + year_discharge_grey
-        )
+        bess_throughput = year_discharge_green + year_discharge_grey
 
         annual_results.append(
             AnnualResult(

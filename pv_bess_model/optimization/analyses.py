@@ -32,10 +32,7 @@ from pv_bess_model.optimization.monte_carlo import MCParams, MCResult, run_monte
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# MWh-to-kWh conversion factor
-# ---------------------------------------------------------------------------
-_MWH_TO_KWH = 1.0 / 1000.0
+
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +252,8 @@ def run_eeg_sensitivity(
             optimal=optimal,
             mc_params=mc_params,
             scenario_prices=scenario_prices,
+            fixed_price_years=fixed_price_years,
+            analysis_label="EEG-Sensitivität",
         )
 
         points.append(AnalysisResult(
@@ -270,8 +269,8 @@ def run_ppa_collar_analysis(
     optimal: GridPointResult,
     mc_params: MCParams,
     scenario_prices: list[PriceWeatherScenario],
-    floor_prices_eur_per_mwh: list[float],
-    cap_spreads_eur_per_mwh: list[float],
+    floor_prices_eur_per_kwh: list[float],
+    cap_spreads_eur_per_kwh: list[float],
     duration_years: int,
     inflation_on_ppa: bool,
     goo_premium_eur_per_kwh: float,
@@ -292,10 +291,10 @@ def run_ppa_collar_analysis(
         Monte Carlo parameters.
     scenario_prices:
         Per-scenario spot price arrays for MC.
-    floor_prices_eur_per_mwh:
-        Floor prices to sweep (EUR/MWh, converted internally to EUR/kWh).
-    cap_spreads_eur_per_mwh:
-        Cap spreads to sweep (EUR/MWh). Cap = floor + spread.
+    floor_prices_eur_per_kwh:
+        Floor prices to sweep (EUR/kWh).
+    cap_spreads_eur_per_kwh:
+        Cap spreads to sweep (EUR/kWh). Cap = floor + spread.
     duration_years:
         PPA contract duration in years.
     inflation_on_ppa:
@@ -315,20 +314,18 @@ def run_ppa_collar_analysis(
     points: list[AnalysisResult] = []
     combinations = [
         (floor, spread)
-        for floor in floor_prices_eur_per_mwh
-        for spread in cap_spreads_eur_per_mwh
+        for floor in floor_prices_eur_per_kwh
+        for spread in cap_spreads_eur_per_kwh
     ]
     n_total = len(combinations)
 
-    for idx, (floor_mwh, spread_mwh) in enumerate(combinations, start=1):
-        cap_mwh = floor_mwh + spread_mwh
-        floor_kwh = floor_mwh * _MWH_TO_KWH
-        cap_kwh = cap_mwh * _MWH_TO_KWH
+    for idx, (floor_kwh, spread_kwh) in enumerate(combinations, start=1):
+        cap_kwh = floor_kwh + spread_kwh
 
         logger.info(
-            "PPA Collar %d/%d: floor=%.1f EUR/MWh, cap_spread=%.1f EUR/MWh, "
-            "cap=%.1f EUR/MWh",
-            idx, n_total, floor_mwh, spread_mwh, cap_mwh,
+            "PPA Collar %d/%d: floor=%.4f EUR/kWh, cap_spread=%.4f EUR/kWh, "
+            "cap=%.4f EUR/kWh",
+            idx, n_total, floor_kwh, spread_kwh, cap_kwh,
         )
 
         new_fixed, new_cap, new_goo = _build_collar_prices(
@@ -353,13 +350,15 @@ def run_ppa_collar_analysis(
             optimal=optimal,
             mc_params=mc_params,
             scenario_prices=scenario_prices,
+            fixed_price_years=duration_years,
+            analysis_label="PPA-Collar",
         )
 
         points.append(AnalysisResult(
             params={
-                "floor_price_eur_per_mwh": floor_mwh,
-                "cap_spread_eur_per_mwh": spread_mwh,
-                "cap_price_eur_per_mwh": cap_mwh,
+                "floor_price_eur_per_kwh": floor_kwh,
+                "cap_spread_eur_per_kwh": spread_kwh,
+                "cap_price_eur_per_kwh": cap_kwh,
             },
             mc_result=mc_result,
         ))
@@ -372,7 +371,7 @@ def run_ppa_baseload_analysis(
     optimal: GridPointResult,
     mc_params: MCParams,
     scenario_prices: list[PriceWeatherScenario],
-    ppa_prices_eur_per_mwh: list[float],
+    ppa_prices_eur_per_kwh: list[float],
     baseload_levels_mw: list[float],
     duration_years: int,
     inflation_on_ppa: bool,
@@ -395,8 +394,8 @@ def run_ppa_baseload_analysis(
         Monte Carlo parameters.
     scenario_prices:
         Per-scenario spot price arrays for MC.
-    ppa_prices_eur_per_mwh:
-        PPA prices to sweep (EUR/MWh, converted internally to EUR/kWh).
+    ppa_prices_eur_per_kwh:
+        PPA prices to sweep (EUR/kWh).
     baseload_levels_mw:
         Baseload levels to sweep (MW). Used for labelling only (dispatch
         is not altered).
@@ -419,17 +418,15 @@ def run_ppa_baseload_analysis(
     points: list[AnalysisResult] = []
     combinations = [
         (price, bl)
-        for price in ppa_prices_eur_per_mwh
+        for price in ppa_prices_eur_per_kwh
         for bl in baseload_levels_mw
     ]
     n_total = len(combinations)
 
-    for idx, (price_mwh, baseload_mw) in enumerate(combinations, start=1):
-        price_kwh = price_mwh * _MWH_TO_KWH
-
+    for idx, (price_kwh, baseload_mw) in enumerate(combinations, start=1):
         logger.info(
-            "PPA Baseload %d/%d: price=%.1f EUR/MWh, baseload=%.2f MW",
-            idx, n_total, price_mwh, baseload_mw,
+            "PPA Baseload %d/%d: price=%.4f EUR/kWh, baseload=%.2f MW",
+            idx, n_total, price_kwh, baseload_mw,
         )
 
         new_fixed, new_goo = _build_baseload_prices(
@@ -455,11 +452,13 @@ def run_ppa_baseload_analysis(
             optimal=optimal,
             mc_params=mc_params,
             scenario_prices=scenario_prices,
+            fixed_price_years=duration_years,
+            analysis_label="PPA-Baseload",
         )
 
         points.append(AnalysisResult(
             params={
-                "ppa_price_eur_per_mwh": price_mwh,
+                "ppa_price_eur_per_kwh": price_kwh,
                 "baseload_mw": baseload_mw,
             },
             mc_result=mc_result,

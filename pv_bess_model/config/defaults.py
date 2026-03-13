@@ -169,12 +169,6 @@ DEFAULT_GEWERBESTEUER_MESSZAHL: float = 0.035
 # Price / market defaults
 # ---------------------------------------------------------------------------
 
-PRICE_UNIT_EUR_PER_MWH: str = "eur_per_mwh"
-"""Identifier for electricity prices denominated in €/MWh."""
-
-PRICE_UNIT_EUR_PER_KWH: str = "eur_per_kwh"
-"""Identifier for electricity prices denominated in €/kWh."""
-
 MWH_TO_KWH: float = 1000.0
 """Conversion factor from MWh to kWh (multiply MWh value by this)."""
 
@@ -328,17 +322,17 @@ REPORT_CHART_HEIGHT_INCHES: float = 5.5
 REPORT_CHARTS_SUBDIR: str = "charts"
 """Sub-directory within the output directory for chart PNG files."""
 
-REPORT_LLM_MAX_TOKENS: int = 500
-"""Maximum output tokens per LLM text generation call."""
+REPORT_HTML_FILENAME_SUFFIX: str = "_report.html"
+"""Suffix appended to the scenario name for the HTML report file."""
 
-REPORT_LLM_DEFAULT_MODEL: str = "claude-haiku-4-5-20251001"
-"""Default Anthropic model ID for report text generation."""
+REPORT_LLM_PROMPT_FILENAME: str = "_llm_prompt.md"
+"""Suffix for the rendered LLM prompt file saved in the output directory."""
 
-REPORT_LLM_CACHE_FILENAME: str = "llm_cache.json"
-"""Filename for caching LLM-generated texts in the output directory."""
-
-REPORT_PDF_FILENAME_SUFFIX: str = "_report.pdf"
-"""Suffix appended to the scenario name for the PDF report file."""
+REPORT_LLM_RESPONSE_FILENAME: str = "_llm_response.json"
+"""Suffix for the LLM response JSON file expected in the output directory."""
 
 REPORT_MODEL_VERSION: str = "0.1.0"
 """Version string displayed on the report cover page."""
+
+PRICE_DATA_ORIGIN: str = "Prognos 2026"
+"""Source attribution for the price input data."""

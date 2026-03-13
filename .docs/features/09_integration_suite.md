@@ -662,7 +662,7 @@ pv_bess_model/
 ### Test-Klassen und Fixtures
 
 ```python
-# test_integration_suite.py
+# test_integration_dispatch.py
 
 import pytest
 import copy

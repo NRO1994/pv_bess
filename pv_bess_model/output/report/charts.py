@@ -79,6 +79,48 @@ def _apply_corporate_style(
     fig.tight_layout()
 
 
+def _draw_reference_lines(
+    ax: Any,
+    baseline_market_irr: float | None,
+    equity_irr_target: float | None,
+    colors: list[str] | None = None,
+) -> None:
+    """Draw horizontal reference lines for baseline IRR and min IRR target.
+
+    Parameters
+    ----------
+    ax:
+        Matplotlib axes.
+    baseline_market_irr:
+        Project IRR (%) from pure spot market run, or ``None``.
+    equity_irr_target:
+        Internal minimum IRR requirement (%) from scenario, or ``None``.
+    colors:
+        Corporate color palette.
+    """
+    if colors is None:
+        colors = REPORT_CORPORATE_COLORS
+
+    if baseline_market_irr is not None:
+        ax.axhline(
+            y=baseline_market_irr,
+            color=colors[4] if len(colors) > 4 else "#888888",
+            linestyle="--",
+            linewidth=1.2,
+            alpha=0.8,
+            label=f"Direktvermarktung ({baseline_market_irr:.1f} %)",
+        )
+    if equity_irr_target is not None:
+        ax.axhline(
+            y=equity_irr_target,
+            color="#E74C3C",
+            linestyle="-.",
+            linewidth=1.2,
+            alpha=0.8,
+            label=f"Min. IRR ({equity_irr_target:.1f} %)",
+        )
+
+
 def _save_chart(fig: Any, output_path: Path) -> Path:
     """Save a matplotlib figure as PNG and close it.
 
@@ -225,6 +267,8 @@ def create_grid_search_chart(
     grid_result: Any,
     output_path: Path,
     colors: list[str] | None = None,
+    baseline_market_irr: float | None = None,
+    equity_irr_target: float | None = None,
 ) -> Path:
     """Create a grid search chart: Project IRR vs BESS scale per E/P ratio.
 
@@ -277,6 +321,7 @@ def create_grid_search_chart(
             label=f"Optimum ({opt.scale_pct:.0f}%, {opt.e_to_p_ratio:.0f}h)",
         )
 
+    _draw_reference_lines(ax, baseline_market_irr, equity_irr_target, colors)
     ax.legend(fontsize=8)
     _apply_corporate_style(
         fig, ax, "Grid Search: Project IRR vs. BESS-Skalierung", "BESS-Anteil (% PV)", "Project IRR (%)", colors
@@ -288,6 +333,8 @@ def create_eeg_sensitivity_chart(
     eeg_result: Any,
     output_path: Path,
     colors: list[str] | None = None,
+    baseline_market_irr: float | None = None,
+    equity_irr_target: float | None = None,
 ) -> Path:
     """Create an EEG sensitivity chart: Project IRR vs floor price.
 
@@ -339,6 +386,7 @@ def create_eeg_sensitivity_chart(
         label="± 1 Std.Abw.",
     )
 
+    _draw_reference_lines(ax, baseline_market_irr, equity_irr_target, colors)
     ax.legend(fontsize=8)
     _apply_corporate_style(
         fig, ax, "EEG-Sensitivität: Project IRR vs. Gebotspreis", "EEG-Gebotspreis (ct/kWh)", "Project IRR (%)", colors
@@ -350,6 +398,8 @@ def create_ppa_collar_chart(
     collar_result: Any,
     output_path: Path,
     colors: list[str] | None = None,
+    baseline_market_irr: float | None = None,
+    equity_irr_target: float | None = None,
 ) -> Path:
     """Create a PPA Collar chart: Project IRR vs floor price per cap spread.
 
@@ -379,8 +429,8 @@ def create_ppa_collar_chart(
     # Group by cap_spread
     groups: dict[float, list[tuple[float, float]]] = {}
     for point in collar_result.points:
-        spread = point.params.get("cap_spread_eur_per_mwh", 0.0)
-        floor = point.params.get("floor_price_eur_per_mwh", 0.0)
+        spread = point.params.get("cap_spread_eur_per_kwh", 0.0)
+        floor = point.params.get("floor_price_eur_per_kwh", 0.0)
         eq_stats = point.mc_result.overall_stats.get("project_irr")
         if eq_stats is not None:
             groups.setdefault(spread, []).append((floor, eq_stats.mean * 100.0))
@@ -390,11 +440,12 @@ def create_ppa_collar_chart(
         floors = [d[0] for d in data_sorted]
         irrs = [d[1] for d in data_sorted]
         color = colors[i % len(colors)]
-        ax.plot(floors, irrs, marker="o", markersize=5, color=color, label=f"Cap-Spread = {spread:.0f} EUR/MWh")
+        ax.plot(floors, irrs, marker="o", markersize=5, color=color, label=f"Cap-Spread = {spread:.4f} EUR/kWh")
 
+    _draw_reference_lines(ax, baseline_market_irr, equity_irr_target, colors)
     ax.legend(fontsize=8)
     _apply_corporate_style(
-        fig, ax, "PPA Collar: Project IRR vs. Floor-Preis", "Floor-Preis (EUR/MWh)", "Project IRR (%)", colors
+        fig, ax, "PPA Collar: Project IRR vs. Floor-Preis", "Floor-Preis (EUR/kWh)", "Project IRR (%)", colors
     )
     return _save_chart(fig, output_path)
 
@@ -403,6 +454,8 @@ def create_ppa_baseload_chart(
     baseload_result: Any,
     output_path: Path,
     colors: list[str] | None = None,
+    baseline_market_irr: float | None = None,
+    equity_irr_target: float | None = None,
 ) -> Path:
     """Create a PPA Baseload chart: Project IRR vs PPA price per baseload level.
 
@@ -433,7 +486,7 @@ def create_ppa_baseload_chart(
     groups: dict[float, list[tuple[float, float]]] = {}
     for point in baseload_result.points:
         bl = point.params.get("baseload_mw", 0.0)
-        ppa_price = point.params.get("ppa_price_eur_per_mwh", 0.0)
+        ppa_price = point.params.get("ppa_price_eur_per_kwh", 0.0)
         eq_stats = point.mc_result.overall_stats.get("project_irr")
         if eq_stats is not None:
             groups.setdefault(bl, []).append((ppa_price, eq_stats.mean * 100.0))
@@ -445,9 +498,10 @@ def create_ppa_baseload_chart(
         color = colors[i % len(colors)]
         ax.plot(prices, irrs, marker="o", markersize=5, color=color, label=f"Baseload = {bl:.1f} MW")
 
+    _draw_reference_lines(ax, baseline_market_irr, equity_irr_target, colors)
     ax.legend(fontsize=8)
     _apply_corporate_style(
-        fig, ax, "PPA Baseload: Project IRR vs. PPA-Preis", "PPA-Preis (EUR/MWh)", "Project IRR (%)", colors
+        fig, ax, "PPA Baseload: Project IRR vs. PPA-Preis", "PPA-Preis (EUR/kWh)", "Project IRR (%)", colors
     )
     return _save_chart(fig, output_path)
 
@@ -462,6 +516,8 @@ def create_all_charts(
     collar_result: Any | None = None,
     baseload_result: Any | None = None,
     colors: list[str] | None = None,
+    baseline_market_irr: float | None = None,
+    equity_irr_target: float | None = None,
 ) -> dict[str, Path]:
     """Create all applicable charts and return a mapping of chart name to path.
 
@@ -523,11 +579,16 @@ def create_all_charts(
         except Exception:
             logger.warning("Failed to create price scenario chart.", exc_info=True)
 
+    # Convert baseline_market_irr from fraction to % for charts
+    _bl_irr_pct = (baseline_market_irr * 100.0) if baseline_market_irr is not None else None
+
     # Grid search chart (always)
     if len(grid_result.points) > 1:
         try:
             result["grid_search"] = create_grid_search_chart(
-                grid_result, charts_dir / "grid_search.png", colors
+                grid_result, charts_dir / "grid_search.png", colors,
+                baseline_market_irr=_bl_irr_pct,
+                equity_irr_target=equity_irr_target,
             )
         except Exception:
             logger.warning("Failed to create grid search chart.", exc_info=True)
@@ -536,7 +597,9 @@ def create_all_charts(
     if eeg_result is not None:
         try:
             result["eeg_sensitivity"] = create_eeg_sensitivity_chart(
-                eeg_result, charts_dir / "eeg_sensitivity.png", colors
+                eeg_result, charts_dir / "eeg_sensitivity.png", colors,
+                baseline_market_irr=_bl_irr_pct,
+                equity_irr_target=equity_irr_target,
             )
         except Exception:
             logger.warning("Failed to create EEG sensitivity chart.", exc_info=True)
@@ -545,7 +608,9 @@ def create_all_charts(
     if collar_result is not None:
         try:
             result["ppa_collar"] = create_ppa_collar_chart(
-                collar_result, charts_dir / "ppa_collar.png", colors
+                collar_result, charts_dir / "ppa_collar.png", colors,
+                baseline_market_irr=_bl_irr_pct,
+                equity_irr_target=equity_irr_target,
             )
         except Exception:
             logger.warning("Failed to create PPA Collar chart.", exc_info=True)
@@ -554,7 +619,9 @@ def create_all_charts(
     if baseload_result is not None:
         try:
             result["ppa_baseload"] = create_ppa_baseload_chart(
-                baseload_result, charts_dir / "ppa_baseload.png", colors
+                baseload_result, charts_dir / "ppa_baseload.png", colors,
+                baseline_market_irr=_bl_irr_pct,
+                equity_irr_target=equity_irr_target,
             )
         except Exception:
             logger.warning("Failed to create PPA Baseload chart.", exc_info=True)

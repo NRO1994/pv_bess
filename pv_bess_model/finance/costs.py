@@ -135,11 +135,19 @@ def calculate_total_costs(
     capex_pv = calculate_asset_capex(
         capex_config.get("pv", {}), reference_kw=pv_peak_kwp,
     )
-    capex_bess = calculate_asset_capex(
-        capex_config.get("bess", {}),
-        reference_kw=bess_power_kw,
-        reference_kwh=bess_capacity_kwh,
-    )
+
+    # When there is no BESS (power and capacity both zero), skip all BESS
+    # costs including the fixed_eur component.  Fixed costs represent
+    # installation/permitting that only apply when a BESS is actually built.
+    if bess_power_kw == 0.0 and bess_capacity_kwh == 0.0:
+        capex_bess = 0.0
+    else:
+        capex_bess = calculate_asset_capex(
+            capex_config.get("bess", {}),
+            reference_kw=bess_power_kw,
+            reference_kwh=bess_capacity_kwh,
+        )
+
     capex_grid = calculate_asset_capex(
         capex_config.get("grid", {}), reference_kw=grid_max_export_kw,
     )
@@ -154,12 +162,17 @@ def calculate_total_costs(
         reference_kwh=0.0,
         asset_capex=capex_pv,
     )
-    opex_bess = calculate_asset_opex(
-        opex_config.get("bess", {}),
-        reference_kw=bess_power_kw,
-        reference_kwh=bess_capacity_kwh,
-        asset_capex=capex_bess,
-    )
+
+    if bess_power_kw == 0.0 and bess_capacity_kwh == 0.0:
+        opex_bess = 0.0
+    else:
+        opex_bess = calculate_asset_opex(
+            opex_config.get("bess", {}),
+            reference_kw=bess_power_kw,
+            reference_kwh=bess_capacity_kwh,
+            asset_capex=capex_bess,
+        )
+
     opex_grid = calculate_asset_opex(
         opex_config.get("grid", {}),
         reference_kw=grid_max_export_kw,

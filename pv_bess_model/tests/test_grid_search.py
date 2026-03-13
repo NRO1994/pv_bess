@@ -9,6 +9,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from pv_bess_model.config.defaults import (
+    INTERVALS_PER_HOUR,
+    INTERVALS_PER_YEAR,
+    TIMESTEP_HOURS,
+)
 from pv_bess_model.optimization.grid_search import (
     GridSearchConfig,
     GridSearchResult,
@@ -28,19 +33,19 @@ GRID_MAX_KW = 80.0
 
 
 def _make_price_array(price_eur_per_kwh: float = 0.05) -> np.ndarray:
-    """Return a flat 8760-length price array in €/kWh."""
-    return np.full(8760, price_eur_per_kwh, dtype=float)
+    """Return a flat price array in €/kWh at quarter-hourly resolution."""
+    return np.full(INTERVALS_PER_YEAR, price_eur_per_kwh, dtype=float)
 
 
 def _make_pv_array(peak_kwh: float = 20.0) -> np.ndarray:
-    """Return an 8760 PV profile: half-sine during hours 6-18, zero otherwise."""
-    hour_of_day = np.arange(8760) % 24
+    """Return a PV profile at quarter-hourly resolution: half-sine during hours 6-18."""
+    hour_of_day = np.arange(INTERVALS_PER_YEAR) % (24 * INTERVALS_PER_HOUR) // INTERVALS_PER_HOUR
     daylight = np.where(
         (hour_of_day >= 6) & (hour_of_day <= 18),
         np.sin(np.pi * (hour_of_day - 6) / 12),
         0.0,
     )
-    return (peak_kwh * daylight).astype(float)
+    return (peak_kwh / INTERVALS_PER_HOUR * daylight).astype(float)
 
 
 def _make_config(
@@ -103,6 +108,13 @@ def _make_config(
         koerperschaftsteuer_pct=15.0,
         solidaritaetszuschlag_pct=5.5,
 
+        pv_base_timeseries_year=2020,
+        pv_availability_pct=100.0,
+        baseload_mw=0.0,
+        commissioning_year=2027,
+        timestep_hours=TIMESTEP_HOURS,
+        intervals_per_day=INTERVALS_PER_HOUR * 24,
+        intervals_per_year=INTERVALS_PER_YEAR,
         max_workers=1,
     )
 
@@ -224,9 +236,10 @@ class TestOptimumIdentification:
         """optimal.equity_irr == max of all non-None equity IRRs."""
         assert grid_result.optimal is not None
         valid_irrs = [
-            pt.equity_irr for pt in grid_result.points if pt.equity_irr is not None
+            pt.metrics.equity_irr for pt in grid_result.points
+            if pt.metrics is not None and pt.metrics.equity_irr is not None
         ]
-        assert grid_result.optimal.equity_irr == pytest.approx(max(valid_irrs), rel=1e-9)
+        assert grid_result.optimal.metrics.equity_irr == pytest.approx(max(valid_irrs), rel=1e-9)
 
     def test_exactly_one_optimal_flag(self, grid_result: GridSearchResult) -> None:
         flagged = [pt for pt in grid_result.points if pt.is_optimal]
@@ -288,23 +301,37 @@ class TestCapexSanity:
 class TestOptimizationFeeGridSearch:
     """Verify that optimization_fee_pct affects Equity IRR in the grid search."""
 
+    @staticmethod
+    def _make_grey_config_with_variable_prices(
+        scales: list[float], lifetime: int = 3, fee_pct: float = 0.0,
+    ) -> GridSearchConfig:
+        """Build grey-mode config with variable spot prices for arbitrage."""
+        # Variable prices: cheap at night, expensive during day → arbitrage profit
+        base_price = np.zeros(INTERVALS_PER_YEAR, dtype=float)
+        hour_of_day = np.arange(INTERVALS_PER_YEAR) % (24 * INTERVALS_PER_HOUR) // INTERVALS_PER_HOUR
+        base_price = np.where(hour_of_day < 8, 0.02, 0.10)  # cheap night, expensive day
+        cfg = _make_config(scales=scales, e_to_p=[2.0], lifetime=lifetime)
+        cfg.operating_mode = "grey"
+        cfg.optimization_fee_pct = fee_pct
+        cfg.spot_prices_yearly = [base_price.copy() for _ in range(lifetime)]
+        return cfg
+
     def test_fee_reduces_equity_irr(self) -> None:
         """A positive optimization fee should reduce equity IRR vs. fee=0."""
-        config_no_fee = _make_config(scales=[0.0, 50.0], e_to_p=[2.0], lifetime=3)
-        config_no_fee.optimization_fee_pct = 0.0
-        result_no_fee = run_grid_search(config_no_fee)
-
-        config_with_fee = _make_config(scales=[0.0, 50.0], e_to_p=[2.0], lifetime=3)
-        config_with_fee.optimization_fee_pct = 20.0  # Large fee for clear effect
-        result_with_fee = run_grid_search(config_with_fee)
+        result_no_fee = run_grid_search(
+            self._make_grey_config_with_variable_prices([0.0, 50.0], fee_pct=0.0)
+        )
+        result_with_fee = run_grid_search(
+            self._make_grey_config_with_variable_prices([0.0, 50.0], fee_pct=20.0)
+        )
 
         # Compare the BESS point (scale=50%), not PV-only (scale=0% has no BESS revenue)
         bess_no_fee = [p for p in result_no_fee.points if p.scale_pct == pytest.approx(50.0)][0]
         bess_with_fee = [p for p in result_with_fee.points if p.scale_pct == pytest.approx(50.0)][0]
 
-        assert bess_no_fee.equity_irr is not None
-        assert bess_with_fee.equity_irr is not None
-        assert bess_with_fee.equity_irr < bess_no_fee.equity_irr
+        assert bess_no_fee.metrics is not None and bess_no_fee.metrics.equity_irr is not None
+        assert bess_with_fee.metrics is not None and bess_with_fee.metrics.equity_irr is not None
+        assert bess_with_fee.metrics.equity_irr < bess_no_fee.metrics.equity_irr
 
     def test_fee_zero_no_effect_on_pv_only(self) -> None:
         """PV-only (scale=0%) should have same IRR regardless of fee setting."""
@@ -316,8 +343,8 @@ class TestOptimizationFeeGridSearch:
         config_with_fee.optimization_fee_pct = 20.0
         result_with_fee = run_grid_search(config_with_fee)
 
-        irr_no_fee = result_no_fee.points[0].equity_irr
-        irr_with_fee = result_with_fee.points[0].equity_irr
+        irr_no_fee = result_no_fee.points[0].metrics.equity_irr if result_no_fee.points[0].metrics else None
+        irr_with_fee = result_with_fee.points[0].metrics.equity_irr if result_with_fee.points[0].metrics else None
         assert irr_no_fee is not None
         assert irr_with_fee is not None
         assert irr_no_fee == pytest.approx(irr_with_fee, rel=1e-9)

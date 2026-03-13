@@ -18,6 +18,7 @@ from pv_bess_model.config.defaults import (
     DEFAULT_KOERPERSCHAFTSTEUER_PCT,
     DEFAULT_SOLIDARITAETSZUSCHLAG_PCT,
 )
+from pv_bess_model.finance import debt
 from pv_bess_model.finance.debt import (
     AnnuitySchedule,
     add_replacement_debt,
@@ -201,7 +202,7 @@ def build_cashflow_projection(
         # Project CF (pre-leverage): Revenue - OPEX - Tax - CAPEX
         proj_cf = revenue - opex - tax_result.total_tax - capex_this_year
 
-        # Equity CF (post-leverage): Revenue - OPEX - Debt Service - Tax - Equity CAPEX
+        # Equity CF (post-leverage): Revenue - OPEX - Debt - Tax - Equity CAPEX
         eq_cf = revenue - opex - debt_svc - tax_result.total_tax - equity_capex_this_year
 
         equity_cf_array[idx] = eq_cf
