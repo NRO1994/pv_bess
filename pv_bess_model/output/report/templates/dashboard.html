@@ -72,28 +72,25 @@
     .muted { color: var(--muted); }
     .small { font-size: 12px; }
 
-    /* ===== Tabs ===== */
+    /* ===== Tabs (stepper style) ===== */
     .tabs { margin-top: 16px; }
     .tablist {
-      display: flex; gap: 4px; overflow-x: auto; padding-bottom: 6px;
-      border-bottom: 2px solid var(--border);
+      display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px;
     }
     .tab {
-      border: 1px solid var(--border); background: var(--surface); color: var(--fg);
-      padding: 8px 14px; border-top-left-radius: 10px; border-top-right-radius: 10px;
-      cursor: pointer; font-weight: 600; font-size: 13px; white-space: nowrap;
-      border-bottom: 2px solid transparent; transition: all 0.15s;
+      padding: 6px 16px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      border: 2px solid var(--border); color: var(--muted); cursor: pointer;
+      white-space: nowrap; transition: all 0.2s; background: transparent;
     }
-    .tab:hover { background: var(--surface-2); }
+    .tab:hover { border-color: var(--corp-midblue); }
     .tab[aria-selected="true"] {
-      background: var(--surface-2); border-bottom-color: var(--corp-orange);
-      color: var(--corp-darkblue);
+      border-color: var(--corp-orange); color: var(--corp-orange);
+      background: rgba(255, 130, 0, 0.08);
     }
-    [data-theme="dark"] .tab[aria-selected="true"] { color: var(--corp-lightblue); }
 
     .tabpanel {
-      border: 1px solid var(--border); border-radius: 12px; border-top-left-radius: 0;
-      margin-top: -1px; background: var(--surface); padding: 16px;
+      border: 1px solid var(--border); border-radius: 12px;
+      margin-top: 8px; background: var(--surface); padding: 16px;
     }
     .tabpanel h2 { font-size: 17px; margin: 0 0 12px 0; color: var(--corp-darkblue); }
     [data-theme="dark"] .tabpanel h2 { color: var(--corp-lightblue); }
@@ -419,10 +416,10 @@
       showTooltip(px, py, html) {
         const tip = this.tooltipEl; tip.style.display = 'block'; tip.innerHTML = html;
         const wr = this.wrap.getBoundingClientRect();
-        let tx = px + 14, ty = py + 14;
+        let tx = px + 8, ty = py + 8;
         const tw = tip.offsetWidth || 200, th = tip.offsetHeight || 40;
-        if (tx + tw > wr.width - 8) tx = px - tw - 14;
-        if (ty + th > wr.height - 8) ty = py - th - 14;
+        if (tx + tw > wr.width - 8) tx = px - tw - 8;
+        if (ty + th > wr.height - 8) ty = py - th - 8;
         tip.style.transform = `translate(${tx}px, ${ty}px)`;
       }
       hideTooltip() { this.tooltipEl.style.display = 'none'; }
@@ -534,27 +531,39 @@
               ctx.textAlign = 'left'; ctx.fillText('Optimum', mpx + 12, mpy - 4);
             }
           }
-          // Tooltip
+          // Tooltip – show all series at nearest x position
           if (mouseX != null && mouseY != null) {
             const xData = ch.canvasXToData(mouseX);
-            let bestDist = Infinity, bestS = null, bestI = -1;
+            // Find nearest x index per series
+            let bestXDist = Infinity, bestXVal = null;
             for (const s of series) {
               for (let i = 0; i < s.x.length; i++) {
-                if (s.y[i] == null) continue;
                 const d = Math.abs(s.x[i] - xData);
-                if (d < bestDist) { bestDist = d; bestS = s; bestI = i; }
+                if (d < bestXDist) { bestXDist = d; bestXVal = s.x[i]; }
               }
             }
-            if (bestS && bestI >= 0) {
-              const px = ch.dataXToCanvas(bestS.x[bestI]), py = ch.dataYToCanvas(bestS.y[bestI]);
-              const dist = Math.hypot(mouseX - px, mouseY - py);
-              if (dist < 40 && px >= cr.left && px <= cr.right) {
-                ctx.fillStyle = bestS.color || CORP_COLORS[0];
-                ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI*2); ctx.fill();
-                let html = `<b>${bestS.label}</b><br>`;
-                html += `${xLabel || 'X'}: <b>${ch.xLabelFormatter(bestS.x[bestI])}</b><br>`;
-                html += `${yLabel || 'Y'}: <b>${ch.yLabelFormatter(bestS.y[bestI])}</b>`;
-                ch.showTooltip(px, py, html);
+            if (bestXVal != null) {
+              const pxCross = ch.dataXToCanvas(bestXVal);
+              if (pxCross >= cr.left - 20 && pxCross <= cr.right + 20) {
+                let html = `<b>${xLabel || 'X'}: ${ch.xLabelFormatter(bestXVal)}</b><br>`;
+                let anyHit = false;
+                for (const s of series) {
+                  // Find closest index to bestXVal in this series
+                  let ci = -1, cd = Infinity;
+                  for (let i = 0; i < s.x.length; i++) {
+                    const d = Math.abs(s.x[i] - bestXVal);
+                    if (d < cd) { cd = d; ci = i; }
+                  }
+                  if (ci >= 0 && cd < bestXDist * 1.5 + 0.01 && s.y[ci] != null) {
+                    const py = ch.dataYToCanvas(s.y[ci]);
+                    ctx.fillStyle = s.color || CORP_COLORS[0];
+                    ctx.beginPath(); ctx.arc(pxCross, py, 5, 0, Math.PI*2); ctx.fill();
+                    html += `<span style="color:${s.color || CORP_COLORS[0]}">\u25A0</span> ${s.label}: <b>${ch.yLabelFormatter(s.y[ci])}</b><br>`;
+                    anyHit = true;
+                  }
+                }
+                if (anyHit) ch.showTooltip(mouseX, mouseY, html);
+                else ch.hideTooltip();
               } else ch.hideTooltip();
             } else ch.hideTooltip();
           } else ch.hideTooltip();
@@ -653,19 +662,6 @@
               ctx.fillStyle = n.color;
               ctx.fillRect(xLeft, negY, barW, h);
               negY += h;
-            }
-
-            // Year 1 highlight (CAPEX-dominated)
-            if (i === 0) {
-              const topY = Math.min(posY, y0px);
-              const botY = Math.max(negY, y0px);
-              ctx.save();
-              ctx.strokeStyle = cssVar('--corp-orange');
-              ctx.lineWidth = 2;
-              ctx.setLineDash([4, 3]);
-              ctx.strokeRect(xLeft - 2, topY - 2, barW + 4, botY - topY + 4);
-              ctx.setLineDash([]);
-              ctx.restore();
             }
 
             // Hover detection
@@ -847,6 +843,7 @@
 
       L.marker([lat, lon], { draggable: false, keyboard: false }).addTo(map);
 
+      mapDiv.appendChild(mapC);
       // Für Tab-Layout/Hidden Panels: nach Tab-Wechsel Karte neu layouten
       allMaps.push(map);
       row.appendChild(mapDiv);
@@ -1056,11 +1053,11 @@
       const sorted = [...pts].sort((a,b) => (a.floor_price_eur_per_kwh || 0) - (b.floor_price_eur_per_kwh || 0));
 
       const series = [{
-        label: 'Equity IRR (Mittel)',
+        label: 'Equity IRR (Median)',
         x: sorted.map(p => (p.floor_price_eur_per_kwh || 0) * 100),
-        y: sorted.map(p => p.irr_mean),
-        yLow: sorted.map(p => (p.irr_mean || 0) - (p.irr_std || 0)),
-        yHigh: sorted.map(p => (p.irr_mean || 0) + (p.irr_std || 0)),
+        y: sorted.map(p => p.irr_median != null ? p.irr_median : p.irr_mean),
+        yLow: sorted.map(p => p.irr_p10 != null ? p.irr_p10 : (p.irr_mean || 0) - (p.irr_std || 0)),
+        yHigh: sorted.map(p => p.irr_p90 != null ? p.irr_p90 : (p.irr_mean || 0) + (p.irr_std || 0)),
         color: CORP_COLORS[0]
       }];
 
@@ -1073,9 +1070,12 @@
         allCharts.push(r);
         btnPng.onclick = () => downloadCanvasPNG(r.canvas, D.scenario_name + '_eeg.png');
         btnCsv.onclick = () => {
-          const h = ['Floor_ct_kWh', 'IRR_Mean_%', 'IRR_Std_%'];
+          const h = ['Floor_ct_kWh', 'IRR_Median_%', 'IRR_P10_%', 'IRR_P90_%', 'IRR_Mean_%', 'IRR_Std_%'];
           const rows = sorted.map(p => [
             ((p.floor_price_eur_per_kwh||0)*100).toFixed(2).replace('.',','),
+            (p.irr_median!=null?p.irr_median:p.irr_mean||0).toFixed(2).replace('.',','),
+            (p.irr_p10!=null?p.irr_p10:0).toFixed(2).replace('.',','),
+            (p.irr_p90!=null?p.irr_p90:0).toFixed(2).replace('.',','),
             (p.irr_mean||0).toFixed(2).replace('.',','),
             (p.irr_std||0).toFixed(2).replace('.',',')
           ]);
