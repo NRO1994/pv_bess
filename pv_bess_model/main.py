@@ -96,6 +96,7 @@ from pv_bess_model.optimization.monte_carlo import MCParams, run_monte_carlo
 from pv_bess_model.output.csv_writer import (
     CsvConfig,
     write_cashflows_csv,
+    write_combined_monte_carlo_csv,
     write_dispatch_sample_csv,
     write_eeg_sensitivity_csv,
     write_grid_search_csv,
@@ -910,6 +911,7 @@ def run(args: argparse.Namespace) -> int:
     import dataclasses as _dc
 
     baseline_market_irr: float | None = None
+    baseline_mc_result = None
 
     if need_mc_params and mc_params is not None:
         baseline_market_config = _dc.replace(
@@ -928,6 +930,8 @@ def run(args: argparse.Namespace) -> int:
             optimal=optimal_setup,
             mc_params=mc_params,
             scenario_prices=scenarios_list,
+            fixed_price_years=0,
+            analysis_label="Direktvermarktungs-Baseline",
         )
         eq_stats = baseline_mc_result.overall_stats.get("equity_irr")
         if eq_stats is not None and not np.isnan(eq_stats.p50):
@@ -1113,6 +1117,21 @@ def run(args: argparse.Namespace) -> int:
             path=output_dir / f"{scenario.name}_dispatch_sample.csv",
             hourly_sample=optimal_setup.run_result.hourly_sample,
             start_year=scenario.commissioning_year,
+            config=csv_config,
+        )
+
+    # Combined Monte Carlo CSV (all analyses in one file)
+    all_mc_results = []
+    if baseline_mc_result is not None:
+        all_mc_results.append(baseline_mc_result)
+    for sens_result in (eeg_sens_result, collar_result, baseload_result):
+        if sens_result is not None:
+            for point in sens_result.points:
+                all_mc_results.append(point.mc_result)
+    if all_mc_results:
+        write_combined_monte_carlo_csv(
+            path=output_dir / f"{scenario.name}_monte_carlo.csv",
+            mc_results=all_mc_results,
             config=csv_config,
         )
 

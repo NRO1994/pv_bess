@@ -252,6 +252,8 @@ def run_eeg_sensitivity(
             optimal=optimal,
             mc_params=mc_params,
             scenario_prices=scenario_prices,
+            fixed_price_years=fixed_price_years,
+            analysis_label="EEG-Sensitivität",
         )
 
         points.append(AnalysisResult(
@@ -348,6 +350,8 @@ def run_ppa_collar_analysis(
             optimal=optimal,
             mc_params=mc_params,
             scenario_prices=scenario_prices,
+            fixed_price_years=duration_years,
+            analysis_label="PPA-Collar",
         )
 
         points.append(AnalysisResult(
@@ -448,6 +452,8 @@ def run_ppa_baseload_analysis(
             optimal=optimal,
             mc_params=mc_params,
             scenario_prices=scenario_prices,
+            fixed_price_years=duration_years,
+            analysis_label="PPA-Baseload",
         )
 
         points.append(AnalysisResult(

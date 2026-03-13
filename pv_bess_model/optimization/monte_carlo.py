@@ -152,6 +152,12 @@ class MCIterationResult:
         NPV at the configured discount rate in EUR.
     dscr_min:
         Minimum DSCR over the loan tenor (or None).
+    capture_rate:
+        Average revenue per kWh fed into the grid (EUR/kWh), or None.
+    fixed_price_years:
+        Number of years with a fixed (EEG/PPA) price guarantee.
+    analysis_label:
+        Label identifying the analysis context (e.g. "Direktvermarktungs-baseline").
     """
 
     iteration: int
@@ -166,6 +172,9 @@ class MCIterationResult:
     project_irr: float | None
     npv: float
     dscr_min: float | None
+    capture_rate: float | None
+    fixed_price_years: int
+    analysis_label: str
 
 
 @dataclass
@@ -345,6 +354,8 @@ def _run_mc_iteration_fast(
     mc: MCParams,
     scenario_dispatches: dict[str, _ScenarioDispatch],
     scenario_prices: list[PriceWeatherScenario],
+    fixed_price_years: int = 0,
+    analysis_label: str = "",
 ) -> MCIterationResult:
     """Execute one Monte Carlo iteration using pre-computed dispatch results.
 
@@ -535,6 +546,9 @@ def _run_mc_iteration_fast(
         project_irr=metrics.project_irr,
         npv=metrics.npv,
         dscr_min=metrics.dscr_min,
+        capture_rate=metrics.capture_rate,
+        fixed_price_years=fixed_price_years,
+        analysis_label=analysis_label,
     )
 
 
@@ -626,6 +640,8 @@ def run_monte_carlo(
     optimal: GridPointResult,
     mc_params: MCParams,
     scenario_prices: list[PriceWeatherScenario],
+    fixed_price_years: int = 0,
+    analysis_label: str = "",
 ) -> MCResult:
     """Run the Monte Carlo simulation on the optimal BESS configuration.
 
@@ -743,6 +759,8 @@ def run_monte_carlo(
             mc=mc_params,
             scenario_dispatches=scenario_dispatches,
             scenario_prices=scenario_prices,
+            fixed_price_years=fixed_price_years,
+            analysis_label=analysis_label,
         )
         results.append(result)
         if i % log_interval == 0 or i == n_iterations:

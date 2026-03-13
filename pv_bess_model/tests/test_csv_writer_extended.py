@@ -139,6 +139,9 @@ def _make_mc_result(n_iterations: int = 5) -> MCResult:
             project_irr=0.06,
             npv=50_000.0,
             dscr_min=1.2,
+            capture_rate=0.065,
+            fixed_price_years=20,
+            analysis_label="EEG-Sensitivität",
         ))
 
     irrs = np.array([it.equity_irr for it in iterations])

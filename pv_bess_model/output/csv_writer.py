@@ -386,6 +386,8 @@ def write_monte_carlo_csv(
     rows = []
     for it in mc_result.iterations:
         rows.append({
+            "analysis_label": it.analysis_label,
+            "fixed_price_years": str(it.fixed_price_years),
             "iteration": str(it.iteration),
             "price_scenario": it.price_scenario,
             "capex_factor_pv": fmt_float(it.capex_factor_pv, decimal=d),
@@ -398,10 +400,60 @@ def write_monte_carlo_csv(
             "project_irr_pct": fmt_pct(it.project_irr, decimal=d),
             "npv_eur": fmt_currency(it.npv, decimal=d),
             "dscr_min": fmt_float(it.dscr_min, decimal=d),
+            "capture_rate_eur_per_kwh": fmt_float(it.capture_rate, decimal=d),
         })
 
     _write_dicts(path, rows, delimiter=cfg.delimiter)
     logger.info("Wrote Monte Carlo CSV (%d rows): %s", len(rows), path)
+
+
+def write_combined_monte_carlo_csv(
+    path: Path | str,
+    mc_results: list[MCResult],
+    config: CsvConfig | None = None,
+) -> None:
+    """Write all MC iteration results from multiple analyses into a single CSV.
+
+    Parameters
+    ----------
+    path:
+        Destination file path.
+    mc_results:
+        List of MCResult objects from different analyses (baseline,
+        EEG sensitivity, PPA collar, PPA baseload, etc.).
+    config:
+        CSV formatting settings. Uses defaults when None.
+    """
+    cfg = config or CsvConfig()
+    d = cfg.decimal
+
+    rows = []
+    for mc_result in mc_results:
+        for it in mc_result.iterations:
+            rows.append({
+                "analysis_label": it.analysis_label,
+                "fixed_price_years": str(it.fixed_price_years),
+                "iteration": str(it.iteration),
+                "price_scenario": it.price_scenario,
+                "capex_factor_pv": fmt_float(it.capex_factor_pv, decimal=d),
+                "capex_factor_bess": fmt_float(it.capex_factor_bess, decimal=d),
+                "opex_factor_pv": fmt_float(it.opex_factor_pv, decimal=d),
+                "opex_factor_bess": fmt_float(it.opex_factor_bess, decimal=d),
+                "pv_availability_factor": fmt_float(it.pv_availability_factor, decimal=d),
+                "bess_availability_factor": fmt_float(it.bess_availability_factor, decimal=d),
+                "equity_irr_pct": fmt_pct(it.equity_irr, decimal=d),
+                "project_irr_pct": fmt_pct(it.project_irr, decimal=d),
+                "npv_eur": fmt_currency(it.npv, decimal=d),
+                "dscr_min": fmt_float(it.dscr_min, decimal=d),
+                "capture_rate_eur_per_kwh": fmt_float(it.capture_rate, decimal=d),
+            })
+
+    if rows:
+        _write_dicts(path, rows, delimiter=cfg.delimiter)
+        logger.info(
+            "Wrote combined Monte Carlo CSV (%d rows from %d analyses): %s",
+            len(rows), len(mc_results), path,
+        )
 
 
 # ---------------------------------------------------------------------------
