@@ -231,6 +231,8 @@ class _ScenarioDispatch:
     annual_total_revenue: list[float]
     annual_bess_spot_revenue: list[float]
     total_production_kwh: float
+    annual_pv_production_kwh: list[float]
+    annual_bess_discharge_kwh: list[float]
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +328,8 @@ def _run_scenario_dispatch(scenario_name: str) -> _ScenarioDispatch:
         annual_total_revenue=[r.total_revenue for r in sim.annual_results],
         annual_bess_spot_revenue=[r.bess_spot_revenue for r in sim.annual_results],
         total_production_kwh=sum(r.pv_production for r in sim.annual_results),
+        annual_pv_production_kwh=[r.pv_production for r in sim.annual_results],
+        annual_bess_discharge_kwh=[r.bess_throughput for r in sim.annual_results],
     )
 
 
@@ -452,6 +456,12 @@ def _run_mc_iteration_fast(
         annual_bess_spot_revenues.append(bess_spot)
 
     total_production_kwh = dispatch.total_production_kwh * pv_availability_factor
+    annual_pv_production_kwh = [
+        p * pv_availability_factor for p in dispatch.annual_pv_production_kwh
+    ]
+    annual_bess_discharge_kwh = [
+        d * bess_availability_factor for d in dispatch.annual_bess_discharge_kwh
+    ]
 
     # --- Build cashflow projection ---
     debt_schedule = build_annuity_schedule(
@@ -508,6 +518,8 @@ def _run_mc_iteration_fast(
         total_opex_lifetime=total_opex_lifetime,
         total_production_kwh=total_production_kwh,
         discount_rate=base.discount_rate,
+        annual_pv_production_kwh=annual_pv_production_kwh,
+        annual_bess_discharge_kwh=annual_bess_discharge_kwh,
     )
 
     return MCIterationResult(

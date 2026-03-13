@@ -1266,7 +1266,7 @@
         <div class="kpi-card"><div class="label">Equity IRR</div><div class="value">${fmtPct(m.equity_irr)}</div></div>
         <div class="kpi-card"><div class="label">Project IRR</div><div class="value">${fmtPct(m.project_irr)}</div></div>
         <div class="kpi-card"><div class="label">NPV</div><div class="value">${fmtEur(m.npv)}</div></div>
-        <div class="kpi-card"><div class="label">Min DSCR</div><div class="value">${fmtNum(m.dscr_min, 2)}</div></div>
+        <div class="kpi-card"><div class="label">Capture Rate</div><div class="value">${m.capture_rate != null ? fmtNum(m.capture_rate, 2) + ' ct/kWh' : 'n/a'}</div></div>
         <div class="kpi-card"><div class="label">Avg DSCR</div><div class="value">${fmtNum(m.dscr_avg, 2)}</div></div>
         <div class="kpi-card"><div class="label">LCOE</div><div class="value">${m.lcoe != null ? fmtNum(m.lcoe, 3) + ' ct/kWh' : 'n/a'}</div></div>
         <div class="kpi-card"><div class="label">Payback</div><div class="value">${m.payback_year != null ? m.payback_year + ' Jahre' : 'n/a'}</div></div>

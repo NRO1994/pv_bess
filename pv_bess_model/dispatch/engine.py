@@ -181,7 +181,7 @@ class AnnualResult:
     bess_discharge_grey: float
     """Energy removed from BESS grey chamber (SoC change, before RTE).  0.0 in green mode."""
     bess_throughput: float
-    """Total kWh through BESS (charge_pv + charge_grid + discharge_green + discharge_grey)."""
+    """Total kWh discharged from BESS (discharge_green + discharge_grey)."""
 
     # BESS state
     bess_capacity_kwh: float
@@ -642,9 +642,7 @@ def run_simulation(
         total_revenue = (
                 year_revenue_pv + year_revenue_green + year_revenue_grey - year_import_cost - year_missing_baseload
         )
-        bess_throughput = (
-                year_charge_pv + year_charge_grid + year_discharge_green + year_discharge_grey
-        )
+        bess_throughput = year_discharge_green + year_discharge_grey
 
         annual_results.append(
             AnnualResult(

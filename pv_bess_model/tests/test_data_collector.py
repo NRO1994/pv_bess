@@ -133,6 +133,7 @@ def _make_metrics() -> FinancialMetrics:
         lcoe=0.045,
         payback_year=12,
         annual_dscr=[1.25, 1.30, 1.45],
+        capture_rate=0.065,
     )
 
 

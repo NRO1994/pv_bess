@@ -350,6 +350,7 @@ def _extract_metrics(metrics: FinancialMetrics) -> dict:
         "dscr_avg": metrics.dscr_avg,
         "lcoe": (metrics.lcoe * 100.0) if metrics.lcoe is not None else None,  # ct/kWh
         "payback_year": metrics.payback_year,
+        "capture_rate": (metrics.capture_rate * 100.0) if metrics.capture_rate is not None else None,  # ct/kWh
     }
 
 

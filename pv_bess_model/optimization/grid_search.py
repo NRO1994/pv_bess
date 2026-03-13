@@ -523,6 +523,8 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
     )
 
     # Primary metrics (P50 revenues)
+    annual_pv_production_kwh = [r.pv_production for r in sim_p50.annual_results]
+    annual_bess_discharge_kwh = [r.bess_throughput for r in sim_p50.annual_results]
     metrics = compute_all_metrics(
         equity_cashflows=cf.equity_cashflows,
         project_cashflows=cf.project_cashflows,
@@ -533,6 +535,8 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         total_opex_lifetime=sum([y.opex for y in cf.years]),
         total_production_kwh=total_production_kwh,
         discount_rate=args.discount_rate,
+        annual_pv_production_kwh=annual_pv_production_kwh,
+        annual_bess_discharge_kwh=annual_bess_discharge_kwh,
     )
 
     # Override DSCR with downside revenues for conservative debt coverage
