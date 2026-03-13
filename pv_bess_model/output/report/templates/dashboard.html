@@ -850,6 +850,9 @@
 
       panel.appendChild(row);
 
+      // Karte nach DOM-Einfügung neu layouten, damit Marker korrekt zentriert wird
+      setTimeout(() => { map.invalidateSize(); map.setView([lat, lon], zoom); }, 100);
+
       // LLM text
       const llm = document.createElement('div'); llm.className = 'llm-text';
       llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_1_overview) + LLM_HINT_HTML;
