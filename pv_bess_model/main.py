@@ -865,6 +865,33 @@ def run(args: argparse.Namespace) -> int:
         (optimal_setup.metrics.equity_irr or 0.0) * 100.0,
     )
 
+    # ------------------------------------------------------------------
+    # Step 5b: Baseline "Direktvermarktung" run (pure spot market, no MC)
+    # ------------------------------------------------------------------
+    import dataclasses as _dc
+
+    baseline_market_config = _dc.replace(
+        grid_search_config,
+        scale_pct_of_pv=[optimal_setup.scale_pct],
+        e_to_p_ratio_hours=[optimal_setup.e_to_p_ratio],
+        fixed_prices_yearly=[0.0] * lifetime,
+        goo_prices_yearly=[0.0] * lifetime,
+        cap_prices_yearly=[0.0] * lifetime,
+        baseload_mw=0,
+        skip_baseline=True,
+    )
+    logger.info("Computing baseline Direktvermarktung IRR (pure spot market)…")
+    baseline_result = run_grid_search(baseline_market_config)
+    baseline_market_irr: float | None = None
+    if baseline_result.optimal is not None and baseline_result.optimal.metrics is not None:
+        baseline_market_irr = baseline_result.optimal.metrics.project_irr
+        logger.info(
+            "Baseline Direktvermarktung Project IRR: %.2f %%",
+            (baseline_market_irr or 0.0) * 100.0,
+        )
+
+    # Extract equity_irr_target from scenario JSON (may be None)
+    equity_irr_target: float | None = finance.get("equity_irr_target", None)
 
     # ------------------------------------------------------------------
     # Step 6: Build MC parameters
@@ -1079,7 +1106,9 @@ def run(args: argparse.Namespace) -> int:
         eeg_sens_result=eeg_sens_result,
         collar_result=collar_result,
         baseload_result=baseload_result,
-        analyses=analyses_cfg
+        analyses=analyses_cfg,
+        baseline_market_irr=baseline_market_irr,
+        equity_irr_target=equity_irr_target,
     )
 
     # ------------------------------------------------------------------
@@ -1105,7 +1134,9 @@ def _generate_report(
     eeg_sens_result,
     collar_result,
     baseload_result,
-    analyses:dict
+    analyses: dict,
+    baseline_market_irr: float | None = None,
+    equity_irr_target: float | None = None,
 ) -> None:
     """Generate the interactive HTML report (Step 7b).
 
@@ -1171,7 +1202,9 @@ def _generate_report(
             eeg_sens_result=eeg_sens_result,
             collar_result=collar_result,
             baseload_result=baseload_result,
-            analyses=analyses
+            analyses=analyses,
+            baseline_market_irr=baseline_market_irr,
+            equity_irr_target=equity_irr_target,
         )
     except Exception:
         logger.error("Report data collection failed.", exc_info=True)
@@ -1191,6 +1224,8 @@ def _generate_report(
             eeg_result=eeg_sens_result,
             collar_result=collar_result,
             baseload_result=baseload_result,
+            baseline_market_irr=baseline_market_irr,
+            equity_irr_target=equity_irr_target,
         )
     except ImportError:
         logger.debug("matplotlib not available. Skipping PNG chart generation.")

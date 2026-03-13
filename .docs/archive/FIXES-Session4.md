@@ -2,11 +2,11 @@
 
 ## Integration
 
-- [ ] Equity IRR scheint viel zu hoch - manuell von mir zu prüfen!
+- [x] Equity IRR scheint viel zu hoch - manuell von mir zu prüfen!
 
 ## Logik
 
-- [ ] Die MC-Framework Logik muss überarbeitet werden: Es soll der Dispatch Optimizer über die Laufzeit für alle
+- [x] Die MC-Framework Logik muss überarbeitet werden: Es soll der Dispatch Optimizer über die Laufzeit für alle
   gegebenen Preisszenarien einmalig gerechnet werden. Da die MC-Parameter nur einzelne Tage (im Falle der PV/BESS
   Verfügbarkeit), oder kommerzielle Faktoren (CAPEX/OPEX Unsicherheiten) betreffen, ist es eine unnötige Berechnung
   jedes Mal den riesigen Overhead der vollumfänglichen Dispatch Optimierung zu durchlaufen. Die PV/BESS Availabilities
@@ -18,10 +18,10 @@
     - Anwenden aller MC-Parameter auf die nun anstehende Finanzbetrachtung. Da keine aufwendige Dispatch Optimierung
       mehr durchgeführt werden muss, können diese Betrachtungen sequenziell (pro Preis-Szenario) durchlaufen werden.
     - Gleiche Finale Zusammenfassung der Ergebnisse wie bisher
-- [ ] Es soll in der daily-optimization der Solver aus ortools.linear_solver import pywraplp
+- [x] Es soll in der daily-optimization der Solver aus ortools.linear_solver import pywraplp
   ,pywraplp.Solver.CreateSolver('HiGHS') verwendet werden. Beachte, dass alle Unit-Tests weiterhin erfolgreich sein
   sollen
-- [ ] der BESS darf in einem Zeitpunkt nur entweder laden, oder entladen werden - aber nicht beides gleichzeitig.
+- [x] der BESS darf in einem Zeitpunkt nur entweder laden, oder entladen werden - aber nicht beides gleichzeitig.
   Überlege wie sich diese Nebenbedingung gut in das Problem einarbeiten lässt. Als mögliche Vereinfachung könnte bei
   negativen Preisen das `discharging = 0` festgelegt werden, da dieses Phänomen nur in solchen Fällen auftritt. Es
   erwirtschaftet dabei durch die Ineffizienzen des Speichers Gewinne, die aber nicht realisierbar sind.
@@ -33,17 +33,17 @@
   In Zeiten wo nicht ausreichend Einspeisung vorliegt, müssen die Einkaufskosten berücksichtigt werden. Diese berechnen
   sich durch `(baseload - grid_export) * (spot_price - effective_price)`. Die Variablen dazu sollen dann ebenfalls im
   CSV Dispatch und Cashflow zu sehen sein.
-- [ ] Prüfe, warum sich die Abschreibung im pv_only Case nach 10 Jahren ändert (+100EUR). Das darf nicht der Fall sein
+- [x] Prüfe, warum sich die Abschreibung im pv_only Case nach 10 Jahren ändert (+100EUR). Das darf nicht der Fall sein
 
 ## Kosmetik
 
-- [ ] Der CSV Cashflow soll zudem die folgenden Spalten zusätzlich beinhalten. Alle Datenpunkte dazu existieren bereits,
+- [x] Der CSV Cashflow soll zudem die folgenden Spalten zusätzlich beinhalten. Alle Datenpunkte dazu existieren bereits,
   müssen nur an die entsprechende csv_write-Method weitergeben werden:
     - BESS Green Revenue (EUR)
     - BESS Grey Revenue (EUR)
     - PV Revenue (EUR)
     - PV Grid Export (MWh)
-- [ ] im HTML Input wizard soll es die folgenden Anpassungen geben, achte dabei darauf, dass sich die Struktur der
+- [x] im HTML Input wizard soll es die folgenden Anpassungen geben, achte dabei darauf, dass sich die Struktur der
   JSON-Datei nicht ändert!
     - Die Monte-Carlo Parameter sollen von Tab "1 - Szenario" zu "7 - Analysen", unterhalb der bestehenden Felder
     - Auf der "1- Szenario" soll der Betriebsmodus von Tab "2 - Projekt & Standort" hinüber gezogen werden. Zudem soll
@@ -61,7 +61,7 @@
       die gesamte Breite etwas an, sodass etwas mehr Luft zwischen den einzelnen Feldern ist.
     - Die Preis-Szenario Inputs aus der datei .docs/full_input_example.json sollen als hardcoded in die Output
       JSON-datei aufgenommen werden
-- [ ] dashboard_Report.html Anpassungen
+- [x] dashboard_Report.html Anpassungen
     - Tool-Tip ist viel zu weit unten, muss dichter an den Cursor ren
     - Tool-Tip hat im Multi-Line Diagramm immer nur die erste Datenreihe als info, die anderen müssen ebenfalls
       erscheinen
@@ -69,10 +69,3 @@
       direkt in OSM verankert. Es soll, so wie im Input, eine interaktive OSM Einbindung sein.
     - Verwende das Header und Tab-Design aus dem input_wizard auch für das Dashboard-Template, nur die Grün-Färbung soll
       nicht übernommen werden
-
-## Fragen:
-
-- Warum AfA in Cashflow Berechnung? und in reduzierung der capex für zinsberechnung?
-- Negative Steuern
-- AfA nur während EEG?
-- Tilgung berücksichtigen?

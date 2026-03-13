@@ -178,6 +178,12 @@ def render_prompt(data: Any) -> str:
         "{{weather_years}}": weather_stats,
         "{{price_scenarios_summary}}": price_scenarios_summary,
         "{{sensitivity_section}}": sensitivity_section,
+        "{{baseline_market_irr}}": (
+            f"{data.baseline_market_irr:.2f} %" if data.baseline_market_irr is not None else "n/a"
+        ),
+        "{{equity_irr_target}}": (
+            f"{data.equity_irr_target:.1f} %" if data.equity_irr_target is not None else "nicht definiert"
+        ),
     }
 
     result = template

@@ -156,6 +156,10 @@ class HtmlReportData:
     tool_logo_b64: str | None
     company_logo_b64: str | None
 
+    # -- Reference lines for charts --
+    baseline_market_irr: float | None = None  # Project IRR from pure spot market (Direktvermarktung), in %
+    equity_irr_target: float | None = None  # Internal minimum IRR requirement, in %
+
     # -- LLM texts (populated after manual Copilot step) --
     llm_texts: dict[str, str] = field(default_factory=dict)
 
@@ -443,7 +447,9 @@ def collect_report_data(
     eeg_sens_result: Any | None = None,
     collar_result: Any | None = None,
     baseload_result: Any | None = None,
-    analyses:dict[str, Any] | None = None,
+    analyses: dict[str, Any] | None = None,
+    baseline_market_irr: float | None = None,
+    equity_irr_target: float | None = None,
 ) -> HtmlReportData:
     """Aggregate all simulation results into an ``HtmlReportData`` instance.
 
@@ -547,4 +553,7 @@ def collect_report_data(
         # Logos
         tool_logo_b64=_encode_logo_b64(_TOOL_LOGO_PATH),
         company_logo_b64=_encode_logo_b64(_COMPANY_LOGO_PATH),
+        # Reference lines
+        baseline_market_irr=(baseline_market_irr * 100.0) if baseline_market_irr is not None else None,
+        equity_irr_target=equity_irr_target,
     )

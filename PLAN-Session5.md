@@ -42,14 +42,14 @@ Basierend auf FIXES-Session4.md. Priorisiert nach Abhängigkeiten, Risiko und Au
 
 ---
 
-## Phase 2: Finanz-Bugfixes (Mittlere Priorität)
+## Phase 2: Finanz-Bugfixes (Mittlere Priorität) (ABGESCHLOSSEN)
 
 ### 5. Abschreibungs-Bug PV-only (+100€ nach Jahr 10) - ERLEDIGT
 - **Datei:** `finance/tax.py`
 - **Aufwand:** Gering
 - **Vermutung:** BESS-AfA wird auch bei BESS=0 berechnet oder Off-by-one bei AfA-Perioden.
 
-### 6. Equity IRR Plausibilisierung - OFFEN
+### 6. Equity IRR Plausibilisierung - ERLEDIGT
 - **Dateien:** `finance/metrics.py`, `finance/cashflow.py`
 - **Aufwand:** Gering (Analyse), unklar (Fix)
 - **Begründung:** Könnte durch Logik-Fixes (Baseload, AfA) bereits behoben werden. Daher am Ende prüfen.
@@ -82,16 +82,16 @@ Basierend auf FIXES-Session4.md. Priorisiert nach Abhängigkeiten, Risiko und Au
   - [x] Gesamtbreite erhöhen
   - [x] Preis-Szenario Inputs hardcoded aus full_input_example.json
 
-### 9. Dashboard Report Anpassungen
+### 9. Dashboard Report Anpassungen - ERLEDIGT
 - **Datei:** `output/report/templates/dashboard.html`
 - **Aufwand:** Mittel
 - **Teilaufgaben:**
-    - [ ] Tooltip-Position näher an Cursor
-    - [ ] Multi-Line Tooltip: alle Datenreihen anzeigen
-    - [ ] OSM-Karte: interaktiv mit korrektem Pin (Leaflet)
-    - [ ] Header/Tab-Design vom Input Wizard übernehmen (ohne Grün)
-    - [ ] Das Hervorheben des ersten Jahres in der Cashflow Analyse ist unnötig, entferne den Orangen Kasten
-    - [ ] die Sensitivität im EEG-Tab soll nicht die Standardabweichung um den Mittelwert abbilden, sondern der orange
+    - [x] Tooltip-Position näher an Cursor
+    - [x] Multi-Line Tooltip: alle Datenreihen anzeigen
+    - [x] OSM-Karte: interaktiv mit korrektem Pin (Leaflet)
+    - [x] Header/Tab-Design vom Input Wizard übernehmen (ohne Grün)
+    - [x] Das Hervorheben des ersten Jahres in der Cashflow Analyse ist unnötig, entferne den Orangen Kasten
+    - [x] die Sensitivität im EEG-Tab soll nicht die Standardabweichung um den Mittelwert abbilden, sondern der orange
       Bereich zwischen P10 und P90 aufgespannt werden. Die Linie soll dann der Median sein. Alle Zahlen sind bereits in
       der Analyse vorhanden, es muss nur der data_collector entsprechend angepasst werden
 

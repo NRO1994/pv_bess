@@ -466,7 +466,7 @@
     // ================================================================
     //  MULTI-LINE CHART FACTORY
     // ================================================================
-    function createMultiLineChart(containerId, series, {xLabel, yLabel, xFormatter, yFormatter, markerPoint, bandSeries} = {}) {
+    function createMultiLineChart(containerId, series, {xLabel, yLabel, xFormatter, yFormatter, markerPoint, bandSeries, hLines} = {}) {
       // series: [{label, x, y, color, yLow?, yHigh?}]
       const container = document.getElementById(containerId);
       if (!container) return null;
@@ -531,6 +531,29 @@
               ctx.textAlign = 'left'; ctx.fillText('Optimum', mpx + 12, mpy - 4);
             }
           }
+          // Horizontal reference lines
+          if (hLines && hLines.length) {
+            for (const hl of hLines) {
+              const py = ch.dataYToCanvas(hl.y);
+              if (py >= cr.top && py <= cr.bottom) {
+                ctx.save();
+                ctx.strokeStyle = hl.color || '#888';
+                ctx.lineWidth = 1.2;
+                ctx.setLineDash(hl.dash || [6, 4]);
+                ctx.globalAlpha = 0.85;
+                ctx.beginPath();
+                ctx.moveTo(cr.left, py);
+                ctx.lineTo(cr.right, py);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.fillStyle = hl.color || '#888';
+                ctx.font = '10px system-ui';
+                ctx.textAlign = 'right';
+                ctx.fillText(hl.label + ' (' + fmtNum(hl.y, 1) + ' %)', cr.right - 4, py - 4);
+                ctx.restore();
+              }
+            }
+          }
           // Tooltip – show all series at nearest x position
           if (mouseX != null && mouseY != null) {
             const xData = ch.canvasXToData(mouseX);
@@ -576,6 +599,13 @@
         const item = document.createElement('span'); item.className = 'legend-item';
         item.innerHTML = `<span class="legend-box" style="background:${s.color || CORP_COLORS[0]}"></span> ${s.label}`;
         leg.appendChild(item);
+      }
+      if (hLines && hLines.length) {
+        for (const hl of hLines) {
+          const item = document.createElement('span'); item.className = 'legend-item';
+          item.innerHTML = `<span class="legend-box" style="background:${hl.color || '#888'};height:2px;margin-top:5px;border-top:2px dashed ${hl.color || '#888'};background:transparent"></span> ${hl.label}`;
+          leg.appendChild(item);
+        }
       }
       container.appendChild(leg);
 
@@ -738,6 +768,15 @@
     const TAB_DEFS = [];
     const allCharts = [];
  const allMaps = [];
+
+    // Build horizontal reference lines for IRR charts
+    const irrHLines = [];
+    if (D.baseline_market_irr != null) {
+      irrHLines.push({y: D.baseline_market_irr, label: 'Direktvermarktung', color: '#888888', dash: [6, 4]});
+    }
+    if (D.equity_irr_target != null) {
+      irrHLines.push({y: D.equity_irr_target, label: 'Min. IRR', color: '#E74C3C', dash: [8, 3, 2, 3]});
+    }
 
     function addTab(id, title, condition, buildFn) {
       if (!condition) return;
@@ -1014,7 +1053,8 @@
         xLabel: 'BESS-Scale', yLabel: 'Equity IRR',
         xFormatter: v => fmtNum(v, 0) + ' %',
         yFormatter: v => fmtNum(v, 2) + ' %',
-        markerPoint: marker
+        markerPoint: marker,
+        hLines: irrHLines
       });
       if (r) {
         allCharts.push(r);
@@ -1067,7 +1107,8 @@
       const r = createMultiLineChart('chart-eeg', series, {
         xLabel: 'Floor-Preis', yLabel: 'Equity IRR',
         xFormatter: v => fmtNum(v, 2) + ' ct/kWh',
-        yFormatter: v => fmtNum(v, 2) + ' %'
+        yFormatter: v => fmtNum(v, 2) + ' %',
+        hLines: irrHLines
       });
       if (r) {
         allCharts.push(r);
@@ -1130,7 +1171,8 @@
       const r = createMultiLineChart('chart-collar', collarSeries, {
         xLabel: 'Floor-Preis', yLabel: 'Equity IRR',
         xFormatter: v => fmtNum(v, 2) + ' ct/kWh',
-        yFormatter: v => fmtNum(v, 2) + ' %'
+        yFormatter: v => fmtNum(v, 2) + ' %',
+        hLines: irrHLines
       });
       if (r) {
         allCharts.push(r);
@@ -1190,7 +1232,8 @@
       const r = createMultiLineChart('chart-baseload', blSeries, {
         xLabel: 'PPA-Preis', yLabel: 'Equity IRR',
         xFormatter: v => fmtNum(v, 2) + ' ct/kWh',
-        yFormatter: v => fmtNum(v, 2) + ' %'
+        yFormatter: v => fmtNum(v, 2) + ' %',
+        hLines: irrHLines
       });
       if (r) {
         allCharts.push(r);
