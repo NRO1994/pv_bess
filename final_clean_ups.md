@@ -17,7 +17,7 @@
     - [ ] die Sensitivität im EEG-Tab soll nicht die Standardabweichung um den Mittelwert abbilden, sondern der orange
       Bereich zwischen P10 und P90 aufgespannt werden. Die Linie soll dann der Median sein. Alle Zahlen sind bereits in
       der Analyse vorhanden, es muss nur der data_collector entsprechend angepasst werden
-    - [ ] Grid search Diagramm vergisst den letzten Punkt. 
+    - [x] Grid search Diagramm vergisst den letzten Punkt. (IRR War nicht gesetzt durch unprofitablen Case)
     - [ ] LLM Text
         - [x] Wetterjahre miteinander vergleichen, nicht nur Sommer/winter
         - [ ] EEG Standard Abweichung fehlt im Prompt

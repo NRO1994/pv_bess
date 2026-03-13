@@ -28,7 +28,7 @@ Basierend auf FIXES-Session4.md. Priorisiert nach Abhängigkeiten, Risiko und Au
   anpassen.
 - **Abhängigkeit:** → nach Schritt 1
 
-### 4. MC-Framework Refactoring - OFFEN
+### 4. MC-Framework Refactoring - ERLEDIGT
 - **Datei:** `optimization/monte_carlo.py`
 - **Aufwand:** Hoch (630 Zeilen, Architektur-Änderung)
 - **Begründung:** Dispatch nur 1x pro Preisszenario (statt N×). PV/BESS-Availability auf 100% im Dispatch. MC-Noise auf
@@ -44,7 +44,7 @@ Basierend auf FIXES-Session4.md. Priorisiert nach Abhängigkeiten, Risiko und Au
 
 ## Phase 2: Finanz-Bugfixes (Mittlere Priorität)
 
-### 5. Abschreibungs-Bug PV-only (+100€ nach Jahr 10) - ZU PRÜFEN
+### 5. Abschreibungs-Bug PV-only (+100€ nach Jahr 10) - ERLEDIGT
 - **Datei:** `finance/tax.py`
 - **Aufwand:** Gering
 - **Vermutung:** BESS-AfA wird auch bei BESS=0 berechnet oder Off-by-one bei AfA-Perioden.
@@ -90,6 +90,10 @@ Basierend auf FIXES-Session4.md. Priorisiert nach Abhängigkeiten, Risiko und Au
     - [ ] Multi-Line Tooltip: alle Datenreihen anzeigen
     - [ ] OSM-Karte: interaktiv mit korrektem Pin (Leaflet)
     - [ ] Header/Tab-Design vom Input Wizard übernehmen (ohne Grün)
+    - [ ] Das Hervorheben des ersten Jahres in der Cashflow Analyse ist unnötig, entferne den Orangen Kasten
+    - [ ] die Sensitivität im EEG-Tab soll nicht die Standardabweichung um den Mittelwert abbilden, sondern der orange
+      Bereich zwischen P10 und P90 aufgespannt werden. Die Linie soll dann der Median sein. Alle Zahlen sind bereits in
+      der Analyse vorhanden, es muss nur der data_collector entsprechend angepasst werden
 
 ---
 
