@@ -9,29 +9,35 @@ Basierend auf FIXES-Session4.md. Priorisiert nach Abhängigkeiten, Risiko und Au
 ### 1. Solver-Wechsel: scipy → ortools/HiGHS -> ABGEBROCHEN, Solver ist wesentlich langsamer
 - **Datei:** `dispatch/optimizer.py` + alle Optimizer-Tests
 - **Aufwand:** Mittel-Hoch (834 Zeilen Optimizer umschreiben)
-- **Begründung:** Grundlage für alle folgenden LP-Änderungen. Muss zuerst passieren, damit nachfolgende LP-Erweiterungen (Gleichzeitigkeits-Constraint, Baseload) direkt im neuen Solver gebaut werden.
+- **Begründung:** Grundlage für alle folgenden LP-Änderungen. Muss zuerst passieren, damit nachfolgende
+  LP-Erweiterungen (Gleichzeitigkeits-Constraint, Baseload) direkt im neuen Solver gebaut werden.
 - **Risiko:** Hoch – zentrale Komponente, alle Tests müssen grün bleiben.
 
 ### 2. Gleichzeitiges Laden/Entladen verhindern - ERLEDIGT
 - **Datei:** `dispatch/optimizer.py`
 - **Aufwand:** Gering
-- **Begründung:** Baut auf neuem Solver auf. Vereinfachung: `discharge=0` bei negativen Preisen, vermeidet binäre Variablen.
+- **Begründung:** Baut auf neuem Solver auf. Vereinfachung: `discharge=0` bei negativen Preisen, vermeidet binäre
+  Variablen.
 - **Abhängigkeit:** → nach Schritt 1
 
 ### 3. PPA-Baseload in LP-Optimierung integrieren - OFFEN
 - **Dateien:** `dispatch/optimizer.py`, `dispatch/engine.py`, `market/ppa.py`, `output/csv_writer.py`
 - **Aufwand:** Hoch
-- **Begründung:** Neue LP-Variablen (Baseload-Shortfall-Kosten), Revenue: `max(spot, effective)` bei ausreichender Einspeisung, Einkaufskosten `(baseload - grid_export) * (spot - effective)` bei Shortfall. Dispatch/Cashflow-Ausgabe anpassen.
+- **Begründung:** Neue LP-Variablen (Baseload-Shortfall-Kosten), Revenue: `max(spot, effective)` bei ausreichender
+  Einspeisung, Einkaufskosten `(baseload - grid_export) * (spot - effective)` bei Shortfall. Dispatch/Cashflow-Ausgabe
+  anpassen.
 - **Abhängigkeit:** → nach Schritt 1
 
 ### 4. MC-Framework Refactoring - OFFEN
 - **Datei:** `optimization/monte_carlo.py`
 - **Aufwand:** Hoch (630 Zeilen, Architektur-Änderung)
-- **Begründung:** Dispatch nur 1x pro Preisszenario (statt N×). PV/BESS-Availability auf 100% im Dispatch, Revenue-Skalierung danach. MC-Noise nur auf Finanz-Ergebnisse.
+- **Begründung:** Dispatch nur 1x pro Preisszenario (statt N×). PV/BESS-Availability auf 100% im Dispatch. MC-Noise auf
+  Finanz-Ergebnisse sowie die PV/BESS Verfügbarkeit auf die entsprechende Revenues anwenden.
 - **Ablauf:**
-  1. Parallelisierte Simulation aller Preis-Szenarien einmalig (100% Verfügbarkeit)
-  2. MC-Parameter auf Finanzbetrachtung anwenden (sequenziell pro Szenario)
-  3. Finale Zusammenfassung wie bisher
+    1. Parallelisierte Simulation aller Preis-Szenarien einmalig (100% Verfügbarkeit)
+    2. MC-Noise anwenden (sequenziell pro Szenario)
+    3. Finale Zusammenfassung wie bisher, nur dass in den CSV Dateien die Zusammenfassung pro preiscenario vorgenommen
+       werden soll. In den HTML Diagrammen, sollen so wie bisher alle MC-Runs in einer Linie dargestellt werden.
 - **Abhängigkeit:** → nach Schritt 1
 
 ---
@@ -76,27 +82,27 @@ Basierend auf FIXES-Session4.md. Priorisiert nach Abhängigkeiten, Risiko und Au
   - [x] Gesamtbreite erhöhen
   - [x] Preis-Szenario Inputs hardcoded aus full_input_example.json
 
-### 9. Dashboard Report Anpassungen - ANGEFANGEN
+### 9. Dashboard Report Anpassungen
 - **Datei:** `output/report/templates/dashboard.html`
 - **Aufwand:** Mittel
 - **Teilaufgaben:**
-  - [ ] Tooltip-Position näher an Cursor
-  - [ ] Multi-Line Tooltip: alle Datenreihen anzeigen
-  - [ ] OSM-Karte: interaktiv mit korrektem Pin (Leaflet)
-  - [ ] Header/Tab-Design vom Input Wizard übernehmen (ohne Grün)
+    - [ ] Tooltip-Position näher an Cursor
+    - [ ] Multi-Line Tooltip: alle Datenreihen anzeigen
+    - [ ] OSM-Karte: interaktiv mit korrektem Pin (Leaflet)
+    - [ ] Header/Tab-Design vom Input Wizard übernehmen (ohne Grün)
 
 ---
 
 ## Reihenfolge & Abhängigkeiten
 
-| Schritt | Fix | Abhängigkeit | Parallelisierbar? |
-|---------|-----|-------------|-------------------|
-| 1 | Solver → ortools | – | Nein (Basis) |
-| 2 | Laden/Entladen Constraint | → 1 | Nein |
-| 3 | PPA-Baseload in LP | → 1 | Nein |
-| 4 | MC-Refactoring | → 1 | Nein |
-| 5 | AfA-Bug PV-only | – | Ja (parallel zu 1-4) |
-| 6 | Equity IRR Prüfung | → 3, 5 | Nein |
-| 7 | Cashflow-CSV Spalten | – | Ja (parallel zu 1-4) |
-| 8 | Input Wizard UI | – | Ja (parallel zu 1-4) |
-| 9 | Dashboard Report UI | – | Ja (parallel zu 1-4) |
+| Schritt | Fix                       | Abhängigkeit | Parallelisierbar?    |
+|---------|---------------------------|--------------|----------------------|
+| 1       | Solver → ortools          | –            | Nein (Basis)         |
+| 2       | Laden/Entladen Constraint | → 1          | Nein                 |
+| 3       | PPA-Baseload in LP        | → 1          | Nein                 |
+| 4       | MC-Refactoring            | → 1          | Nein                 |
+| 5       | AfA-Bug PV-only           | –            | Ja (parallel zu 1-4) |
+| 6       | Equity IRR Prüfung        | → 3, 5       | Nein                 |
+| 7       | Cashflow-CSV Spalten      | –            | Ja (parallel zu 1-4) |
+| 8       | Input Wizard UI           | –            | Ja (parallel zu 1-4) |
+| 9       | Dashboard Report UI       | –            | Ja (parallel zu 1-4) |

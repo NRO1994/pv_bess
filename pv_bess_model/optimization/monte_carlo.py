@@ -1,17 +1,30 @@
 """Monte Carlo simulation on the optimal BESS configuration from grid search.
 
-Runs stochastic multi-year dispatch simulations on top of the grid search
-optimum.  Each iteration samples noise factors (PV yield, CAPEX, OPEX, BESS
-availability) and a price scenario (low / mid / high), then runs a full
-multi-year simulation to produce financial metrics.
+**Refactored approach (Session 5, Phase 1, Step 4):**
+
+Instead of running a full dispatch simulation per MC iteration (N x S dispatch
+runs), dispatch is executed only **once per price scenario** with 100 %
+PV and BESS availability.  The dispatch simulations are parallelised across
+scenarios.  MC noise factors are then applied sequentially to the pre-computed
+financial results in the main thread:
+
+- CAPEX / OPEX factors: scale asset-level costs.
+- PV availability factor: scales PV-related revenues (PV export and BESS
+  green discharge, since green charging comes from PV surplus).
+- BESS availability factor: scales BESS-related revenues (green + grey
+  discharge) and grid import costs.
+
+This reduces the compute cost from ``N_iterations x S_scenarios x 365 x
+lifetime`` LP solves to just ``S_scenarios x 365 x lifetime`` LP solves,
+giving a typical speed-up of ~1000x.
 
 Public API
 ----------
-MCParams            – Monte Carlo hyper-parameters (iterations, σ values, etc.).
-MCIterationResult   – Metrics from a single MC iteration.
-MCStatistics        – Descriptive statistics over a set of values.
-MCResult            – Complete MC output with all iterations and summary stats.
-run_monte_carlo     – Main entry point.
+MCParams            - Monte Carlo hyper-parameters (iterations, sigma values, etc.).
+MCIterationResult   - Metrics from a single MC iteration.
+MCStatistics        - Descriptive statistics over a set of values.
+MCResult            - Complete MC output with all iterations and summary stats.
+run_monte_carlo     - Main entry point.
 """
 
 from __future__ import annotations
@@ -25,12 +38,15 @@ import numpy as np
 from pv_bess_model.bess.replacement import ReplacementConfig
 from pv_bess_model.config.defaults import (
     BESS_NOISE_CLIP_MAX,
-    DAYS_PER_YEAR,
     DEFAULT_MC_ITERATIONS,
     MC_WEIGHT_TOLERANCE,
 )
 from pv_bess_model.config.loader import PriceWeatherScenario
-from pv_bess_model.dispatch.engine import DispatchEngineConfig, run_simulation
+from pv_bess_model.dispatch.engine import (
+    AnnualResult,
+    DispatchEngineConfig,
+    run_simulation,
+)
 from pv_bess_model.finance.cashflow import build_cashflow_projection
 from pv_bess_model.finance.debt import build_annuity_schedule
 from pv_bess_model.finance.inflation import inflate_value
@@ -54,29 +70,30 @@ class MCParams:
     iterations:
         Number of MC iterations.
     sigma_capex_pv:
-        Standard deviation for the PV CAPEX noise factor N(1, σ).
+        Standard deviation for the PV CAPEX noise factor N(1, sigma).
     sigma_capex_bess:
-        Standard deviation for the BESS CAPEX noise factor N(1, σ).
+        Standard deviation for the BESS CAPEX noise factor N(1, sigma).
     sigma_opex_pv:
-        Standard deviation for the PV OPEX noise factor N(1, σ).
+        Standard deviation for the PV OPEX noise factor N(1, sigma).
     sigma_opex_bess:
-        Standard deviation for the BESS OPEX noise factor N(1, σ).
+        Standard deviation for the BESS OPEX noise factor N(1, sigma).
     sigma_pv_availability:
         Standard deviation for the PV availability noise factor.
-        PV availability is sampled as N(1.0, σ), clipped to [0, 1].
+        PV availability is sampled as N(1.0, sigma), clipped to [0, 1].
     mu_bess_availability:
-        Mean of the BESS availability noise factor (fraction, 0–1).
+        Mean of the BESS availability noise factor (fraction, 0-1).
         e.g. 0.97 for 97 %.
     sigma_bess_availability:
         Standard deviation of the BESS availability noise factor.
     price_scenarios:
-        Mapping from scenario name to ``{"csv_column": str, "weight": float}``.
+        List of PriceWeatherScenario objects.
         Weights must sum to 1.0 (within ``MC_WEIGHT_TOLERANCE``).
     seed:
         Base random seed for reproducibility. Each iteration uses
         ``seed + iteration`` as its own seed.
     max_workers:
-        Number of parallel worker processes. None = os.cpu_count().
+        Number of parallel worker processes for the dispatch phase.
+        None = os.cpu_count().
     """
 
     iterations: int = DEFAULT_MC_ITERATIONS
@@ -132,7 +149,7 @@ class MCIterationResult:
     project_irr:
         Pre-leverage Project IRR (or None).
     npv:
-        NPV at the configured discount rate in €.
+        NPV at the configured discount rate in EUR.
     dscr_min:
         Minimum DSCR over the loan tenor (or None).
     """
@@ -194,125 +211,67 @@ class MCResult:
 
 
 # ---------------------------------------------------------------------------
-# Internal: worker shared state (initializer pattern)
+# Pre-computed dispatch results per scenario
 # ---------------------------------------------------------------------------
 
-# Module-level global set once per worker process via the initializer.
-_MC_WORKER_STATE: dict | None = None
 
+@dataclass
+class _ScenarioDispatch:
+    """Cached dispatch results for one price scenario (100 % availability).
 
-def _mc_worker_init(state: dict) -> None:
-    """Initialise the worker process with shared read-only data.
-
-    Parameters
-    ----------
-    state:
-        Dict containing all shared data for MC workers.  Keys:
-        ``grid_config``, ``optimal``, ``scenario_prices``, ``mc_params``.
+    All lists have length ``lifetime_years``.
     """
-    global _MC_WORKER_STATE
-    _MC_WORKER_STATE = state
+
+    scenario_name: str
+    annual_revenue_pv_export: list[float]
+    annual_revenue_bess_green: list[float]
+    annual_revenue_bess_grey: list[float]
+    annual_grid_import_cost: list[float]
+    annual_missing_baseload_cost: list[float]
+    annual_total_revenue: list[float]
+    annual_bess_spot_revenue: list[float]
+    total_production_kwh: float
 
 
 # ---------------------------------------------------------------------------
-# Internal: single iteration worker
+# Dispatch worker for parallel scenario simulation
 # ---------------------------------------------------------------------------
 
+# Module-level state set by the process pool initialiser so that each
+# worker has access to the heavy shared data without re-serialising it
+# per task.
+_DISPATCH_WORKER_STATE: dict | None = None
 
-def _run_mc_iteration(iteration: int) -> MCIterationResult:
-    """Execute one Monte Carlo iteration.
 
-    The shared configuration is read from the module-level
-    ``_MC_WORKER_STATE`` set by the worker initialiser.
+def _dispatch_worker_init(state: dict) -> None:
+    """Initialise a dispatch worker process with shared read-only data."""
+    global _DISPATCH_WORKER_STATE
+    _DISPATCH_WORKER_STATE = state
+
+
+def _run_scenario_dispatch(scenario_name: str) -> _ScenarioDispatch:
+    """Run dispatch for one price scenario at 100 % availability.
+
+    Reads shared state from module-level ``_DISPATCH_WORKER_STATE``.
 
     Parameters
     ----------
-    iteration:
-        1-indexed iteration number (also used as random seed offset).
+    scenario_name:
+        Name of the scenario to simulate (key into the shared scenario map).
 
     Returns
     -------
-    MCIterationResult
-        Sampled inputs and resulting financial metrics.
+    _ScenarioDispatch
+        Pre-computed per-year revenue breakdown.
     """
-    assert _MC_WORKER_STATE is not None, "Worker state not initialised."
+    assert _DISPATCH_WORKER_STATE is not None, "Dispatch worker state not initialised."
 
-    base: GridSearchConfig = _MC_WORKER_STATE["grid_config"]
-    optimal: GridPointResult = _MC_WORKER_STATE["optimal"]
-    scenario_prices: dict[str, list] = _MC_WORKER_STATE["scenario_prices"]
-    mc: MCParams = _MC_WORKER_STATE["mc_params"]
+    base: GridSearchConfig = _DISPATCH_WORKER_STATE["base_config"]
+    optimal: GridPointResult = _DISPATCH_WORKER_STATE["optimal"]
+    scenario_map: dict[str, PriceWeatherScenario] = _DISPATCH_WORKER_STATE["scenario_map"]
 
-    rng = np.random.default_rng(seed=mc.seed + iteration)
+    scenario = scenario_map[scenario_name]
 
-    # --- Sample price scenario ---
-    weights = [mc.price_scenarios[n].weight for n in range(len(scenario_prices))]
-    scenario_idx = rng.choice(list(range(len(scenario_prices))), p=weights)
-    selected_price_scenario: PriceWeatherScenario = scenario_prices[scenario_idx]
-
-    # --- Sample noise factors ---
-    capex_factor_pv = float(rng.normal(1.0, mc.sigma_capex_pv))
-    capex_factor_bess = float(rng.normal(1.0, mc.sigma_capex_bess))
-    opex_factor_pv = float(rng.normal(1.0, mc.sigma_opex_pv))
-    opex_factor_bess = float(rng.normal(1.0, mc.sigma_opex_bess))
-
-    # PV availability: N(1.0, sigma), clipped to [0, 1]
-    pv_availability_factor = float(
-        np.clip(rng.normal(1.0, mc.sigma_pv_availability), 0.0, BESS_NOISE_CLIP_MAX)
-    )
-
-    # BESS availability: N(mu_sample, sigma), clipped to [mu_bess, 1.0]
-    mu_sample = (mc.mu_bess_availability + 1.0) / 2.0
-    raw_avail = float(
-        rng.normal(mu_sample, mc.sigma_bess_availability)
-    )
-    bess_availability_factor = float(
-        np.clip(raw_avail, mc.mu_bess_availability, BESS_NOISE_CLIP_MAX)
-    )
-
-    # --- Stochastic BESS offline days: redrawn randomly per year ---
-    n_bess_offline_days = round((1.0 - bess_availability_factor) * DAYS_PER_YEAR)
-    n_bess_offline_days = max(0, min(n_bess_offline_days, DAYS_PER_YEAR))
-    offline_days_yearly: list[set[int]] = []
-    for _ in range(base.lifetime_years):
-        if n_bess_offline_days > 0:
-            day_indices = rng.choice(DAYS_PER_YEAR, size=n_bess_offline_days, replace=False)
-            offline_days_yearly.append({int(d) for d in day_indices})
-        else:
-            offline_days_yearly.append(set())
-
-    # --- Stochastic PV offline days: redrawn randomly per year ---
-    n_pv_offline_days = round((1.0 - pv_availability_factor) * DAYS_PER_YEAR)
-    n_pv_offline_days = max(0, min(n_pv_offline_days, DAYS_PER_YEAR))
-    pv_offline_days_yearly: list[set[int]] = []
-    for _ in range(base.lifetime_years):
-        if n_pv_offline_days > 0:
-            day_indices = rng.choice(DAYS_PER_YEAR, size=n_pv_offline_days, replace=False)
-            pv_offline_days_yearly.append({int(d) for d in day_indices})
-        else:
-            pv_offline_days_yearly.append(set())
-
-    # --- Scale CAPEX / OPEX per asset ---
-    capex_pv = optimal.capex_pv * capex_factor_pv
-    capex_bess = optimal.capex_bess * capex_factor_bess
-    capex_grid = optimal.capex_grid
-    capex_other = optimal.capex_other
-    capex_total = capex_pv + capex_bess + capex_grid + capex_other
-
-    opex_pv = optimal.opex_pv * opex_factor_pv
-    opex_bess = optimal.opex_bess * opex_factor_bess
-    opex_grid = optimal.opex_grid
-    opex_other = optimal.opex_other
-    opex_base = opex_pv + opex_bess + opex_grid + opex_other
-
-    # --- Replacement cost (scales with BESS CAPEX) ---
-    replacement_cost = (
-        base.replacement_fixed_eur
-        + base.replacement_eur_per_kw * optimal.bess_power_kw
-        + base.replacement_eur_per_kwh * optimal.bess_capacity_kwh
-        + base.replacement_pct_of_capex * capex_bess
-    )
-
-    # --- Engine config ---
     replacement = ReplacementConfig(
         enabled=base.replacement_enabled,
         year=base.replacement_year,
@@ -341,23 +300,158 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
         commissioning_year=base.commissioning_year,
     )
 
-    # --- Run dispatch simulation ---
+    # 100 % availability: no offline days
+    no_offline = [set() for _ in range(base.lifetime_years)]
+
     sim = run_simulation(
         config=engine_config,
-        pv_base_timeseries=selected_price_scenario.pv_timeseries_15min,
-        spot_prices_yearly=selected_price_scenario.price_per_year,
+        pv_base_timeseries=scenario.pv_timeseries_15min,
+        spot_prices_yearly=scenario.price_per_year,
         fixed_prices_yearly=base.fixed_prices_yearly,
-        offline_days_yearly=offline_days_yearly,
+        offline_days_yearly=no_offline,
         goo_prices_yearly=base.goo_prices_yearly if base.goo_prices_yearly else None,
         cap_prices_yearly=base.cap_prices_yearly if base.cap_prices_yearly else None,
-        pv_offline_days_yearly=pv_offline_days_yearly if n_pv_offline_days > 0 else None,
-        pv_base_timeseries_year=selected_price_scenario.weather_year,
-        baseload_kw=base.baseload_mw
+        pv_offline_days_yearly=None,
+        pv_base_timeseries_year=scenario.weather_year,
+        baseload_kw=base.baseload_mw,
     )
 
-    annual_revenues = [r.total_revenue for r in sim.annual_results]
-    annual_bess_spot_revenues = [r.bess_spot_revenue for r in sim.annual_results]
-    total_production_kwh = sum(r.pv_production for r in sim.annual_results)
+    return _ScenarioDispatch(
+        scenario_name=scenario.name,
+        annual_revenue_pv_export=[r.revenue_pv_export for r in sim.annual_results],
+        annual_revenue_bess_green=[r.revenue_bess_green for r in sim.annual_results],
+        annual_revenue_bess_grey=[r.revenue_bess_grey for r in sim.annual_results],
+        annual_grid_import_cost=[r.grid_import_cost for r in sim.annual_results],
+        annual_missing_baseload_cost=[r.missing_baseload_cost for r in sim.annual_results],
+        annual_total_revenue=[r.total_revenue for r in sim.annual_results],
+        annual_bess_spot_revenue=[r.bess_spot_revenue for r in sim.annual_results],
+        total_production_kwh=sum(r.pv_production for r in sim.annual_results),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Internal: single MC iteration (no dispatch, only financial noise)
+# ---------------------------------------------------------------------------
+
+
+def _run_mc_iteration_fast(
+    iteration: int,
+    base: GridSearchConfig,
+    optimal: GridPointResult,
+    mc: MCParams,
+    scenario_dispatches: dict[str, _ScenarioDispatch],
+    scenario_prices: list[PriceWeatherScenario],
+) -> MCIterationResult:
+    """Execute one Monte Carlo iteration using pre-computed dispatch results.
+
+    No dispatch simulation is run.  Instead, the pre-computed revenues are
+    scaled by the sampled PV/BESS availability factors, and CAPEX/OPEX are
+    scaled by their respective noise factors.
+
+    Parameters
+    ----------
+    iteration:
+        1-indexed iteration number (also used as random seed offset).
+    base:
+        Grid search configuration.
+    optimal:
+        Optimal grid point.
+    mc:
+        MC hyper-parameters.
+    scenario_dispatches:
+        Pre-computed dispatch results keyed by scenario name.
+    scenario_prices:
+        List of price-weather scenarios (for weighted sampling).
+
+    Returns
+    -------
+    MCIterationResult
+        Sampled inputs and resulting financial metrics.
+    """
+    rng = np.random.default_rng(seed=mc.seed + iteration)
+
+    # --- Sample price scenario ---
+    weights = [s.weight for s in scenario_prices]
+    scenario_idx = rng.choice(len(scenario_prices), p=weights)
+    selected: PriceWeatherScenario = scenario_prices[scenario_idx]
+    dispatch = scenario_dispatches[selected.name]
+
+    # --- Sample noise factors ---
+    capex_factor_pv = float(rng.normal(1.0, mc.sigma_capex_pv))
+    capex_factor_bess = float(rng.normal(1.0, mc.sigma_capex_bess))
+    opex_factor_pv = float(rng.normal(1.0, mc.sigma_opex_pv))
+    opex_factor_bess = float(rng.normal(1.0, mc.sigma_opex_bess))
+
+    # PV availability: N(1.0, sigma), clipped to [0, 1]
+    pv_availability_factor = float(
+        np.clip(rng.normal(1.0, mc.sigma_pv_availability), 0.0, BESS_NOISE_CLIP_MAX)
+    )
+
+    # BESS availability: N(mu_sample, sigma), clipped to [mu_bess, 1.0]
+    mu_sample = (mc.mu_bess_availability + 1.0) / 2.0
+    raw_avail = float(rng.normal(mu_sample, mc.sigma_bess_availability))
+    bess_availability_factor = float(
+        np.clip(raw_avail, mc.mu_bess_availability, BESS_NOISE_CLIP_MAX)
+    )
+
+    # --- Scale CAPEX / OPEX per asset ---
+    capex_pv = optimal.capex_pv * capex_factor_pv
+    capex_bess = optimal.capex_bess * capex_factor_bess
+    capex_grid = optimal.capex_grid
+    capex_other = optimal.capex_other
+    capex_total = capex_pv + capex_bess + capex_grid + capex_other
+
+    opex_pv = optimal.opex_pv * opex_factor_pv
+    opex_bess = optimal.opex_bess * opex_factor_bess
+    opex_grid = optimal.opex_grid
+    opex_other = optimal.opex_other
+    opex_base = opex_pv + opex_bess + opex_grid + opex_other
+
+    # --- Replacement cost (scales with BESS CAPEX factor) ---
+    replacement_cost = (
+        base.replacement_fixed_eur
+        + base.replacement_eur_per_kw * optimal.bess_power_kw
+        + base.replacement_eur_per_kwh * optimal.bess_capacity_kwh
+        + base.replacement_pct_of_capex * capex_bess
+    )
+
+    # --- Apply availability factors to pre-computed revenues ---
+    #
+    # PV availability affects:
+    #   - PV export revenue (direct PV-to-grid)
+    #   - BESS green revenue (green charging comes from PV surplus)
+    #
+    # BESS availability affects:
+    #   - BESS green discharge revenue
+    #   - BESS grey discharge revenue
+    #   - Grid import costs (grey mode charging)
+    #
+    # Combined: BESS green revenue is scaled by both factors (PV supplies
+    # the energy, BESS must be online to discharge it).
+    annual_revenues: list[float] = []
+    annual_bess_spot_revenues: list[float] = []
+    for y in range(base.lifetime_years):
+        rev_pv = dispatch.annual_revenue_pv_export[y] * pv_availability_factor
+        rev_bess_green = (
+            dispatch.annual_revenue_bess_green[y]
+            * pv_availability_factor
+            * bess_availability_factor
+        )
+        rev_bess_grey = (
+            dispatch.annual_revenue_bess_grey[y] * bess_availability_factor
+        )
+        grid_cost = (
+            dispatch.annual_grid_import_cost[y] * bess_availability_factor
+        )
+        baseload_cost = dispatch.annual_missing_baseload_cost[y]
+
+        total_rev = rev_pv + rev_bess_green + rev_bess_grey - grid_cost - baseload_cost
+        annual_revenues.append(total_rev)
+
+        bess_spot = rev_bess_green + rev_bess_grey
+        annual_bess_spot_revenues.append(bess_spot)
+
+    total_production_kwh = dispatch.total_production_kwh * pv_availability_factor
 
     # --- Build cashflow projection ---
     debt_schedule = build_annuity_schedule(
@@ -418,7 +512,7 @@ def _run_mc_iteration(iteration: int) -> MCIterationResult:
 
     return MCIterationResult(
         iteration=iteration,
-        price_scenario=selected_price_scenario.name,
+        price_scenario=selected.name,
         capex_factor_pv=capex_factor_pv,
         capex_factor_bess=capex_factor_bess,
         opex_factor_pv=opex_factor_pv,
@@ -523,92 +617,126 @@ def run_monte_carlo(
 ) -> MCResult:
     """Run the Monte Carlo simulation on the optimal BESS configuration.
 
-    Each iteration samples stochastic noise factors (PV yield, CAPEX, OPEX,
-    BESS availability) and a price scenario, then runs a full multi-year
-    dispatch + cashflow simulation.
+    **Two-phase approach:**
 
-    Worker processes share the large read-only state (base config + all price
-    scenarios) via the ``ProcessPoolExecutor`` initialiser, so price arrays
-    are serialised only once per worker process rather than once per iteration.
+    1. **Dispatch phase** (parallelised): Run one full multi-year dispatch
+       simulation per price scenario with 100 % PV and BESS availability.
+       Scenarios are dispatched in parallel via ``ProcessPoolExecutor``.
+    2. **MC noise phase** (sequential, main thread): For each iteration,
+       sample noise factors and apply them to the pre-computed revenues
+       and costs -- no dispatch is re-run.
 
     Parameters
     ----------
     base_config:
-        The ``GridSearchConfig`` used for the grid search.  Provides all base
-        parameters (BESS specs, finance, degradation rates, etc.).
+        The ``GridSearchConfig`` used for the grid search.
     optimal:
         The optimal grid point from the grid search (highest Equity IRR).
-        Determines BESS sizing, base CAPEX and OPEX.
     mc_params:
-        Monte Carlo hyper-parameters (iterations, σ values, price scenarios).
+        Monte Carlo hyper-parameters (iterations, sigma values, price scenarios).
     scenario_prices:
-        Mapping from scenario name (e.g. ``"mid"``) to a list of per-year
-        spot price arrays (each shape ``(intervals_per_year,)``, in €/kWh).
-        Length of each list must equal ``base_config.lifetime_years``.
-    scenario_pv_timeseries:
-        Optional mapping from scenario name to the undegraded PV production
-        timeseries for that scenario.  Each array has shape
-        ``(intervals_per_year,)`` in kWh.  When provided, each MC iteration
-        uses the PV timeseries from the sampled scenario.  When ``None``,
-        all iterations use ``base_config.pv_base_timeseries``.
+        List of ``PriceWeatherScenario`` objects with ``price_per_year``
+        and ``pv_timeseries_15min`` populated.
 
     Returns
     -------
     MCResult
         All iteration results plus overall and per-scenario statistics.
-
-    Raises
-    ------
-    ValueError
-        If a scenario name in ``mc_params.price_scenarios`` is not present in
-        ``scenario_prices``.
     """
+    n_scenarios = len(scenario_prices)
     logger.info(
         "Monte Carlo: %d iterations, %d price scenario(s), max_workers=%s.",
         mc_params.iterations,
-        len(mc_params.price_scenarios),
+        n_scenarios,
         mc_params.max_workers,
     )
 
-    shared_state: dict = {
-        "grid_config": base_config,
-        "optimal": optimal,
-        "scenario_prices": scenario_prices,
-        "mc_params": mc_params,
+    # Validate: mc_params.price_scenarios and scenario_prices must match
+    mc_names = {s.name for s in mc_params.price_scenarios}
+    sp_names = {s.name for s in scenario_prices}
+    if mc_names != sp_names:
+        missing = mc_names - sp_names
+        extra = sp_names - mc_names
+        raise ValueError(
+            f"MC price scenario mismatch: mc_params has {mc_names}, "
+            f"scenario_prices has {sp_names}. "
+            f"Missing: {missing}, extra: {extra}."
+        )
+
+    # ------------------------------------------------------------------
+    # Phase 1: Run dispatch once per price scenario (parallelised)
+    # ------------------------------------------------------------------
+    logger.info(
+        "MC Phase 1: Running dispatch for %d price scenario(s) "
+        "with 100 %% availability.",
+        n_scenarios,
+    )
+
+    scenario_map: dict[str, PriceWeatherScenario] = {
+        s.name: s for s in scenario_prices
     }
+    shared_state: dict = {
+        "base_config": base_config,
+        "optimal": optimal,
+        "scenario_map": scenario_map,
+    }
+    scenario_names = [s.name for s in scenario_prices]
 
-    iteration_indices = list(range(1, mc_params.iterations + 1))
-    results: list[MCIterationResult] = []
+    scenario_dispatches: dict[str, _ScenarioDispatch] = {}
 
-    n_iterations = mc_params.iterations
-    log_interval = max(1, n_iterations // 10)
-
-    if mc_params.max_workers == 1:
-        # Single-process path: easier to debug and use in unit tests
-        _mc_worker_init(shared_state)
-        for i in iteration_indices:
-            result = _run_mc_iteration(i)
-            results.append(result)
-            if i % log_interval == 0 or i == n_iterations:
-                logger.debug("Monte Carlo: %d/%d iterations complete.", i, n_iterations)
+    if mc_params.max_workers == 1 or n_scenarios <= 1:
+        # Single-process: debug-friendly and used by unit tests
+        _dispatch_worker_init(shared_state)
+        for name in scenario_names:
+            logger.debug("MC dispatch: scenario '%s'.", name)
+            scenario_dispatches[name] = _run_scenario_dispatch(name)
     else:
         with concurrent.futures.ProcessPoolExecutor(
             max_workers=mc_params.max_workers,
-            initializer=_mc_worker_init,
+            initializer=_dispatch_worker_init,
             initargs=(shared_state,),
         ) as executor:
             futures = {
-                executor.submit(_run_mc_iteration, i): i
-                for i in iteration_indices
+                executor.submit(_run_scenario_dispatch, name): name
+                for name in scenario_names
             }
-            completed = 0
             for future in concurrent.futures.as_completed(futures):
-                results.append(future.result())
-                completed += 1
-                if completed % log_interval == 0 or completed == n_iterations:
-                    logger.debug(
-                        "Monte Carlo: %d/%d iterations complete.", completed, n_iterations
-                    )
+                result = future.result()
+                scenario_dispatches[result.scenario_name] = result
+                logger.debug(
+                    "MC dispatch complete: scenario '%s'.",
+                    result.scenario_name,
+                )
+
+    logger.info(
+        "MC Phase 1 complete: %d dispatch simulation(s) cached.", n_scenarios
+    )
+
+    # ------------------------------------------------------------------
+    # Phase 2: MC iterations (sequential, main thread -- no dispatch)
+    # ------------------------------------------------------------------
+    logger.info(
+        "MC Phase 2: Running %d iterations (financial noise only).",
+        mc_params.iterations,
+    )
+    n_iterations = mc_params.iterations
+    log_interval = max(1, n_iterations // 10)
+
+    results: list[MCIterationResult] = []
+    for i in range(1, n_iterations + 1):
+        result = _run_mc_iteration_fast(
+            iteration=i,
+            base=base_config,
+            optimal=optimal,
+            mc=mc_params,
+            scenario_dispatches=scenario_dispatches,
+            scenario_prices=scenario_prices,
+        )
+        results.append(result)
+        if i % log_interval == 0 or i == n_iterations:
+            logger.debug(
+                "Monte Carlo: %d/%d iterations complete.", i, n_iterations
+            )
 
     results.sort(key=lambda r: r.iteration)
 
