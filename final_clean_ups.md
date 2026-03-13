@@ -25,3 +25,4 @@
 - [ ] CSV Export
     - [x] pv production in CSV Cashflow ist falsch
     - [ ] baseload constraints mit ausgeben
+- [ ] Smoke Test fehlende JSON Objekte hinzufügen

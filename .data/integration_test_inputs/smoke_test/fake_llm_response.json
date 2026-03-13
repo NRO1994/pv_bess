@@ -1,0 +1,9 @@
+{
+  "tab_1_overview": "Dies ist ein automatisch generierter Platzhaltertext fuer den Smoke-Test. Das Szenario Smoke_Integrationtest untersucht die Co-Location einer PV-Anlage mit Batteriespeicher am Standort Luebeck.",
+  "tab_2_timeseries": "Die PV-Zeitreihe basiert auf PVGIS-SARAH3-Daten fuer den Standort Luebeck. Die Preisszenarien umfassen ein Zentral-, Hoch- und Niedrigpreisszenario.",
+  "tab_3_gridsearch": "Die Grid-Search-Analyse bewertet verschiedene BESS-Skalierungen relativ zur PV-Leistung. Die optimale Konfiguration maximiert die Eigenkapitalrendite.",
+  "tab_4_eeg": "Die EEG-Sensitivitaetsanalyse untersucht verschiedene Floor-Preise und deren Auswirkung auf die Eigenkapitalrendite.",
+  "tab_5_collar": "Die Collar-PPA-Analyse bewertet verschiedene Floor-/Cap-Kombinationen fuer die Vermarktung.",
+  "tab_6_baseload": "Die Baseload-PPA-Analyse untersucht verschiedene Baseload-Niveaus und PPA-Preise.",
+  "tab_7_cashflow": "Die Cashflow-Analyse zeigt die jaehrliche Entwicklung der Einnahmen, Ausgaben und des Eigenkapital-Cashflows ueber die Projektlaufzeit."
+}

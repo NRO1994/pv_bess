@@ -1,9 +1,12 @@
 # Meta-Modell: Systemwert von Flexibilität im Stadtwerk-Portfolio
 
 ## Zweck dieses Dokuments
-Dieses Dokument dient als Anweisung (Prompt/Spec) für eine Large Language Model (LLM), die ein Meta-Modell zur Bewertung von Flexibilitätsoptionen im Stadtwerk-Portfolio erzeugen soll.
 
-Ziel ist nicht die Detail-Implementierung einzelner Assets, sondern die konzeptionelle Modellarchitektur, die es erlaubt, strategische Investitions- und Portfolioentscheidungen datenbasiert zu unterstützen.
+Dieses Dokument dient als Anweisung (Prompt/Spec) für eine Large Language Model (LLM), die ein Meta-Modell zur Bewertung
+von Flexibilitätsoptionen im Stadtwerk-Portfolio erzeugen soll.
+
+Ziel ist nicht die Detail-Implementierung einzelner Assets, sondern die konzeptionelle Modellarchitektur, die es
+erlaubt, strategische Investitions- und Portfolioentscheidungen datenbasiert zu unterstützen.
 
 ---
 
@@ -11,9 +14,11 @@ Ziel ist nicht die Detail-Implementierung einzelner Assets, sondern die konzepti
 
 Das Meta-Modell soll beantworten:
 
-> Wie viel ökonomischen Systemwert erzeugt ein zusätzlicher steuerbarer kW Flexibilität im Stadtwerk-Portfolio – und welche Flexibilitätsoption liefert den höchsten Grenznutzen?
+> Wie viel ökonomischen Systemwert erzeugt ein zusätzlicher steuerbarer kW Flexibilität im Stadtwerk-Portfolio – 
+> und welche Flexibilitätsoption liefert den höchsten Grenznutzen?
 
 Der Fokus liegt auf:
+
 - Portfolio- statt Projektlogik
 - Grenznutzen statt Durchschnittsrenditen
 - Vergleichbarkeit unterschiedlicher Flexibilitätsarten
@@ -24,21 +29,21 @@ Der Fokus liegt auf:
 
 Das Modell muss in der Lage sein, u. a. folgende Fragen zu beantworten:
 
-1. Grenznutzen-Frage  
-   - Wie verändert sich das Systemergebnis durch +x kW zusätzlicher Flexibilität?
-   - Wie hoch ist der Wert des *nächsten* kW Flex (€/kW·a)?
+1. Grenznutzen-Frage
+    - Wie verändert sich das Systemergebnis durch +x kW zusätzlicher Flexibilität?
+    - Wie hoch ist der Wert des *nächsten* kW Flex (€/kW·a)?
 
-2. Priorisierungs-Frage  
-   - Welche Flexibilitätsoption (BESS, Wärmepumpe, Wallbox etc.) erzeugt bei gleichem kW den höchsten Systemwert?
+2. Priorisierungs-Frage
+    - Welche Flexibilitätsoption (BESS, Wärmepumpe, Wallbox etc.) erzeugt bei gleichem kW den höchsten Systemwert?
 
-3. Sättigungs-Frage  
-   - Ab welchem Ausbaugrad sinkt der Grenznutzen signifikant (abnehmender Grenznutzen)?
+3. Sättigungs-Frage
+    - Ab welchem Ausbaugrad sinkt der Grenznutzen signifikant (abnehmender Grenznutzen)?
 
-4. Portfolio-Frage  
-   - Wie verändert Flexibilität die Marktposition (Einkauf vs. Verkauf) des gesamten Stadtwerks?
+4. Portfolio-Frage
+    - Wie verändert Flexibilität die Marktposition (Einkauf vs. Verkauf) des gesamten Stadtwerks?
 
-5. Kapitalallokation  
-   - Wo sollte der nächste investierte Euro eingesetzt werden, um den größten System-Impact zu erzielen?
+5. Kapitalallokation
+    - Wo sollte der nächste investierte Euro eingesetzt werden, um den größten System-Impact zu erzielen?
 
 ---
 
@@ -67,6 +72,7 @@ Als Erlöse gelten ausschließlich marktbasierte Zahlungsströme:
 - Bewertung zu zeitabhängigen Marktpreisen (Spot, PPA, EEG-Floor etc.)
 
 Nicht als Erlöse zählen:
+
 - interne Stromlieferungen an eigene Kunden
 - Tarifumsätze oder Endkundenpreise
 
@@ -80,6 +86,7 @@ Als Kosten gelten:
 - Bewertung ebenfalls zu zeitabhängigen Marktpreisen
 
 Nicht berücksichtigen:
+
 - CAPEX, fixe OPEX, Abschreibungen
 - Fremdkapitaldienst, Steuern
 - projektbezogene Finanzierungslogiken
@@ -93,6 +100,7 @@ Diese Größen sind im Welt-A/Welt-B-Vergleich konstant und würden den Systemwe
 Opportunitätskosten werden nicht explizit modelliert.
 
 Sie sind implizit enthalten, da:
+
 - jede interne Nutzung von Strom einen entgangenen Marktverkauf darstellt
 - diese entgangenen Erlöse automatisch über geringere Verkaufsmengen abgebildet werden
 
@@ -117,6 +125,7 @@ Die LLM soll ein Modell entwerfen, das mindestens folgende Konzepte enthält:
 - Unterschiedliche Flexarten sind zulässig, müssen aber vergleichbar abstrahiert werden
 
 Beispiele:
+
 - BESS: Leistung + Energiekapazität (E/P-Ratio)
 - Wärmepumpe: Verschiebefähige Last mit Energiebedarf
 - Wallbox: Ladeleistung mit Zeitfenster
@@ -132,8 +141,8 @@ Beispiele:
 - Iterative Erhöhung der Flex (+x kW)
 - Berechnung des Systemwerts je Ausbaustufe
 - Ableitung von:
-  - kumulierten Systemwertkurven
-  - marginalen Systemwertkurven (€/kW)
+    - kumulierten Systemwertkurven
+    - marginalen Systemwertkurven (€/kW)
 
 ---
 
@@ -146,13 +155,15 @@ Das Modell soll konzeptionell folgende Outputs liefern:
 - Vergleichbarkeit zwischen Flexoptionen
 - Sättigungspunkte für Investitionsentscheidungen
 
-Diese Outputs dienen explizit der strategischen Entscheidungsunterstützung (Unternehmensentwicklung, Geschäftsführung), nicht der Projektfinanzierung.
+Diese Outputs dienen explizit der strategischen Entscheidungsunterstützung (Unternehmensentwicklung, Geschäftsführung),
+nicht der Projektfinanzierung.
 
 ---
 
 ## 8. Abgrenzung
 
 Das Meta-Modell soll nicht:
+
 - detaillierte Netzrestriktionen abbilden
 - regulatorische Abrechnung simulieren
 - vollständige GuV- oder Cashflow-Rechnungen ersetzen

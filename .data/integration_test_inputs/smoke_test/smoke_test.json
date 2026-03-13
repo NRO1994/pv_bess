@@ -34,11 +34,12 @@
       "ppa_collar": {
         "enabled": true,
         "floor_prices_eur_per_kwh": [
-          0.030,0.06
+          0.03,
+          0.06
         ],
         "cap_spreads_eur_per_kwh": [
           0.005,
-          0.010,
+          0.01
         ],
         "duration_years": 7,
         "inflation_on_ppa": true,
@@ -47,12 +48,12 @@
       "ppa_baseload": {
         "enabled": true,
         "ppa_prices_eur_per_kwh": [
-          0.040,
-          0.055,
+          0.04,
+          0.055
         ],
         "baseload_levels_mw": [
           2.5,
-          5.0,
+          5.0
         ],
         "duration_years": 7,
         "inflation_on_ppa": false,
@@ -97,10 +98,12 @@
       "bess": {
         "design_space": {
           "scale_pct_of_pv": [
-            20,80
+            20,
+            80
           ],
           "e_to_p_ratio_hours": [
-            1,2
+            1,
+            2
           ]
         },
         "performance": {
