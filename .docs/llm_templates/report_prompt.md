@@ -108,7 +108,7 @@ Wenn Kennzahlen „nicht zusammenpassen“, musst du das ausdrücklich thematisi
 - Avg DSCR: {{dscr_avg}}
 - LCOE: {{lcoe}}
 - Payback: {{payback_year}}
-- **Baseline Direktvermarktung Project IRR (reiner Spotmarkt, gesamte Laufzeit):** {{baseline_market_irr}}
+- **Baseline Direktvermarktung Equity IRR (reiner Spotmarkt, gesamte Laufzeit):** {{baseline_market_irr}}
 - **Interne Min. IRR-Anforderung:** {{equity_irr_target}}
 
 ## Eingangsdaten

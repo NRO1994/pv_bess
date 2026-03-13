@@ -824,7 +824,7 @@
     //  TAB 1: Szenario-Uebersicht
     // ================================================================
     addTab('overview', 'Szenario-Übersicht', true, (panel) => {
-      panel.innerHTML = `<h2>Szenario-Übersicht</h2>`;
+      panel.innerHTML = `<h2>Szenario-Übersicht (Base Case)</h2>`;
 
       // Two columns: params + map
       const row = document.createElement('div'); row.className = 'two-col';
@@ -862,7 +862,7 @@
       // --- Leaflet: Interaktive OSM-Karte, Marker wird einmal aus Daten gesetzt ---
       const lat = D.latitude;
       const lon = D.longitude;
-      const zoom = 10;
+      const zoom = 12;
 
       const map = L.map(mapC, {
         center: [lat, lon],
@@ -877,7 +877,7 @@
       });
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 13,
+        maxZoom: 19,
       }).addTo(map);
 
       L.marker([lat, lon], { draggable: false, keyboard: false }).addTo(map);
@@ -1014,7 +1014,7 @@
       // KPIs
       const kpiGrid = document.createElement('div'); kpiGrid.className = 'kpi-grid';
       kpiGrid.innerHTML = `
-        <div class="kpi-card"><div class="label">Opt. BESS-Scale</div><div class="value">${fmtNum(D.optimal_scale_pct,0)} %</div></div>
+        <div class="kpi-card"><div class="label">Opt. BESS-Scale in rel. zu PV</div><div class="value">${fmtNum(D.optimal_scale_pct,0)} %</div></div>
         <div class="kpi-card"><div class="label">Opt. E/P-Ratio</div><div class="value">${fmtNum(D.optimal_ep_ratio,1)} h</div></div>
         <div class="kpi-card"><div class="label">BESS-Leistung</div><div class="value">${fmtNum(D.optimal_bess_power_kw,0)} kW</div></div>
         <div class="kpi-card"><div class="label">BESS-Kapazität</div><div class="value">${fmtNum(D.optimal_bess_capacity_kwh,0)} kWh</div></div>
@@ -1163,7 +1163,7 @@
         return {
           label: 'Spread ' + sp + ' ct/kWh',
           x: group.map(p => (p.floor_price_eur_per_kwh || 0) * 100),
-          y: group.map(p => p.irr_mean),
+          y: group.map(p => p.irr_median),
           color: CORP_COLORS[i % CORP_COLORS.length]
         };
       });
@@ -1183,7 +1183,7 @@
             ((p.floor_price_eur_per_kwh||0)*100).toFixed(2).replace('.',','),
             ((p.cap_price_eur_per_kwh||0)*100).toFixed(2).replace('.',','),
             (((p.cap_price_eur_per_kwh||0)-(p.floor_price_eur_per_kwh||0))*100).toFixed(2).replace('.',','),
-            (p.irr_mean||0).toFixed(2).replace('.',',')
+            (p.irr_median||0).toFixed(2).replace('.',',')
           ]);
           downloadFile(D.scenario_name + '_ppa_collar.csv', 'text/csv', arrayToCSV(h, rows));
         };
@@ -1224,7 +1224,7 @@
         return {
           label: 'Baseload ' + bl + ' MW',
           x: group.map(p => (p.ppa_price_eur_per_kwh || 0) * 100),
-          y: group.map(p => p.irr_mean),
+          y: group.map(p => p.irr_median),
           color: CORP_COLORS[i % CORP_COLORS.length]
         };
       });
@@ -1242,7 +1242,7 @@
           const h = ['Baseload_MW', 'PPA_Preis_ct_kWh', 'IRR_Mean_%'];
           const rows = pts.map(p => [
             (p.baseload_mw||0), ((p.ppa_price_eur_per_kwh||0)*100).toFixed(2).replace('.',','),
-            (p.irr_mean||0).toFixed(2).replace('.',',')
+            (p.irr_median||0).toFixed(2).replace('.',',')
           ]);
           downloadFile(D.scenario_name + '_ppa_baseload.csv', 'text/csv', arrayToCSV(h, rows));
         };
