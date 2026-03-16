@@ -1060,7 +1060,7 @@
         allCharts.push(r);
         btnPng.onclick = () => downloadCanvasPNG(r.canvas, D.scenario_name + '_gridsearch.png');
         btnCsv.onclick = () => {
-          const h = ['Scale_%', 'EP_Ratio_h', 'BESS_kW', 'BESS_kWh', 'CAPEX', 'OPEX', 'Revenue_Y1', 'Equity_IRR_%', 'Optimal'];
+          const h = ['Scale_%', 'EP_Ratio_h', 'BESS_kW', 'BESS_kWh', 'CAPEX', 'OPEX', 'Ertrag_Y1', 'Equity_IRR_%', 'Optimal'];
           const rows = D.grid_search_points.map(p => [
             p.scale_pct, p.ep_ratio, p.bess_power_kw, p.bess_capacity_kwh,
             (p.capex_total||0).toFixed(0), (p.opex_base||0).toFixed(0),
@@ -1289,17 +1289,17 @@
         equity_cf: yr.equity_cf || 0,
         cumulative_equity_cf: yr.cumulative_equity_cf || 0,
         positive: [
-          {label: 'Revenue PV', value: yr.revenue_pv || 0, color: '#FF8200'},
-          {label: 'Revenue BESS Green', value: yr.revenue_bess_green || 0, color: '#00BDDC'},
-          {label: 'Revenue BESS Grey', value: yr.revenue_bess_grey || 0, color: '#006EB2'},
+          {label: 'PV-Ertrag', value: yr.revenue_pv || 0, color: '#FF8200'},
+          {label: 'BESS-Ertrag (Grün)', value: yr.revenue_bess_green || 0, color: '#00BDDC'},
+          {label: 'BESS-Ertrag (Grau)', value: yr.revenue_bess_grey || 0, color: '#006EB2'},
         ],
         negative: [
           {label: 'CAPEX', value: yr.capex || 0, color: '#00467A'},
           {label: 'OPEX', value: yr.opex || 0, color: '#A51BA7'},
-          {label: 'Debt Service', value: yr.debt_service || 0, color: '#F73E5E'},
+          {label: 'Kaptialkosten', value: yr.debt_service || 0, color: '#F73E5E'},
           {label: 'Steuern', value: yr.tax_total || 0, color: '#94a3b8'},
-          {label: 'Grid Import', value: yr.grid_import_cost || 0, color: '#64748b'},
-          {label: 'Baseload Matching', value: yr.baseload_matching_cost || 0, color: '#475569'},
+          {label: 'Netzbezugskosten', value: yr.grid_import_cost || 0, color: '#64748b'},
+          {label: 'Baseload-Ausgleichskosten', value: yr.baseload_matching_cost || 0, color: '#475569'},
         ]
       }))};
 
@@ -1308,7 +1308,7 @@
         allCharts.push(r);
         btnPng.onclick = () => downloadCanvasPNG(r.canvas, D.scenario_name + '_cashflow.png');
         btnCsv.onclick = () => {
-          const h = ['Jahr', 'Revenue_PV', 'Revenue_BESS_Green', 'Revenue_BESS_Grey',
+          const h = ['Jahr', 'PV-Ertrag', 'BESS-Ertrag (Grün)', 'BESS-Ertrag (Grau)',
             'CAPEX', 'OPEX', 'Debt_Service', 'Steuern', 'Grid_Import', 'Baseload_Matching',
             'Equity_CF', 'Kum_Equity_CF'];
           const rows = cfYears.map(yr => [
