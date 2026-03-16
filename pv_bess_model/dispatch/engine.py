@@ -602,24 +602,14 @@ def run_simulation(
             current_soc_green = result["end_soc_green"]
             current_soc_grey = result["end_soc_grey"]
 
-            # Revenue breakdown for this day
-            day_rev_pv = float(np.sum(result["export_pv"] * result["effective_price"]))
-            # BESS green discharge revenue at spot price (separate revenue stream)
-            day_rev_green = float(np.sum(result["discharge_green"] * result["effective_price"]))
-            day_rev_grey = float(np.sum(result["discharge_grey"] * spot_day))
-            day_import = float(np.sum(result["charge_grid"] * spot_day))
-
-            day_bess_spot_rev = day_rev_grey
-
-            # Baseload shortfall cost from LP result
-            missed_baseload = result["shortfall"]
-
-            year_revenue_pv += day_rev_pv
-            year_revenue_green += day_rev_green
-            year_revenue_grey += day_rev_grey
-            year_import_cost += day_import
-            year_bess_spot_revenue += day_bess_spot_rev
-            year_missing_baseload += float(np.sum(missed_baseload * spot_day))
+            # Revenue breakdown from unified optimizer calculation
+            breakdown = result["revenue_breakdown"]
+            year_revenue_pv += breakdown.revenue_pv
+            year_revenue_green += breakdown.revenue_green
+            year_revenue_grey += breakdown.revenue_grey
+            year_import_cost += breakdown.import_cost
+            year_bess_spot_revenue += breakdown.bess_spot_revenue
+            year_missing_baseload += breakdown.shortfall_cost
             year_pv_export += float(np.sum(result["export_pv"]))
             year_pv_curtailed += float(np.sum(result["curtail"]))
             year_charge_pv += float(np.sum(result["charge_pv"]))

@@ -81,11 +81,13 @@ from O(T²) to O(T) nonzeros.
 
 Public API
 ----------
-BessParams           – Frozen dataclass bundling BESS physical parameters.
-DailyDispatchResult  – TypedDict with all per-hour arrays + end_soc.
-OperatingMode        – Literal type alias for ``"green"`` | ``"grey"``.
-optimize_day         – Solve the daily LP for one day (Green or Grey).
-dispatch_offline_day – Produce dispatch results for a BESS-offline day.
+BessParams              – Frozen dataclass bundling BESS physical parameters.
+DailyRevenueBreakdown   – Aggregated daily revenue split by source.
+DailyDispatchResult     – TypedDict with all per-hour arrays + end_soc.
+OperatingMode           – Literal type alias for ``"green"`` | ``"grey"``.
+compute_daily_revenue   – Unified revenue calculation for all marketing types.
+optimize_day            – Solve the daily LP for one day (Green or Grey).
+dispatch_offline_day    – Produce dispatch results for a BESS-offline day.
 """
 
 from __future__ import annotations
@@ -139,6 +141,43 @@ class BessParams:
     soc_min_kwh: float
     soc_max_kwh: float
     timestep_hours: float = 1.0
+
+
+# ---------------------------------------------------------------------------
+# Revenue breakdown
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DailyRevenueBreakdown:
+    """Aggregated revenue breakdown for one simulation day.
+
+    All values in EUR.  Positive means income, except *import_cost* and
+    *shortfall_cost* which are positive costs (subtracted in
+    *total_revenue*).
+    """
+
+    revenue_pv: float
+    """PV direct feed-in revenue."""
+
+    revenue_green: float
+    """BESS green discharge revenue."""
+
+    revenue_grey: float
+    """BESS grey discharge revenue.  0.0 in Green Mode."""
+
+    import_cost: float
+    """Grid import cost (charge_grid × spot).  0.0 in Green Mode."""
+
+    shortfall_cost: float
+    """Baseload shortfall cost (shortfall × spot).  0.0 when no baseload PPA."""
+
+    total_revenue: float
+    """Net daily revenue = revenue_pv + revenue_green + revenue_grey
+    − import_cost − shortfall_cost."""
+
+    bess_spot_revenue: float
+    """BESS revenue at spot price for optimization fee calculation."""
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +245,125 @@ class DailyDispatchResult(TypedDict):
     shortfall: np.ndarray
     """kWh shortfall below baseload commitment, per hour. shape (T,)
     Zero when no baseload PPA is active."""
+
+    revenue_breakdown: DailyRevenueBreakdown
+    """Aggregated daily revenue split by source (PV, BESS green, BESS grey)."""
+
+
+# ---------------------------------------------------------------------------
+# Unified revenue calculation
+# ---------------------------------------------------------------------------
+
+
+def compute_daily_revenue(
+        export_pv: np.ndarray,
+        discharge_green: np.ndarray,
+        discharge_grey: np.ndarray,
+        charge_grid: np.ndarray,
+        shortfall: np.ndarray,
+        spot_prices: np.ndarray,
+        eff_prices: np.ndarray,
+        fixed_price: float,
+        baseload_kwh: float,
+) -> tuple[np.ndarray, DailyRevenueBreakdown]:
+    """Unified revenue calculation for all marketing types.
+
+    Computes both the per-timestep revenue array (for hourly sample export)
+    and the aggregated :class:`DailyRevenueBreakdown` (for annual cashflow).
+
+    All energy arrays must already have losses applied (RTE, grid loss factor).
+
+    Parameters
+    ----------
+    export_pv:
+        PV energy exported to grid per timestep (kWh), post grid-loss.
+    discharge_green:
+        BESS green discharge per timestep (kWh), post RTE and grid-loss.
+    discharge_grey:
+        BESS grey discharge per timestep (kWh), post RTE.  Zeros in Green Mode.
+    charge_grid:
+        BESS grid charging per timestep (kWh).  Zeros in Green Mode.
+    shortfall:
+        Baseload shortfall per timestep (kWh).  Zeros when no baseload PPA.
+    spot_prices:
+        Spot prices per timestep (EUR/kWh).
+    eff_prices:
+        Effective green prices per timestep (EUR/kWh), with floor/cap/goo applied.
+        Equals spot_prices when baseload PPA is active.
+    fixed_price:
+        PPA fixed price (EUR/kWh).  Used only for baseload PPA settlement.
+    baseload_kwh:
+        Baseload commitment per timestep (kWh).  0.0 when no baseload PPA.
+
+    Returns
+    -------
+    tuple[np.ndarray, DailyRevenueBreakdown]
+        ``(revenue_per_step, breakdown)`` where *revenue_per_step* has shape
+        ``(T,)`` and contains the per-timestep revenue in EUR.
+    """
+    import_cost = float(np.sum(charge_grid * spot_prices))
+
+    if baseload_kwh > 0:
+        # --- Baseload PPA settlement ---
+        total_export = export_pv + discharge_green + discharge_grey
+        excess = np.maximum(total_export - baseload_kwh, 0.0)
+        spot_revenue_arr = excess * spot_prices
+        ppa_revenue_scalar = baseload_kwh * fixed_price
+        shortfall_cost_arr = shortfall * spot_prices
+
+        revenue_per_step = ppa_revenue_scalar + spot_revenue_arr - shortfall_cost_arr
+        shortfall_cost = float(np.sum(shortfall_cost_arr))
+
+        # Split gross revenue (PPA + excess at spot) proportionally by
+        # each source's energy contribution to total feed-in.
+        gross_per_step = ppa_revenue_scalar + spot_revenue_arr
+        has_energy = total_export > 0
+        total_safe = np.where(has_energy, total_export, 1.0)
+
+        pv_frac = export_pv / total_safe
+        green_frac = discharge_green / total_safe
+        grey_frac = discharge_grey / total_safe
+
+        revenue_pv = float(np.sum(gross_per_step * pv_frac))
+        revenue_green = float(np.sum(gross_per_step * green_frac))
+        revenue_grey = float(np.sum(gross_per_step * grey_frac))
+
+        # Attribute unattributed PPA revenue from zero-production timesteps
+        # to revenue_pv (contract revenue independent of production).
+        unattr_mask = ~has_energy
+        if np.any(unattr_mask):
+            revenue_pv += float(np.sum(
+                np.where(unattr_mask, ppa_revenue_scalar, 0.0),
+            ))
+
+        bess_spot_revenue = revenue_grey
+    else:
+        # --- Non-baseload: EEG, Floor PPA, Collar PPA, Market ---
+        revenue_per_step = (
+            (export_pv + discharge_green) * eff_prices
+            + (discharge_grey - charge_grid) * spot_prices
+        )
+
+        revenue_pv = float(np.sum(export_pv * eff_prices))
+        revenue_green = float(np.sum(discharge_green * eff_prices))
+        revenue_grey = float(np.sum(discharge_grey * spot_prices))
+        shortfall_cost = 0.0
+        bess_spot_revenue = revenue_grey
+
+    total_revenue = (
+        revenue_pv + revenue_green + revenue_grey
+        - import_cost - shortfall_cost
+    )
+
+    return revenue_per_step, DailyRevenueBreakdown(
+        revenue_pv=revenue_pv,
+        revenue_green=revenue_green,
+        revenue_grey=revenue_grey,
+        import_cost=import_cost,
+        shortfall_cost=shortfall_cost,
+        total_revenue=total_revenue,
+        bess_spot_revenue=bess_spot_revenue,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -605,24 +763,28 @@ def _extract_green_result(
     export_pv = export_pv * grid_loss_factor
     curtail = curtail * grid_loss_factor
 
-    # Consider PPA-Baseload
-    if baseload_kwh > 0:
-        spot_revenue = np.maximum(export_pv + discharge_green - baseload_kwh, 0) * spot_prices_eur_per_kwh
-        ppa_revenue = baseload_kwh * fixed_price
-        baseload_shortfall_costs = shortfall * spot_prices_eur_per_kwh
-        revenue = ppa_revenue + spot_revenue - baseload_shortfall_costs
-    else:
-        # Revenue per hour (€):
-        # PV export at effective price (floor/cap protected)
-        revenue = (export_pv + discharge_green) * eff_prices
+    charge_grid = np.zeros(T)
+    discharge_grey = np.zeros(T)
+
+    revenue, breakdown = compute_daily_revenue(
+        export_pv=export_pv,
+        discharge_green=discharge_green,
+        discharge_grey=discharge_grey,
+        charge_grid=charge_grid,
+        shortfall=shortfall,
+        spot_prices=spot_prices_eur_per_kwh,
+        eff_prices=eff_prices,
+        fixed_price=fixed_price,
+        baseload_kwh=baseload_kwh,
+    )
 
     return DailyDispatchResult(
         charge_pv=charge_pv,
         discharge_green=discharge_green,
         export_pv=export_pv,
         curtail=curtail,
-        charge_grid=np.zeros(T),
-        discharge_grey=np.zeros(T),
+        charge_grid=charge_grid,
+        discharge_grey=discharge_grey,
         soc=soc,
         soc_green=soc.copy(),
         soc_grey=np.zeros(T),
@@ -632,6 +794,7 @@ def _extract_green_result(
         end_soc_grey=0.0,
         effective_price=eff_prices,
         shortfall=shortfall,
+        revenue_breakdown=breakdown,
     )
 
 
@@ -666,17 +829,18 @@ def _extract_grey_result(
     discharge_grey = discharge_grey * rte
     export_pv = export_pv * grid_loss_factor
     curtail = curtail * grid_loss_factor
-    # Consider PPA-Baseload
-    if baseload_kwh > 0:
-        spot_revenue = np.maximum(export_pv + discharge_green + discharge_grey - baseload_kwh, 0) * spot_prices_eur_per_kwh
-        ppa_revenue = baseload_kwh * fixed_price
-        baseload_shortfall_costs = shortfall * spot_prices_eur_per_kwh
-        revenue = ppa_revenue + spot_revenue - baseload_shortfall_costs
-    else:
-        # Revenue (€): PV export and green discharge at effective price × glf,
-        # BESS discharge (grey) at spot, minus grid import at spot
-        revenue = ((export_pv + discharge_green) * eff_prices +
-                   (discharge_grey - charge_grid) * spot_prices_eur_per_kwh)
+
+    revenue, breakdown = compute_daily_revenue(
+        export_pv=export_pv,
+        discharge_green=discharge_green,
+        discharge_grey=discharge_grey,
+        charge_grid=charge_grid,
+        shortfall=shortfall,
+        spot_prices=spot_prices_eur_per_kwh,
+        eff_prices=eff_prices,
+        fixed_price=fixed_price,
+        baseload_kwh=baseload_kwh,
+    )
 
     return DailyDispatchResult(
         charge_pv=charge_pv,
@@ -694,6 +858,7 @@ def _extract_grey_result(
         end_soc_grey=float(soc_grey[-1]),
         effective_price=eff_prices,
         shortfall=shortfall,
+        revenue_breakdown=breakdown,
     )
 
 
@@ -976,23 +1141,34 @@ def dispatch_offline_day(
 
     # Compute shortfall for baseload PPA (BESS offline, only PV export)
     baseload_kwh = baseload_mw * 1000.0 * timestep_hours if baseload_mw > 0 else 0.0
-    if baseload_kwh > 0:
-        shortfall = np.maximum(baseload_kwh - export_pv, 0.0)
-        spot_revenue = np.maximum(export_pv - baseload_kwh, 0) * spot_prices_eur_per_kwh
-        ppa_revenue = baseload_kwh * price_fixed_eur_per_kwh
-        baseload_shortfall_costs = shortfall * spot_prices_eur_per_kwh
-        revenue = ppa_revenue + spot_revenue - baseload_shortfall_costs
-    else:
-        shortfall = np.zeros(T)
-        revenue = export_pv * eff
+    shortfall = (
+        np.maximum(baseload_kwh - export_pv, 0.0) if baseload_kwh > 0
+        else np.zeros(T)
+    )
+
+    discharge_green = np.zeros(T)
+    discharge_grey = np.zeros(T)
+    charge_grid = np.zeros(T)
+
+    revenue, breakdown = compute_daily_revenue(
+        export_pv=export_pv,
+        discharge_green=discharge_green,
+        discharge_grey=discharge_grey,
+        charge_grid=charge_grid,
+        shortfall=shortfall,
+        spot_prices=spot_prices_eur_per_kwh,
+        eff_prices=eff,
+        fixed_price=price_fixed_eur_per_kwh,
+        baseload_kwh=baseload_kwh,
+    )
 
     return DailyDispatchResult(
         charge_pv=np.zeros(T),
-        discharge_green=np.zeros(T),
+        discharge_green=discharge_green,
         export_pv=export_pv,
         curtail=curtail,
-        charge_grid=np.zeros(T),
-        discharge_grey=np.zeros(T),
+        charge_grid=charge_grid,
+        discharge_grey=discharge_grey,
         soc=np.full(T, start_soc_kwh),
         soc_green=np.full(T, soc_green_val),
         soc_grey=np.full(T, soc_grey_val),
@@ -1002,4 +1178,5 @@ def dispatch_offline_day(
         end_soc_grey=soc_grey_val,
         effective_price=eff,
         shortfall=shortfall,
+        revenue_breakdown=breakdown,
     )

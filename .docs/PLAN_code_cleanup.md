@@ -9,16 +9,17 @@ manuell prüfen, deine Aufgabe ist es nur die direkt betroffenen Unit-Tests anzu
 
 ## Übersicht der Findings
 
-| Kategorie                                       | Schwere  | Anzahl                       | Haupt-Dateien                    |
-|-------------------------------------------------|----------|------------------------------|----------------------------------|
-| Toter Code (nur in Tests aufgerufen)            | Kritisch | 4 Funktionen                 | `market/eeg.py`, `market/ppa.py` |
-| Monolithische Funktion                          | Kritisch | 1 Funktion (694 Zeilen)      | `main.py:run()`                  |
-| Duplizierter Code-Block                         | Hoch     | 1 identischer Block          | `main.py:917-926 vs 945-954`     |
-| Vermarktungslogik in main.py statt Marktmodulen | Hoch     | 3 Funktionen (~155 Zeilen)   | `main.py:198-356`                |
-| Redundante Analyse-CSV-Writer                   | Mittel   | 3 fast-identische Funktionen | `output/csv_writer.py:543-701`   |
-| Unnötige Array-Kopien                           | Mittel   | 5 Stellen                    | `optimizer.py`, `main.py`        |
-| Tief verschachtelte Kontrollflüsse              | Mittel   | 1 Block                      | `main.py:668-728`                |
-| Test-only Hilfsfunktionen                       | Niedrig  | 2 Funktionen                 | `market/ppa.py`                  |
+| Kategorie                                       | Schwere  | Anzahl                       | Haupt-Dateien                        |
+|-------------------------------------------------|----------|------------------------------|--------------------------------------|
+| **Revenue-Berechnung 4x redundant + Bug**       | Kritisch | 4 Code-Stellen, 1 Bug        | `dispatch/optimizer.py`, `engine.py` |
+| Toter Code (nur in Tests aufgerufen)            | Kritisch | 4 Funktionen                 | `market/eeg.py`, `market/ppa.py`     |
+| Monolithische Funktion                          | Kritisch | 1 Funktion (694 Zeilen)      | `main.py:run()`                      |
+| Duplizierter Code-Block                         | Hoch     | 1 identischer Block          | `main.py:917-926 vs 945-954`         |
+| Vermarktungslogik in main.py statt Marktmodulen | Hoch     | 3 Funktionen (~155 Zeilen)   | `main.py:198-356`                    |
+| Redundante Analyse-CSV-Writer                   | Mittel   | 3 fast-identische Funktionen | `output/csv_writer.py:543-701`       |
+| Unnötige Array-Kopien                           | Mittel   | 5 Stellen                    | `optimizer.py`, `main.py`            |
+| Tief verschachtelte Kontrollflüsse              | Mittel   | 1 Block                      | `main.py:668-728`                    |
+| Test-only Hilfsfunktionen                       | Niedrig  | 2 Funktionen                 | `market/ppa.py`                      |
 
 ---
 
@@ -553,10 +554,155 @@ wieder relevant werden.
 
 ---
 
+## B9: Revenue-Berechnung vereinheitlichen (optimizer.py + engine.py) ✅ DONE
+
+### Status
+
+Die tägliche Revenue-Berechnung wird an **vier** Stellen unabhängig voneinander implementiert:
+
+1. `optimizer.py:_extract_green_result()` (Zeile 608-617) – **korrekt**
+2. `optimizer.py:_extract_grey_result()` (Zeile 670-679) – **korrekt**
+3. `optimizer.py:dispatch_offline_day()` (Zeile 978-987) – **korrekt**
+4. `engine.py` (Zeile 605-622) – **FEHLERHAFT für Baseload PPA**
+
+### Problem 1: Vierfache Redundanz
+
+Alle vier Stellen berechnen eigenständig die Kennzahlen (Revenue PV, Revenue BESS Green, Revenue BESS Grey,
+Import-Kosten, Shortfall-Kosten). Das verstößt gegen DRY und macht es unmöglich, eine konsistente Ergebniskalkulation zu
+garantieren. Änderungen an der Revenue-Logik müssen an vier Stellen synchron durchgeführt werden.
+
+### Problem 2: Falsche Baseload-Revenue in engine.py (Bug)
+
+Die engine.py berechnet den Daily Revenue **immer** nach demselben Schema:
+
+```python
+# engine.py Zeile 606-608
+day_rev_pv = float(np.sum(result["export_pv"] * result["effective_price"]))
+day_rev_green = float(np.sum(result["discharge_green"] * result["effective_price"]))
+day_rev_grey = float(np.sum(result["discharge_grey"] * spot_day))
+```
+
+Das ist korrekt für EEG, PPA Floor, PPA Collar und Market – aber **falsch für PPA Baseload**.
+
+**Bei Baseload PPA** gilt (korrekte Berechnung im Optimizer):
+
+```python
+# optimizer.py _extract_green_result() Zeile 610-613
+spot_revenue = max(export + discharge - baseload, 0) * spot_price
+ppa_revenue = baseload_kwh * fixed_price
+baseload_shortfall_cost = shortfall * spot_price
+revenue = ppa_revenue + spot_revenue - baseload_shortfall_cost
+```
+
+Die engine.py wendet stattdessen den `effective_price` auf die **gesamte** Erzeugung an (`export_pv * eff` +
+`discharge_green * eff`). Das ist falsch, weil:
+
+- Nur der **Baseload-Anteil** zum PPA-Preis (`fixed_price`) verkauft wird
+- Der **Überschuss** über dem Baseload wird zum **Spot-Preis** verkauft
+- Ein **Shortfall** (Unterdeckung) muss zum **Spot-Preis** zugekauft werden
+
+Der Optimizer berechnet das korrekt und gibt das Ergebnis als `result["revenue"]` zurück – die engine ignoriert diesen
+Wert jedoch und berechnet den Revenue selbst nochmal (falsch).
+
+### Auswirkung
+
+Der Bug betrifft die **jährlichen Revenue-Breakdowns** (`revenue_pv_export`, `revenue_bess_green`) im `AnnualResult`.
+Diese fließen in:
+
+- Cashflow-Projektion (via `AnnualResult.total_revenue`)
+- BESS Spot Revenue (für Optimization Fee Berechnung)
+- Monte Carlo Post-hoc-Skalierung (PV vs. BESS Revenue-Aufteilung)
+
+**Hinweis:** Der `total_revenue` in engine.py (Zeile 648-649) subtrahiert zwar `year_missing_baseload`, was den
+Gesamtfehler teilweise kompensiert – die Einzelkomponenten (`revenue_pv_export`, `revenue_bess_green`) bleiben aber
+falsch.
+
+### Lösung
+
+**Schritt 1:** Gemeinsame Revenue-Berechnungsfunktion erstellen:
+
+```python
+# optimizer.py (oder neues Modul dispatch/revenue.py)
+def compute_daily_revenue(
+        export_pv: np.ndarray,
+        discharge_green: np.ndarray,
+        discharge_grey: np.ndarray,
+        charge_grid: np.ndarray,
+        shortfall: np.ndarray,
+        spot_prices: np.ndarray,
+        eff_prices: np.ndarray,
+        fixed_price: float,
+        baseload_kwh: float,
+) -> DailyRevenueBreakdown:
+    """Einheitliche Revenue-Berechnung für alle Marketing-Typen.
+
+    Returns
+    -------
+    DailyRevenueBreakdown
+        revenue_pv, revenue_green, revenue_grey, import_cost,
+        shortfall_cost, total_revenue, bess_spot_revenue
+    """
+```
+
+**Schritt 2:** Alle vier Stellen auf diese Funktion umstellen:
+
+- `_extract_green_result()` → ruft `compute_daily_revenue()` auf
+- `_extract_grey_result()` → ruft `compute_daily_revenue()` auf
+- `dispatch_offline_day()` → ruft `compute_daily_revenue()` auf
+- `engine.py` Zeile 605-622 → nutzt `result["revenue_breakdown"]` aus dem Optimizer-Ergebnis statt eigener Berechnung
+
+**Schritt 3:** `DailyDispatchResult` erweitern um strukturierte Revenue-Aufschlüsselung:
+
+```python
+@dataclass
+class DailyRevenueBreakdown:
+    revenue_pv: float  # PV-Einspeiseerlös
+    revenue_green: float  # BESS Green Discharge Erlös
+    revenue_grey: float  # BESS Grey Discharge Erlös
+    import_cost: float  # Grid-Import-Kosten
+    shortfall_cost: float  # Baseload-Unterdeckungskosten
+    total_revenue: float  # Netto-Gesamterlös
+    bess_spot_revenue: float  # BESS Spot-Revenue für Optimization Fee
+```
+
+**Schritt 4:** engine.py vereinfachen – die engine summiert nur noch die vom Optimizer gelieferten Breakdown-Werte auf,
+ohne eigene Revenue-Kalkulation:
+
+```python
+# engine.py – NACH Refactoring
+breakdown = result["revenue_breakdown"]
+year_revenue_pv += breakdown.revenue_pv
+year_revenue_green += breakdown.revenue_green
+year_revenue_grey += breakdown.revenue_grey
+year_import_cost += breakdown.import_cost
+year_missing_baseload += breakdown.shortfall_cost
+year_bess_spot_revenue += breakdown.bess_spot_revenue
+```
+
+### Betroffene Dateien
+
+- `dispatch/optimizer.py` – Revenue-Berechnung in `_extract_green_result()`, `_extract_grey_result()`,
+  `dispatch_offline_day()` durch gemeinsame Funktion ersetzen; `DailyDispatchResult` erweitern
+- `dispatch/engine.py` – Revenue-Aufschlüsselung aus Optimizer-Ergebnis übernehmen statt eigene Berechnung
+- `tests/test_optimizer.py` – Tests auf neue `DailyRevenueBreakdown`-Struktur anpassen
+- `tests/test_dispatch_engine.py` – Revenue-Assertions anpassen
+
+### Risiko
+
+**Hoch.** Dies ist ein Bug-Fix + Refactoring in einem. Die Baseload-Revenue in engine.py ist falsch und muss korrigiert
+werden. Gleichzeitig wird die Revenue-Berechnung zentralisiert, was die Code-Oberfläche für künftige Fehler reduziert.
+
+### Priorität
+
+**Kritisch** – höher als alle anderen Cleanup-Items, da ein tatsächlicher Berechnungsfehler vorliegt.
+
+---
+
 ## Empfohlene Reihenfolge der Umsetzung
 
 | # | Aktion                                      | Dateien                                                                    | Risiko      | Aufwand |
 |---|---------------------------------------------|----------------------------------------------------------------------------|-------------|---------|
+| 0 | **B9: Revenue vereinheitlichen (Bug-Fix)**  | `dispatch/optimizer.py`, `dispatch/engine.py`, Tests                       | **Hoch**    | Mittel  |
 | 1 | B1.1-B1.4: Toten Code entfernen             | `market/eeg.py`, `market/ppa.py`, `tests/test_eeg.py`, `tests/test_ppa.py` | Gering      | Klein   |
 | 2 | B2.1-B2.2: Duplizierung + Import            | `main.py`                                                                  | Sehr gering | Klein   |
 | 3 | B4: CSV-Writer Stats-Helper                 | `output/csv_writer.py`                                                     | Gering      | Klein   |
@@ -566,13 +712,3 @@ wieder relevant werden.
 
 **Gesamtaufwand:** ~4-6 Stunden (davon B6 allein ~2-3 Stunden)
 
----
-
-## Checkliste pro Commit
-
-- [ ] `pytest` VOR der Änderung: alle Tests grün
-- [ ] Änderung durchführen (ein Cleanup-Block pro Commit)
-- [ ] `pytest` NACH der Änderung: alle Tests grün
-- [ ] `ruff check pv_bess_model/` – keine neuen Violations
-- [ ] `black --check pv_bess_model/` – Formatierung korrekt
-- [ ] Commit mit Nachricht: `cleanup: {kurze Beschreibung}`
