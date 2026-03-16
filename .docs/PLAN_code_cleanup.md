@@ -2,23 +2,23 @@
 
 ## Grundregel
 
-**Keine Logik-Änderungen.** Alle bestehenden Unit-Tests müssen vor UND nach jeder Änderung grün sein.
-Jede Cleanup-Einheit wird als eigener Commit behandelt. Nach jedem Commit: `pytest` laufen lassen.
+**Keine Logik-Änderungen.** Alle bestehenden Unit-Tests müssen vor UND nach jeder Änderung grün sein. Dies werde ICH
+manuell prüfen, deine Aufgabe ist es nur die direkt betroffenen Unit-Tests anzupassen.
 
 ---
 
 ## Übersicht der Findings
 
-| Kategorie | Schwere | Anzahl | Haupt-Dateien |
-|-----------|---------|--------|---------------|
-| Toter Code (nur in Tests aufgerufen) | Kritisch | 4 Funktionen | `market/eeg.py`, `market/ppa.py` |
-| Monolithische Funktion | Kritisch | 1 Funktion (694 Zeilen) | `main.py:run()` |
-| Duplizierter Code-Block | Hoch | 1 identischer Block | `main.py:917-926 vs 945-954` |
-| Vermarktungslogik in main.py statt Marktmodulen | Hoch | 3 Funktionen (~155 Zeilen) | `main.py:198-356` |
-| Redundante Analyse-CSV-Writer | Mittel | 3 fast-identische Funktionen | `output/csv_writer.py:543-701` |
-| Unnötige Array-Kopien | Mittel | 5 Stellen | `optimizer.py`, `main.py` |
-| Tief verschachtelte Kontrollflüsse | Mittel | 1 Block | `main.py:668-728` |
-| Test-only Hilfsfunktionen | Niedrig | 2 Funktionen | `market/ppa.py` |
+| Kategorie                                       | Schwere  | Anzahl                       | Haupt-Dateien                    |
+|-------------------------------------------------|----------|------------------------------|----------------------------------|
+| Toter Code (nur in Tests aufgerufen)            | Kritisch | 4 Funktionen                 | `market/eeg.py`, `market/ppa.py` |
+| Monolithische Funktion                          | Kritisch | 1 Funktion (694 Zeilen)      | `main.py:run()`                  |
+| Duplizierter Code-Block                         | Hoch     | 1 identischer Block          | `main.py:917-926 vs 945-954`     |
+| Vermarktungslogik in main.py statt Marktmodulen | Hoch     | 3 Funktionen (~155 Zeilen)   | `main.py:198-356`                |
+| Redundante Analyse-CSV-Writer                   | Mittel   | 3 fast-identische Funktionen | `output/csv_writer.py:543-701`   |
+| Unnötige Array-Kopien                           | Mittel   | 5 Stellen                    | `optimizer.py`, `main.py`        |
+| Tief verschachtelte Kontrollflüsse              | Mittel   | 1 Block                      | `main.py:668-728`                |
+| Test-only Hilfsfunktionen                       | Niedrig  | 2 Funktionen                 | `market/ppa.py`                  |
 
 ---
 
@@ -33,6 +33,7 @@ als `fixed_prices_yearly`-Array an den Dispatch-Optimizer übergeben. `apply_eeg
 ursprüngliche Post-hoc-Berechnung, die durch die Pre-Computation ersetzt wurde.
 
 **Aktion:**
+
 - `apply_eeg_floor()` aus `market/eeg.py` entfernen
 - Zugehörige Tests in `tests/test_eeg.py` entfernen (Tests testen toten Code)
 - Prüfen ob Imports in `test_eeg.py` angepasst werden müssen
@@ -50,6 +51,7 @@ vorab berechnet. Die Funktion `apply_pay_as_produced()` multipliziert lediglich 
 was der Optimizer bereits intern erledigt.
 
 **Aktion:**
+
 - `apply_pay_as_produced()` aus `market/ppa.py` entfernen
 - Zugehörige Tests in `tests/test_ppa.py` entfernen
 - Docstring am Modulanfang aktualisieren (Public API Section)
@@ -67,6 +69,7 @@ Die Funktion `apply_floor_ppa()` berechnet `max(spot, floor) + goo`, aber der Op
 intern über die pre-computed `effective_green_price`.
 
 **Aktion:**
+
 - `apply_floor_ppa()` aus `market/ppa.py` entfernen
 - Zugehörige Tests in `tests/test_ppa.py` entfernen
 - `effective_floor_price()` (Zeile 286-319) BLEIBT – wird von `effective_ppa_price_for_year()` genutzt
@@ -83,6 +86,7 @@ intern über die pre-computed `effective_green_price`.
 vorab berechnet. Der Optimizer wendet `clip(spot, floor, cap) + goo` intern an.
 
 **Aktion:**
+
 - `apply_collar_ppa()` aus `market/ppa.py` entfernen
 - Zugehörige Tests in `tests/test_ppa.py` entfernen
 - `effective_collar_prices()` (Zeile 364-402) BLEIBT – wird von `effective_ppa_price_for_year()` genutzt
@@ -97,6 +101,7 @@ vorab berechnet. Der Optimizer wendet `clip(spot, floor, cap) + goo` intern an.
 `.docs/features/11_sanitizing_testing.md` erwähnt.
 
 **Aktion:**
+
 - Bestätigen, dass Funktion tatsächlich bereits entfernt ist
 - Import-Referenz in `tests/test_price_loader.py` entfernen (Phase A, bereits dokumentiert)
 
@@ -109,6 +114,7 @@ vorab berechnet. Der Optimizer wendet `clip(spot, floor, cap) + goo` intern an.
 **Status:** Exakt identischer `dataclasses.replace()`-Aufruf in beiden Zweigen eines if/else.
 
 **Code (identisch in beiden Blöcken):**
+
 ```python
 baseline_market_config = _dc.replace(
     grid_search_config,
@@ -123,6 +129,7 @@ baseline_market_config = _dc.replace(
 ```
 
 **Aktion:**
+
 - `baseline_market_config`-Konstruktion VOR das if/else ziehen
 - Nur die MC- vs Grid-Search-Logik im if/else belassen:
   ```python
@@ -142,6 +149,7 @@ baseline_market_config = _dc.replace(
 **Status:** `import dataclasses as _dc` steht mitten im Funktionskörper von `run()`.
 
 **Aktion:**
+
 - Import an den Modulanfang verschieben (PEP 8)
 
 **Risiko:** Null.
@@ -160,12 +168,14 @@ Ruft intern bereits `eeg_config_from_dict()`, `ppa_config_from_dict()`, `effecti
 `main.py` erweitert werden statt des zuständigen Marktmoduls.
 
 **Aktion:**
+
 - `eeg.py` erweitern: `get_floor_prices_yearly(eeg_config, lifetime, inflation_rate) -> list[float]`
 - `ppa.py` erweitern: `get_fixed_prices_yearly(ppa_config, lifetime, inflation_rate) -> list[float]`
 - `main.py` ruft nur noch die passende Funktion auf (Delegation statt Implementierung)
 - Die if/elif-Kaskade wird zum einzeiligen Dispatch
 
 **Betroffene Dateien:**
+
 - `main.py:198-266` (Logik entfernen, durch Delegation ersetzen)
 - `market/eeg.py` (neue Funktion hinzufügen)
 - `market/ppa.py` (neue Funktion hinzufügen)
@@ -179,10 +189,12 @@ Ruft intern bereits `eeg_config_from_dict()`, `ppa_config_from_dict()`, `effecti
 **Status:** Speziallogik für EEG-Jahre (keine GoO) und PPA-Jahre (mit GoO).
 
 **Aktion:**
+
 - `ppa.py` erweitern: `get_goo_prices_yearly(ppa_config, eeg_config, lifetime) -> list[float]`
 - `main.py` delegiert
 
 **Betroffene Dateien:**
+
 - `main.py:269-304` (Logik verschieben)
 - `market/ppa.py` (neue Funktion)
 
@@ -195,10 +207,12 @@ Ruft intern bereits `eeg_config_from_dict()`, `ppa_config_from_dict()`, `effecti
 **Status:** Speziallogik für Collar/PaP/Baseload Cap-Preise.
 
 **Aktion:**
+
 - `ppa.py` erweitern: `get_cap_prices_yearly(ppa_config, lifetime, inflation_rate) -> list[float]`
 - `main.py` delegiert
 
 **Betroffene Dateien:**
+
 - `main.py:307-356` (Logik verschieben)
 - `market/ppa.py` (neue Funktion)
 
@@ -214,9 +228,10 @@ Ruft intern bereits `eeg_config_from_dict()`, `ppa_config_from_dict()`, `effecti
 # In market/pricing.py (oder ppa.py):
 @dataclass
 class YearlyPriceSchedules:
-    fixed_prices: list[float]   # Floor/Fixed pro Jahr
-    goo_prices: list[float]     # GoO-Prämie pro Jahr
-    cap_prices: list[float]     # Cap-Preis pro Jahr
+    fixed_prices: list[float]  # Floor/Fixed pro Jahr
+    goo_prices: list[float]  # GoO-Prämie pro Jahr
+    cap_prices: list[float]  # Cap-Preis pro Jahr
+
 
 def build_yearly_price_schedules(scenario, inflation_rate) -> YearlyPriceSchedules:
     """Einmaliger Loop über alle Projektjahre, erzeugt alle 3 Listen."""
@@ -252,11 +267,13 @@ def write_XXX_csv(path, result, config=None):
 ```
 
 **Unterschiede:**
+
 - EEG: 1 Param-Spalte (`floor_price_eur_per_kwh`) + 1 Extra (`dscr_min_mean`)
 - Collar: 3 Param-Spalten (`floor_price`, `cap_spread`, `cap_price`) + `duration_years`
 - Baseload: 2 Param-Spalten (`ppa_price`, `baseload_mw`) + `duration_years`
 
 **Aktion:**
+
 - Gemeinsame Statistik-Spalten in Helper extrahieren:
   ```python
   def _mc_stats_columns(stats: dict, decimal: str) -> dict[str, str]:
@@ -277,6 +294,7 @@ def write_XXX_csv(path, result, config=None):
 `price_fixed > 0` (dann wird `np.maximum()` berechnet) oder cap aktiv ist.
 
 **Aktueller Code (Zeile 245):**
+
 ```python
 eff = spot_prices_eur_per_kwh.copy()
 if price_fixed_eur_per_kwh > 0.0:
@@ -286,6 +304,7 @@ if goo_premium_eur_per_kwh > 0.0:
 ```
 
 **Optimierung:**
+
 ```python
 if price_fixed_eur_per_kwh > 0.0:
     eff = np.maximum(spot_prices_eur_per_kwh, price_fixed_eur_per_kwh)
@@ -299,6 +318,7 @@ if goo_premium_eur_per_kwh > 0.0:
 Bei 96 Elementen pro Array (Quarter-hourly): vernachlässigbar, aber guter Code-Stil.
 
 **Betroffene Stellen:**
+
 - `optimizer.py:245` (Green-Mode effective price)
 - `optimizer.py:771` (Baseload effective price)
 - `optimizer.py:943` (PaP effective price)
@@ -315,13 +335,14 @@ ein neues Array, also ist dies sicher.
 identisch sind (es gibt nur eine SoC-Spur im Green-Mode).
 
 **Code:**
+
 ```python
 return DailyDispatchResult(
     ...
-    soc=soc,
-    soc_green=soc.copy(),  # Redundant: soc_green IS soc in Green Mode
-    soc_grey=np.zeros(n_steps + 1),
-    ...
+soc = soc,
+soc_green = soc.copy(),  # Redundant: soc_green IS soc in Green Mode
+soc_grey = np.zeros(n_steps + 1),
+...
 )
 ```
 
@@ -340,6 +361,7 @@ Caller-Code (engine.py). Wenn kein in-place Zugriff: sicher.
 **Status:** `year_prices = price_array[start:end].copy()`
 
 **Kontext:**
+
 ```python
 for y in range(1, lifetime_years + 1):
     start = (y - 1) * intervals_per_year
@@ -356,6 +378,7 @@ sowieso ein neues Array). Wenn `apply_inflation=False`, ist die Kopie unnötig �
 reicht.
 
 **Optimierung:**
+
 ```python
 year_slice = price_array[start:end]
 if apply_inflation:
@@ -378,6 +401,7 @@ Prüfen ob downstream `year_prices` in-place modifiziert wird.
 ### Status
 
 694 Zeilen in einer einzigen Funktion. Enthält:
+
 - Szenario-Laden und Validierung (Zeile 492-522)
 - Parameter-Extraktion aus JSON (Zeile 524-637, **114 Zeilen** reine dict.get()-Aufrufe)
 - PV-Daten Abruf und Zeitreihen-Setup (Zeile 642-728)
@@ -390,14 +414,14 @@ Prüfen ob downstream `year_prices` in-place modifiziert wird.
 
 ### Vorgeschlagene Aufteilung
 
-| Neue Funktion | Zeilen aus `run()` | Beschreibung |
-|---------------|-------------------|--------------|
-| `_extract_scenario_params(scenario) -> ScenarioParams` | 524-637 | Alle dict.get()-Aufrufe in Dataclass bündeln |
-| `_fetch_pv_timeseries(params, scenarios) -> dict` | 642-728 | PVGIS-Abruf + Quarter-hourly-Konvertierung |
-| `_load_price_data(params, scenarios) -> dict` | 732-785 | Preisladen + Preisschedule-Erzeugung |
-| `_build_grid_search_config(params, ...) -> GridSearchConfig` | 793-849 | Config-Objekt zusammenbauen |
-| `_run_baseline_market(config, optimal, mc_params) -> float` | 908-962 | Baseline-Direktvermarktung (dedupliziert) |
-| `_write_all_outputs(results, output_dir, csv_config)` | 1041-1130 | CSV-Schreiblogik |
+| Neue Funktion                                                | Zeilen aus `run()` | Beschreibung                                 |
+|--------------------------------------------------------------|--------------------|----------------------------------------------|
+| `_extract_scenario_params(scenario) -> ScenarioParams`       | 524-637            | Alle dict.get()-Aufrufe in Dataclass bündeln |
+| `_fetch_pv_timeseries(params, scenarios) -> dict`            | 642-728            | PVGIS-Abruf + Quarter-hourly-Konvertierung   |
+| `_load_price_data(params, scenarios) -> dict`                | 732-785            | Preisladen + Preisschedule-Erzeugung         |
+| `_build_grid_search_config(params, ...) -> GridSearchConfig` | 793-849            | Config-Objekt zusammenbauen                  |
+| `_run_baseline_market(config, optimal, mc_params) -> float`  | 908-962            | Baseline-Direktvermarktung (dedupliziert)    |
+| `_write_all_outputs(results, output_dir, csv_config)`        | 1041-1130          | CSV-Schreiblogik                             |
 
 ### Neue Dataclass: `ScenarioParams`
 
@@ -452,6 +476,7 @@ class ScenarioParams:
 ```
 
 **Vorteil:**
+
 - `run()` schrumpft um ~114 Zeilen
 - Parameter werden als Einheit übergeben statt als 40 Einzelargumente
 - Testbar: `_extract_scenario_params()` kann isoliert getestet werden
@@ -471,22 +496,22 @@ Vorher alle Tests grün bestätigen, danach erneut bestätigen.
 5 Verschachtelungsebenen für PV-Datenabruf:
 
 ```python
-if pv_peak_kwp > 0 and scenarios_list:       # Level 1
-    for wy in unique_weather_years:           # Level 2
-        try:                                  # Level 3
+if pv_peak_kwp > 0 and scenarios_list:  # Level 1
+    for wy in unique_weather_years:  # Level 2
+        try:  # Level 3
             hourly_ts = client.fetch(...)
-        except:                               # Level 3
+        except:  # Level 3
             ...
         qh_ts = hourly_to_quarter_hourly(...)
-    for sc in scenarios_list:                 # Level 2
+    for sc in scenarios_list:  # Level 2
         ...
-    central_scenarios = [...]                 # Level 2
-    if central_scenarios:                     # Level 3
+    central_scenarios = [...]  # Level 2
+    if central_scenarios:  # Level 3
         ...
-    else:                                     # Level 3
+    else:  # Level 3
         ...
-else:                                         # Level 1
-    # BESS-Only fallback
+else:  # Level 1
+# BESS-Only fallback
 ```
 
 ### Aktion
@@ -518,7 +543,8 @@ relevant werden.
 
 ### B8.2: `market/ppa.py` – `baseload_revenue()` (Zeile 236-278)
 
-**Status:** Wird in `tests/test_ppa.py` aufgerufen. Berechnet `baseload × (ppa_price + goo) + (export - baseload) × spot`.
+**Status:** Wird in `tests/test_ppa.py` aufgerufen. Berechnet
+`baseload × (ppa_price + goo) + (export - baseload) × spot`.
 
 **Bewertung:** Nützliche Validierungsfunktion für Tests. Könnte in Phase C3 (PPA-Baseload im LP)
 wieder relevant werden.
@@ -529,14 +555,14 @@ wieder relevant werden.
 
 ## Empfohlene Reihenfolge der Umsetzung
 
-| # | Aktion | Dateien | Risiko | Aufwand |
-|---|--------|---------|--------|---------|
-| 1 | B1.1-B1.4: Toten Code entfernen | `market/eeg.py`, `market/ppa.py`, `tests/test_eeg.py`, `tests/test_ppa.py` | Gering | Klein |
-| 2 | B2.1-B2.2: Duplizierung + Import | `main.py` | Sehr gering | Klein |
-| 3 | B4: CSV-Writer Stats-Helper | `output/csv_writer.py` | Gering | Klein |
-| 4 | B5.1-B5.3: Array-Kopien | `optimizer.py`, `main.py` | Gering | Klein |
-| 5 | B3.1-B3.4: Vermarktungslogik verschieben | `main.py`, `market/eeg.py`, `market/ppa.py` | Mittel | Mittel |
-| 6 | B6+B7: `run()` aufteilen + `ScenarioParams` | `main.py` | Mittel | Groß |
+| # | Aktion                                      | Dateien                                                                    | Risiko      | Aufwand |
+|---|---------------------------------------------|----------------------------------------------------------------------------|-------------|---------|
+| 1 | B1.1-B1.4: Toten Code entfernen             | `market/eeg.py`, `market/ppa.py`, `tests/test_eeg.py`, `tests/test_ppa.py` | Gering      | Klein   |
+| 2 | B2.1-B2.2: Duplizierung + Import            | `main.py`                                                                  | Sehr gering | Klein   |
+| 3 | B4: CSV-Writer Stats-Helper                 | `output/csv_writer.py`                                                     | Gering      | Klein   |
+| 4 | B5.1-B5.3: Array-Kopien                     | `optimizer.py`, `main.py`                                                  | Gering      | Klein   |
+| 5 | B3.1-B3.4: Vermarktungslogik verschieben    | `main.py`, `market/eeg.py`, `market/ppa.py`                                | Mittel      | Mittel  |
+| 6 | B6+B7: `run()` aufteilen + `ScenarioParams` | `main.py`                                                                  | Mittel      | Groß    |
 
 **Gesamtaufwand:** ~4-6 Stunden (davon B6 allein ~2-3 Stunden)
 

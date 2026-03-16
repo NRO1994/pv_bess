@@ -71,6 +71,8 @@ def _make_mock_data() -> MagicMock:
     data.eeg_sensitivity = None
     data.ppa_collar = None
     data.ppa_baseload = None
+    data.baseline_market_irr = 0.01
+    data.equity_irr_target = 0.009
     return data
 
 
