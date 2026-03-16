@@ -471,7 +471,7 @@ def run_simulation(
                     config.bess_power_kw,
                     config.bess_nameplate_kwh,
                 )
-                logger.info(
+                logger.debug(
                     "BESS replacement at year %d: capacity set to %.1f kWh "
                     "(upgrade factor %.0f %%), cost = %.2f EUR.",
                     year,

@@ -44,7 +44,7 @@ Referenzdatei (`integration_test_cashflows.csv`) vergleicht.
 
 ### FIX-S2-02: Smoke Test (End-to-End)
 
-**Status:** OFFEN
+**Status:** ERLEDIGT
 **Dateien:** `tests/test_integration_smoke.py` (neu), `.data/integration_test_inputs/smoke_test/smoke_test.json` (BASE)
 
 **Problem:** Es existieren Smoke-Test-Daten, aber kein End-to-End-Integrationstest.
@@ -762,7 +762,7 @@ FIX-S2-15 (Upgrade-Faktor) ───────→ FIX-S2-13 (Replacement Debt)
 | #         | Beschreibung                                     | Status                     | Priorität | Impact                             |
 |-----------|--------------------------------------------------|----------------------------|-----------|------------------------------------|
 | FIX-S2-01 | Cashflow Benchmark-Test                          | ERLEDIGT                   | Hoch      | Neuer Test, keine Code-Änderung    |
-| FIX-S2-02 | Smoke Test                                       | OFFEN                      | Hoch      | Neuer Test + JSON-Fix              |
+| FIX-S2-02 | Smoke Test                                       | ERLEDIGT                   | Hoch      | Neuer Test + JSON-Fix              |
 | FIX-S2-03 | BESS-Only Cases                                  | ERLEDIGT                   | Hoch      | Schema, Main, Grid Search          |
 | FIX-S2-04 | OPEX eur_per_kw/kwh                              | BEREITS IMPLEMENTIERT      | –         | –                                  |
 | FIX-S2-05 | Loan Tenor                                       | BEREITS IMPLEMENTIERT      | –         | –                                  |

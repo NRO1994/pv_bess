@@ -694,7 +694,7 @@ def run_monte_carlo(
     # ------------------------------------------------------------------
     # Phase 1: Run dispatch once per price scenario (parallelised)
     # ------------------------------------------------------------------
-    logger.info(
+    logger.debug(
         "MC Phase 1: Running dispatch for %d price scenario(s) "
         "with 100 %% availability.",
         n_scenarios,
@@ -736,14 +736,14 @@ def run_monte_carlo(
                     result.scenario_name,
                 )
 
-    logger.info(
+    logger.debug(
         "MC Phase 1 complete: %d dispatch simulation(s) cached.", n_scenarios
     )
 
     # ------------------------------------------------------------------
     # Phase 2: MC iterations (sequential, main thread -- no dispatch)
     # ------------------------------------------------------------------
-    logger.info(
+    logger.debug(
         "MC Phase 2: Running %d iterations (financial noise only).",
         mc_params.iterations,
     )

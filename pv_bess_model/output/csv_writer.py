@@ -400,7 +400,7 @@ def write_monte_carlo_csv(
             "project_irr_pct": fmt_pct(it.project_irr, decimal=d),
             "npv_eur": fmt_currency(it.npv, decimal=d),
             "dscr_min": fmt_float(it.dscr_min, decimal=d),
-            "capture_rate_eur_per_kwh": fmt_float(it.capture_rate, decimal=d),
+            "capture_rate_eur_per_mwh": fmt_float(it.capture_rate*1000, decimal=d),
         })
 
     _write_dicts(path, rows, delimiter=cfg.delimiter)

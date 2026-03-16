@@ -182,7 +182,7 @@ def render_prompt(data: Any) -> str:
             f"{data.baseline_market_irr:.2f} %" if data.baseline_market_irr is not None else "n/a"
         ),
         "{{equity_irr_target}}": (
-            f"{data.equity_irr_target:.1f} %" if data.equity_irr_target is not None else "nicht definiert"
+            f"{data.equity_irr_target*100:.1f} %" if data.equity_irr_target is not None else "nicht definiert"
         ),
     }
 

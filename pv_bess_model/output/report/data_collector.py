@@ -556,5 +556,5 @@ def collect_report_data(
         company_logo_b64=_encode_logo_b64(_COMPANY_LOGO_PATH),
         # Reference lines
         baseline_market_irr=(baseline_market_irr * 100.0) if baseline_market_irr is not None else None,
-        equity_irr_target=equity_irr_target,
+        equity_irr_target=(equity_irr_target*100) if equity_irr_target is not None else None,
     )
