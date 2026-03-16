@@ -213,6 +213,7 @@ class HourlySample:
     discharge_grey: np.ndarray
     export_pv: np.ndarray
     curtail: np.ndarray
+    baseload_shortfall: np.ndarray
     revenue: np.ndarray
 
 
@@ -367,7 +368,7 @@ def run_simulation(
         spot_prices_yearly: list[np.ndarray],
         fixed_prices_yearly: list[float],
         offline_days_yearly: list[set[int]],
-        baseload_kw: float = 0.0,
+        baseload_mw: float = 0.0,
         goo_prices_yearly: list[float] | None = None,
         cap_prices_yearly: list[float] | None = None,
         pv_offline_days_yearly: list[set[int]] | None = None,
@@ -511,6 +512,7 @@ def run_simulation(
         goo_price = goo_per_year[year_idx]
         cap_price = cap_per_year[year_idx]
         offline_days = offline_days_yearly[year_idx]
+        baseload_mw = baseload_mw if fixed_price > 0 else 0.0
 
         # ---- 6. Prepare hourly sample arrays (year 1 only) ----
         intervals_per_year = config.intervals_per_year
@@ -529,6 +531,7 @@ def run_simulation(
             h_soc_grey = np.zeros(intervals_per_year)
             h_revenue = np.zeros(intervals_per_year)
             h_effective_price = np.zeros(intervals_per_year)
+            h_shortfall = np.zeros(intervals_per_year)
 
         # ---- 7. Annual accumulators ----
         year_revenue_pv = 0.0
@@ -567,6 +570,7 @@ def run_simulation(
                     pv_production_kwh=pv_day,
                     spot_prices_eur_per_kwh=spot_day,
                     price_fixed_eur_per_kwh=fixed_price,
+                    baseload_mw=baseload_mw,
                     grid_max_kw=config.grid_max_kw,
                     start_soc_kwh=current_soc,
                     start_soc_green_kwh=current_soc_green,
@@ -581,6 +585,7 @@ def run_simulation(
                     pv_production_kwh=pv_day,
                     spot_prices_eur_per_kwh=spot_day,
                     price_fixed_eur_per_kwh=fixed_price,
+                    baseload_mw=baseload_mw,
                     bess=bess_params,
                     grid_max_kw=config.grid_max_kw,
                     mode=config.mode,
@@ -636,6 +641,7 @@ def run_simulation(
                 h_soc_grey[h_start:h_end] = result["soc_grey"]
                 h_revenue[h_start:h_end] = result["revenue"]
                 h_effective_price[h_start:h_end] = result["effective_price"]
+                h_shortfall[h_start:h_end] = result["shortfall"]
 
         # ---- 9. Compute annual aggregates ----
         total_pv = float(np.sum(pv_year))
@@ -691,6 +697,7 @@ def run_simulation(
                 export_pv=h_export_pv,
                 curtail=h_curtail,
                 revenue=h_revenue,
+                baseload_shortfall=h_shortfall,
             )
 
         logger.debug(

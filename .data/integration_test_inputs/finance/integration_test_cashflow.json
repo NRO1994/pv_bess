@@ -118,7 +118,7 @@
         "ppa": {
           "type": "none",
           "pay_as_produced_price_eur_per_kwh": null,
-          "baseload_mw": null,
+          "baseload_mw": 0,
           "floor_price_eur_per_kwh": 0.0549,
           "cap_price_eur_per_kwh": 0.0549,
           "duration_years": 5,

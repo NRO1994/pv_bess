@@ -192,6 +192,7 @@ def _make_hourly_sample(n: int = 24) -> HourlySample:
         export_pv=np.ones(n) * 7.0,
         curtail=np.zeros(n),
         revenue=np.ones(n) * 0.5,
+        baseload_shortfall=np.zeros(n),
     )
 
 

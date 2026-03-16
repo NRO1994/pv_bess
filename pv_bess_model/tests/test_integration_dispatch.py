@@ -338,7 +338,7 @@ def build_scenario(
         rev["marketing"] = {"type": "ppa"}
         rev["ppa"] = {
             "type": "ppa_baseload",
-            "pay_as_produced_price_eur_per_kwh": 0.071,
+            "pay_as_produced_price_eur_per_kwh": 0.075,
             "baseload_mw": 0.1,
             "duration_years": 15,
             "inflation_on_ppa": False,

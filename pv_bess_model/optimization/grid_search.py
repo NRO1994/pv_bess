@@ -469,7 +469,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         pv_base_timeseries_year=args.pv_base_timeseries_year,
         spot_prices_yearly=args.spot_prices_yearly,
         fixed_prices_yearly=args.fixed_prices_yearly,
-        baseload_kw=args.baseload_mw,
+        baseload_mw=args.baseload_mw,
         offline_days_yearly=args.offline_days_bess_yearly,
         pv_offline_days_yearly=args.offline_days_pv_yearly,
         goo_prices_yearly=args.goo_prices_yearly,

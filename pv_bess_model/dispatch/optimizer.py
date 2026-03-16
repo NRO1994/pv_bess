@@ -545,30 +545,30 @@ def _build_grey_lp(
             b_ub[row] = -baseload_kwh
 
     # --- Variable bounds ---
-    # Discharge fixed to 0 at negative spot prices (prevents simultaneous
-    # charge/discharge).
+    # Discharge fixed to 0 at negative spot prices (prevents simultaneous charge/discharge).
     bounds: list[tuple[float, float | None]] = []
     for t in range(T):
-        bounds.append((0.0, None))                     # charge_pv[t]
+        bounds.append((0.0, None))  # charge_pv[t]
     for t in range(T):
         ub = 0.0 if spot_prices_eur_per_kwh[t] < 0 else None
-        bounds.append((0.0, ub))                       # discharge_green[t]
+        bounds.append((0.0, ub))  # discharge_green[t]
     for t in range(T):
-        bounds.append((0.0, None))                     # export_pv[t]
+        bounds.append((0.0, None))  # export_pv[t]
     for t in range(T):
-        bounds.append((0.0, None))                     # curtail[t]
+        bounds.append((0.0, None))  # curtail[t]
     for t in range(T):
-        bounds.append((0.0, None))                     # charge_grid[t]
+        bounds.append((0.0, None))  # charge_grid[t]
     for t in range(T):
-        ub = 0.0 if spot_prices_eur_per_kwh[t] < 0 else None
-        bounds.append((0.0, ub))                       # discharge_grey[t]
+        ub = 0.0 if spot_prices_eur_per_kwh[t] < 0 or (
+                    has_baseload and (spot_prices_eur_per_kwh[t] - eff_prices[t]) < 0) else None
+        bounds.append((0.0, ub))  # discharge_grey[t]
     for t in range(T):
-        bounds.append((0.0, soc_max_kwh))              # soc_green[t]
+        bounds.append((0.0, soc_max_kwh))  # soc_green[t]
     for t in range(T):
-        bounds.append((0.0, soc_max_kwh))              # soc_grey[t]
+        bounds.append((0.0, soc_max_kwh))  # soc_grey[t]
     if has_baseload:
         for t in range(T):
-            bounds.append((0.0, None))                 # shortfall[t]
+            bounds.append((0.0, None))  # shortfall[t]
 
     return c, A_ub, b_ub, A_eq, b_eq, bounds
 
@@ -581,10 +581,12 @@ def _build_grey_lp(
 def _extract_green_result(
         x: np.ndarray,
         T: int,
+        spot_prices_eur_per_kwh: np.ndarray,
         eff_prices: np.ndarray,
+        fixed_price: float,
         rte: float,
         grid_loss_factor: float = 1.0,
-        has_baseload: bool = False,
+        baseload_kwh: float = 0.0,
 ) -> DailyDispatchResult:
     """Parse the LP solution vector into a :class:`DailyDispatchResult` (Green).
 
@@ -596,16 +598,23 @@ def _extract_green_result(
     export_pv = x[2 * T: 3 * T]
     curtail = x[3 * T: 4 * T]
     soc = x[4 * T: 5 * T]
-    shortfall = x[5 * T: 6 * T] if has_baseload else np.zeros(T)
+    shortfall = x[5 * T: 6 * T] if baseload_kwh > 0 else np.zeros(T)
 
     # Add losses to the energy flow
     discharge_green = discharge_green * grid_loss_factor * rte
     export_pv = export_pv * grid_loss_factor
     curtail = curtail * grid_loss_factor
 
-    # Revenue per hour (€):
-    # PV export at effective price (floor/cap protected)
-    revenue = (export_pv + discharge_green) * eff_prices
+    # Consider PPA-Baseload
+    if baseload_kwh > 0:
+        spot_revenue = np.maximum(export_pv + discharge_green - baseload_kwh, 0) * spot_prices_eur_per_kwh
+        ppa_revenue = baseload_kwh * fixed_price
+        baseload_shortfall_costs = shortfall * spot_prices_eur_per_kwh
+        revenue = ppa_revenue + spot_revenue - baseload_shortfall_costs
+    else:
+        # Revenue per hour (€):
+        # PV export at effective price (floor/cap protected)
+        revenue = (export_pv + discharge_green) * eff_prices
 
     return DailyDispatchResult(
         charge_pv=charge_pv,
@@ -633,7 +642,8 @@ def _extract_grey_result(
         eff_prices: np.ndarray,
         rte: float,
         grid_loss_factor: float = 1.0,
-        has_baseload: bool = False,
+        baseload_kwh: float = 0.0,
+        fixed_price: float = 0.0,
 ) -> DailyDispatchResult:
     """Parse the LP solution vector into a :class:`DailyDispatchResult` (Grey).
 
@@ -647,7 +657,7 @@ def _extract_grey_result(
     discharge_grey = x[5 * T: 6 * T]
     soc_green = x[6 * T: 7 * T]
     soc_grey = x[7 * T: 8 * T]
-    shortfall = x[8 * T: 9 * T] if has_baseload else np.zeros(T)
+    shortfall = x[8 * T: 9 * T] if baseload_kwh > 0 else np.zeros(T)
 
     soc = soc_green + soc_grey
 
@@ -656,11 +666,17 @@ def _extract_grey_result(
     discharge_grey = discharge_grey * rte
     export_pv = export_pv * grid_loss_factor
     curtail = curtail * grid_loss_factor
-
-    # Revenue (€): PV export and green discharge at effective price × glf,
-    # BESS discharge (grey) at spot, minus grid import at spot
-    revenue = ((export_pv + discharge_green) * eff_prices +
-               (discharge_grey - charge_grid) * spot_prices_eur_per_kwh)
+    # Consider PPA-Baseload
+    if baseload_kwh > 0:
+        spot_revenue = np.maximum(export_pv + discharge_green + discharge_grey - baseload_kwh, 0) * spot_prices_eur_per_kwh
+        ppa_revenue = baseload_kwh * fixed_price
+        baseload_shortfall_costs = shortfall * spot_prices_eur_per_kwh
+        revenue = ppa_revenue + spot_revenue - baseload_shortfall_costs
+    else:
+        # Revenue (€): PV export and green discharge at effective price × glf,
+        # BESS discharge (grey) at spot, minus grid import at spot
+        revenue = ((export_pv + discharge_green) * eff_prices +
+                   (discharge_grey - charge_grid) * spot_prices_eur_per_kwh)
 
     return DailyDispatchResult(
         charge_pv=charge_pv,
@@ -699,7 +715,7 @@ def optimize_day(
         goo_premium_eur_per_kwh: float = 0.0,
         price_cap_eur_per_kwh: float = 0.0,
         grid_loss_factor: float = 1.0,
-        baseload_kw: float = 0.0,
+        baseload_mw: float = 0.0,
 ) -> DailyDispatchResult:
     """Solve the daily dispatch LP for one day.
 
@@ -741,7 +757,7 @@ def optimize_day(
         green BESS discharge) in the objective function, grid constraint, and
         revenue calculation.  Grey energy is **not** affected.  Defaults to
         1.0 (no losses).
-    baseload_kw : float
+    baseload_mw : float
         Baseload PPA commitment in **kW**.  When > 0, the LP uses raw spot
         prices (no floor/cap/goo) because the baseload settlement is a
         constant that does not affect LP decisions.  Defaults to 0.0
@@ -761,7 +777,7 @@ def optimize_day(
     rte = bess.round_trip_efficiency
 
     # Convert baseload from MW to kWh per interval
-    baseload_kwh = baseload_kw * 1000.0 * bess.timestep_hours if baseload_kw > 0 else 0.0
+    baseload_kwh = baseload_mw * 1000.0 * bess.timestep_hours if baseload_mw > 0 else 0.0
     has_baseload = baseload_kwh > 0.0
 
     # Pre-compute effective green price
@@ -855,16 +871,17 @@ def optimize_day(
             price_cap_eur_per_kwh=price_cap_eur_per_kwh,
             grid_loss_factor=grid_loss_factor,
             timestep_hours=bess.timestep_hours,
-            baseload_kw=baseload_kw,
+            baseload_mw=baseload_mw,
         )
 
     x = result.x
 
     if mode == "green":
-        return _extract_green_result(x, T, eff, rte, grid_loss_factor, has_baseload)
+        return _extract_green_result(x, T, spot_prices_eur_per_kwh, eff, price_fixed_eur_per_kwh, rte, grid_loss_factor,
+                                     baseload_mw * 1000.0 * bess.timestep_hours if baseload_mw > 0 else 0.0)
     else:
         return _extract_grey_result(
-            x, T, spot_prices_eur_per_kwh, eff, rte, grid_loss_factor, has_baseload,
+            x, T, spot_prices_eur_per_kwh, eff, rte, grid_loss_factor, baseload_mw * 1000.0 * bess.timestep_hours if baseload_mw > 0 else 0.0, price_fixed_eur_per_kwh
         )
 
 
@@ -885,7 +902,7 @@ def dispatch_offline_day(
         price_cap_eur_per_kwh: float = 0.0,
         grid_loss_factor: float = 1.0,
         timestep_hours: float = 1.0,
-        baseload_kw: float = 0.0,
+        baseload_mw: float = 0.0,
 ) -> DailyDispatchResult:
     """Produce dispatch results for a BESS-offline day.
 
@@ -916,7 +933,7 @@ def dispatch_offline_day(
     price_cap_eur_per_kwh : float
         Cap price in **€/kWh** for PPA Collar.  0.0 means no cap.
         Defaults to 0.0.  Ignored when ``baseload_kw > 0``.
-    baseload_kw : float
+    baseload_mw : float
         Baseload PPA commitment in **kW**.  When > 0, effective price is
         raw spot (no floor/cap/goo).  Defaults to 0.0.
 
@@ -938,7 +955,7 @@ def dispatch_offline_day(
     grid_curtail = np.maximum(pv_production_kwh * grid_loss_factor - grid_max_energy, 0)
 
     # Effective price per kWh
-    if baseload_kw > 0:
+    if baseload_mw > 0:
         # Baseload PPA: use spot prices (settlement computed by engine)
         eff = spot_prices_eur_per_kwh.copy()
     else:
@@ -957,14 +974,17 @@ def dispatch_offline_day(
 
     curtail = grid_curtail + price_curtail
 
-    revenue = export_pv * eff
-
     # Compute shortfall for baseload PPA (BESS offline, only PV export)
-    baseload_kwh = baseload_kw * 1000.0 * timestep_hours if baseload_kw > 0 else 0.0
+    baseload_kwh = baseload_mw * 1000.0 * timestep_hours if baseload_mw > 0 else 0.0
     if baseload_kwh > 0:
         shortfall = np.maximum(baseload_kwh - export_pv, 0.0)
+        spot_revenue = np.maximum(export_pv - baseload_kwh, 0) * spot_prices_eur_per_kwh
+        ppa_revenue = baseload_kwh * price_fixed_eur_per_kwh
+        baseload_shortfall_costs = shortfall * spot_prices_eur_per_kwh
+        revenue = ppa_revenue + spot_revenue - baseload_shortfall_costs
     else:
         shortfall = np.zeros(T)
+        revenue = export_pv * eff
 
     return DailyDispatchResult(
         charge_pv=np.zeros(T),

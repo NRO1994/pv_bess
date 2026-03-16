@@ -7,17 +7,17 @@ Dieses Tool bewertet die Wirtschaftlichkeit von **PV‑Anlagen mit Batteriespeic
 gesamte Projektlaufzeit (typisch 25 Jahre). Es kombiniert eine **zeitlich hochaufgelöste Betriebssimulation** (
 Viertelstundenwerte) mit einer **finanziellen Projektmodellierung** (CAPEX/OPEX, Finanzierung, Steuern) und liefert als
 zentrale Ergebnisgrößen insbesondere die **Eigenkapitalrendite (Equity IRR)**, ergänzt um NPV, DSCR, LCOE und weitere
-Kennzahlen. 
+Kennzahlen.
 
 **Welche Kernfragen beantwortet das Tool?**
 
-1. **Lohnt sich ein Speicher überhaupt?** – Vergleich „PV‑only“ (Baseline) gegen PV+BESS. 
+1. **Lohnt sich ein Speicher überhaupt?** – Vergleich „PV‑only“ (Baseline) gegen PV+BESS.
 2. **Welche BESS‑Konfiguration ist optimal?** – Systematische Suche (Grid Search) über Kombinationen aus **Leistung (kW)
-   ** und **Speicherdauer (E/P‑Ratio in h)**. 
+   ** und **Speicherdauer (E/P‑Ratio in h)**.
 3. **Welche Vermarktungsstrategie maximiert den Wert?** – Abbildung von EEG als Mindestpreis, PPA‑Varianten (
-   Pay‑as‑Produced, Baseload, Floor/Collar) und Marktvermarktung. 
+   Pay‑as‑Produced, Baseload, Floor/Collar) und Marktvermarktung.
 4. **Wie robust ist das Ergebnis gegen Unsicherheit?** – Monte‑Carlo‑Risikoanalyse auf Kosten, Verfügbarkeiten und
-   Preisszenarien. 
+   Preisszenarien.
 
 **Wie funktioniert das Tool in einfachen Worten?**  
 Das Tool rechnet die Zukunft nicht „einmal grob“, sondern bildet den **operativen Betrieb** ab: Für **jeden Tag** wird
@@ -25,12 +25,12 @@ entschieden, wann der Speicher lädt bzw. entlädt – mit dem Ziel, den Tageser
 wie SoC‑Fenster, Lade-/Entladeleistung und Netzanschlusslimit). Diese „Dispatch‑Optimierung“ erfolgt in **96
 Viertelstunden pro Tag**.
 Die so ermittelten Erlöse/Kosten werden anschließend auf Jahresbasis zu einem vollständigen **Projekt‑Cashflow**
-zusammengeführt (inkl. Inflationslogik, Annuitätendarlehen, AfA/Steuern, Verlustvortrag). 
+zusammengeführt (inkl. Inflationslogik, Annuitätendarlehen, AfA/Steuern, Verlustvortrag).
 
 **Warum wird eine Optimierung (LP) verwendet?**  
 Im Kern steht die Frage: *Wie verteile ich Energieflüsse optimal über die Zeit?* – also PV‑Direkteinspeisung, Speichern,
 Abregeln und spätere Entladung. Das ist ein typisches **Optimierungsproblem**: Es gibt Entscheidungen (Variablen),
-Grenzen (Nebenbedingungen) und ein Ziel (Erlös maximieren). 
+Grenzen (Nebenbedingungen) und ein Ziel (Erlös maximieren).
 
 ### Exkurs: Was ist eine lineare Optimierung (LP) – und wie kann man sich das vorstellen?
 
@@ -54,27 +54,43 @@ der Mehrerlös die Speicherverluste (und ggf. zusätzliche Kosten) übersteigt.
 **Übertragung auf die Realität:**  
 Im Modell gibt es nicht nur 2 Zeitpunkte, sondern 96 pro Tag und zusätzlich technische Grenzen (Netzanschluss,
 SoC‑Fenster, Lade-/Entladeleistung). Eine LP‑Optimierung „rechnet“ alle zulässigen Kombinationen durch und findet die
-beste Dispatch‑Strategie für den Tag. 
+beste Dispatch‑Strategie für den Tag.
 
 **Wichtige Modellidee: Perfekte Voraussicht (für einen Tag)**  
 Der Optimierer kennt PV‑Erzeugung und Preise für den ganzen Tag. Das ist *keine* Behauptung über den realen Betrieb,
 sondern liefert eine **saubere Obergrenze**, wie gut der Speicher bei idealer Fahrweise theoretisch performen kann. Für
-Projektentwicklung ist das hilfreich, weil es den **Systemwert** des Speichers isoliert. 
+Projektentwicklung ist das hilfreich, weil es den **Systemwert** des Speichers isoliert.
 
 **Welche Ergebnisse bekommt ihr?**
 
 - **Grid‑Search‑Matrix**: Welche Kombination aus BESS‑Leistung und ‑Kapazität liefert die höchste Equity‑IRR im
-  Zentralszenario? 
-- **Cashflow‑Zeitreihe**: Jahr‑für‑Jahr Zahlungsströme inkl. Schuldendienst und Steuern. 
-- **Risiko‑Kennzahlen (Monte Carlo)**: Bandbreiten (P10/P50/P90) für IRR/NPV/DSCR. 
-- **HTML‑Dashboard + CSVs**: Interaktive Auswertung und reproduzierbare Ergebnisfiles. 
+  Zentralszenario?
+- **Cashflow‑Zeitreihe**: Jahr‑für‑Jahr Zahlungsströme inkl. Schuldendienst und Steuern.
+- **Risiko‑Kennzahlen (Monte Carlo)**: Bandbreiten (P10/P50/P90) für IRR/NPV/DSCR.
+- **HTML‑Dashboard + CSVs**: Interaktive Auswertung und reproduzierbare Ergebnisfiles.
 
 **Wie nutzt man das Tool praktisch?**  
 Ihr definiert ein Projekt als **Szenario‑JSON** (Technik, Kosten, Finanzierung, Vermarktung, Annahmen). Danach läuft das
 Tool automatisiert: Daten laden (PVGIS + Preis‑CSVs), Grid Search, optional Sensitivitäten und Monte‑Carlo, dann
-Reporting (CSV/HTML). 
+Reporting (CSV/HTML).
+
+### **Wesentliche methodische Erweiterungen gegenüber dem WiRe‑Tool**
+
+Dieses Modell adressiert explizit mehrere bekannte Vereinfachungen des WiRe‑Tools und erweitert diese konsistent:
+
+1. Steuern inkl. Verlustvortrag: Negative steuerliche Ergebnisse werden unbegrenzt vorgetragen und mit zukünftigen
+   Gewinnen verrechnet, vor Steuerberechnung.
+2. Explizite Tilgungslogik: Schuldendienst wird vollständig über ein Annuitätendarlehen (Zins + Tilgung) modelliert;
+   keine Näherung über abgezinste AfA.
+3. Inflation auf Kosten und Erlöse: Inflation ist konsistent auf OPEX und Erlösströme (EEG/PPA/Markt) anwendbar.
+4. Zinskosten korrekt auf Restschuld: Zinsen werden auf die jeweilige Restschuld berechnet (Annuität), nicht pauschal
+   über Buchwerte.
+5. Bankability‑Check (P90): Eine P90‑basierte Downside‑Logik wird verwendet; der ausgewiesene Worst‑DSCR basiert auf
+   einem konservativen P90‑Ertragsszenario.
+   Damit ist das Modell insbesondere für Bankability‑Bewertungen robuster als das WiRe‑Tool.
 
 ---
+
 # Benutzerhandbuch – PV + BESS Co-Location Finanzmodell
 
 ## 1. Was macht dieses Tool?
@@ -752,7 +768,7 @@ python -m pv_bess_model.main --scenario szenario.json --skip-llm-prompt
 4. Grid Search läuft (5–15 Minuten, Fortschrittsanzeige)
 5. Sensitivitätsanalysen laufen (falls aktiviert)
 6. Monte Carlo läuft (< 1 Minute dank optimiertem Verfahren)
-7. Optional: KI-Prompt wird angezeigt → in ChatGPT/Copilot einfügen → Antwort speichern → Pfad eingeben
+7. Optional: KI-Prompt wird angezeigt → in ChatGPT/Copilot einfügen → Antwort als .json speichern → Pfad eingeben
 8. CSV-Dateien und HTML-Report werden geschrieben
 9. Zusammenfassung wird auf der Konsole ausgegeben
 
@@ -767,10 +783,10 @@ gewählt, um Rechenzeit, Transparenz und Interpretierbarkeit zu optimieren.
 ### 1) Marktmodell: Fokus auf Day‑Ahead (und einfache Erlöslogiken)
 
 - Das Tool nutzt **Day‑Ahead‑Preiszeitreihen** als zentrale Marktgröße. Intraday‑Handel, Ausgleichsenergiepreise,
-  Redispatch‑Signale oder Regelenergieprodukte sind nicht Bestandteil der Standardlogik. 
+  Redispatch‑Signale oder Regelenergieprodukte sind nicht Bestandteil der Standardlogik.
 - EEG und PPA werden als **preisliche Abbildungsregeln** modelliert (z. B. Mindestpreis/Floor oder Korridor/Collar),
   nicht als vollständige vertragliche Abwicklung inkl. Profilfahrplänen, Nominierungen, Fahrplanabweichungen oder
-  individuellen Bilanzkreisregelungen. 
+  individuellen Bilanzkreisregelungen.
 
 **Implikation:** Die ausgewiesenen Erlöse spiegeln primär den Wert aus (i) *Preisvolatilität* im Day‑Ahead und (ii)
 *Vermarktungs-Floor/Cap‑Mechaniken* wider. Zusatzerlöse aus komplexeren Handelsstrategien sind hier nicht enthalten.
@@ -778,7 +794,6 @@ gewählt, um Rechenzeit, Transparenz und Interpretierbarkeit zu optimieren.
 ### 2) „Perfekte Voraussicht“ innerhalb eines Tages (Upper‑Bound‑Logik)
 
 - Für jeden Tag wird ein Optimierungsproblem gelöst, das PV‑Erzeugung und Preise des Tages als bekannt annimmt.
-  
 
 **Implikation:** Das Modell liefert eine **technisch konsistente Obergrenze** der Fahrweise. In der Realität reduzieren
 Prognosefehler, Fahrplanrestriktionen und operative Regeln die Erreichbarkeit. Für Projektentwicklung ist diese
@@ -788,10 +803,10 @@ er gut betrieben wird?*
 ### 3) Netzmodell: Eine harte Netzanschlussgrenze, sonst keine Netzengpässe
 
 - Abgebildet wird eine **maximale Einspeiseleistung am Netzanschlusspunkt**. Alles darüber wird entweder gespeichert
-  oder abgeregelt. 
+  oder abgeregelt.
 - Darüber hinaus simuliert das Tool **keine lokalen Netzengpässe**, keine zeitvariablen Einspeisebeschränkungen (z. B.
   dynamische Einspeisemanagement‑Vorgaben) und keine netzseitigen Verlustmodelle jenseits eines pauschalen
-  Systemverlustfaktors. 
+  Systemverlustfaktors.
 
 **Implikation:** Projekte mit häufigen, netzseitig verursachten Einspeisebegrenzungen müssen die Eingangsannahmen
 entsprechend konservativ setzen (z. B. über reduzierte Verfügbarkeit bzw. zusätzliche Curtailment‑Logik in den Daten).
@@ -799,10 +814,9 @@ entsprechend konservativ setzen (z. B. über reduzierte Verfügbarkeit bzw. zus�
 ### 4) Technische Detailtiefe BESS: Fokus auf Energiebilanz, nicht auf Elektrochemie
 
 - Das Modell bildet BESS über **Leistungs‑ und Kapazitätsgrenzen**, SoC‑Fenster, Wirkungsgrad (RTE), Verfügbarkeit und
-  lineare Degradation ab. 
+  lineare Degradation ab.
 - Nicht modelliert sind z. B. temperaturabhängige Effekte, C‑Rate‑abhängige Wirkungsgrade, Alterung als Funktion von
   Zyklen/DoD, Rampen/Trägheiten, Hilfsenergieverbrauch (HVAC), oder detaillierte Netzstützungsfunktionen.
-  
 
 **Implikation:** Für frühe Projektphasen ist die Abstraktion meist ausreichend. Für
 Engineering/Guarantees/Performance‑Modelle kann später eine detailliertere techno‑chemische Modellierung erforderlich
@@ -810,9 +824,9 @@ sein.
 
 ### 5) Green vs. Grey Mode: Vereinfachte Stromherkunftslogik
 
-- **Green Mode:** BESS lädt ausschließlich aus PV‑Überschuss, Entladung gilt als „grün“. 
+- **Green Mode:** BESS lädt ausschließlich aus PV‑Überschuss, Entladung gilt als „grün“.
 - **Grey Mode:** Zusätzliches Laden aus dem Netz ist möglich; dafür wird grün/grau getrennt verfolgt (
-  Dual‑Chamber‑Logik). 
+  Dual‑Chamber‑Logik).
 
 **Implikation:** Herkunftsnachweise/GoO‑Prämien werden als Preisaufschlag modelliert. Eine vollständige Abbildung
 regulatorischer Detailanforderungen (z. B. stunden-/viertelstundenscharfe Matching‑Regeln, Auditierung,
@@ -820,7 +834,7 @@ länderspezifische GoO‑Vorgaben) ist nicht Ziel des Tools.
 
 ### 6) Wetter/Erzeugung: PVGIS‑Jahre als Repräsentanten, keine Langfrist‑Meteosimulation
 
-- PV‑Erzeugung wird über PVGIS‑Daten pro Wetterjahr abgebildet und Preisszenarien zugeordnet. 
+- PV‑Erzeugung wird über PVGIS‑Daten pro Wetterjahr abgebildet und Preisszenarien zugeordnet.
 
 **Implikation:** Das liefert plausible Erzeugungsprofile, ersetzt aber keine explizite Langfrist‑Wetterstochastik. Für
 sehr standort- oder wetterkritische Projekte kann eine erweiterte Wetterjahres‑Bibliothek sinnvoll sein.
@@ -828,7 +842,7 @@ sehr standort- oder wetterkritische Projekte kann eine erweiterte Wetterjahres�
 ### 7) Risikoanalyse (Monte Carlo): bewusst „post‑hoc“ effizient, nicht voll gekoppelt
 
 - Monte‑Carlo wird effizient umgesetzt: Dispatch wird pro Preisszenario vorbereitet, Unsicherheiten werden nachträglich
-  auf Ergebnisse angewendet. 
+  auf Ergebnisse angewendet.
 
 **Implikation:** Das ist extrem schnell und für viele Business‑Case‑Risiken ausreichend. Nicht vollständig erfasst sind
 jedoch Effekte, bei denen Unsicherheit die **optimale Dispatch‑Entscheidung selbst** stark verändern würde (z. B. wenn
@@ -837,7 +851,6 @@ Preisform der Zeitreihe strukturell anders ist als im Szenario‑Set).
 ### 8) Steuern/Finanzierung: Deutschland‑typisch, Standardlogiken
 
 - Abgebildet sind lineare AfA, KSt, Soli, GewSt und Verlustvortrag sowie Annuitätendarlehen mit DSCR‑Logik.
-  
 
 **Implikation:** Für spezielle Gesellschaftsstrukturen, internationale Steuerregime, komplexe Hedge‑Strukturen oder
 projektindividuelle Kreditklauseln sollte das Modell angepasst bzw. ergänzende Berechnungen durchgeführt werden.

@@ -324,7 +324,7 @@ def _run_scenario_dispatch(scenario_name: str) -> _ScenarioDispatch:
         cap_prices_yearly=base.cap_prices_yearly if base.cap_prices_yearly else None,
         pv_offline_days_yearly=None,
         pv_base_timeseries_year=scenario.weather_year,
-        baseload_kw=base.baseload_mw,
+        baseload_mw=base.baseload_mw,
     )
 
     return _ScenarioDispatch(

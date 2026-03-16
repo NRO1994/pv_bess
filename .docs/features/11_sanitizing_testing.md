@@ -46,38 +46,38 @@ Es gibt drei Kategorien: **Integration/Testing**, **Logik** und **HTML-Report** 
 **Reihenfolge:** Bottom-Up (abhaengigkeitsfreie Module zuerst)
 
 #### A1: Triviale Fixes (Import-Errors und kleine API-Aenderungen)
-- [ ] `test_price_loader.py`: Import-Error beheben (`collect_scenario_columns` existiert nicht mehr). Pruefen ob Tests noch relevant sind oder entfernt werden koennen.
-- [ ] `test_degradation.py`: 2 Fehler – API-Signatur (year 0 / negative year) an neue Logik anpassen.
+- [x] `test_price_loader.py`: Import-Error beheben (`collect_scenario_columns` existiert nicht mehr). Pruefen ob Tests noch relevant sind oder entfernt werden koennen.
+- [x] `test_degradation.py`: 2 Fehler – API-Signatur (year 0 / negative year) an neue Logik anpassen.
 
 #### A2: Schema & Loader Tests
-- [ ] `test_schema.py` (35 Failures): Schema-Validierung hat sich durch Kosmetik-Fixes stark geaendert (Preisfelder aus `price_inputs` entfernt, `optimization_fee_pct` verschoben, Preiseinheiten vereinheitlicht). Tests an aktuelles Schema anpassen.
-- [ ] `test_loader.py` (43 Failures, 12 Errors): `ScenarioConfig`-Accessors pruefen ob sie noch zur aktuellen Datenstruktur passen. Insbesondere `price_unit`, `price_csv_path` und MC-bezogene Felder.
+- [x] `test_schema.py` (35 Failures): Schema-Validierung hat sich durch Kosmetik-Fixes stark geaendert (Preisfelder aus `price_inputs` entfernt, `optimization_fee_pct` verschoben, Preiseinheiten vereinheitlicht). Tests an aktuelles Schema anpassen.
+- [x] `test_loader.py` (43 Failures, 12 Errors): `ScenarioConfig`-Accessors pruefen ob sie noch zur aktuellen Datenstruktur passen. Insbesondere `price_unit`, `price_csv_path` und MC-bezogene Felder.
 
 #### A3: Finance-Module Tests
-- [ ] `test_metrics.py` (5 Failures): Metriken-API pruefen (evtl. neue Return-Felder oder umbenannte Keys).
-- [ ] `test_replacement.py` (8 Failures): Replacement als CAPEX + Upgrade-Faktor nachziehen.
-- [ ] `test_csv_writer_cashflows.py` (1 Failure, 5 Errors): Cashflow-Spalten an neuen Output anpassen.
+- [x] `test_metrics.py` (5 Failures): Metriken-API pruefen (evtl. neue Return-Felder oder umbenannte Keys).
+- [x] `test_replacement.py` (8 Failures): Replacement als CAPEX + Upgrade-Faktor nachziehen.
+- [x] `test_csv_writer_cashflows.py` (1 Failure, 5 Errors): Cashflow-Spalten an neuen Output anpassen.
 
 #### A4: Dispatch-Module Tests
-- [ ] `test_optimizer.py` (5 Failures): Optimizer-Funktionssignatur hat sich geaendert. Tests an neue Parameter anpassen.
-- [ ] `test_optimizer_bess_spot_pricing.py` (6 Failures): Gleiche Ursache wie `test_optimizer.py`.
-- [ ] `test_engine.py` (17 Failures): Engine Return-Struktur und Signatur anpassen.
+- [x] `test_optimizer.py` (5 Failures): Optimizer-Funktionssignatur hat sich geaendert. Tests an neue Parameter anpassen.
+- [x] `test_optimizer_bess_spot_pricing.py` (6 Failures): Gleiche Ursache wie `test_optimizer.py`.
+- [x] `test_engine.py` (17 Failures): Engine Return-Struktur und Signatur anpassen.
 
 #### A5: Uebergreifende Module Tests
-- [ ] `test_bess_only.py` (15 Failures): BESS-Only Logik wurde refactored. Tests an neue Implementierung anpassen.
-- [ ] `test_main_price_extension.py` (12 Failures): Price-Extension Logik hat sich durch Szenario-basierte CSV-Reads geaendert.
-- [ ] `test_grid_search.py` (4 Failures, 20 Errors): Grid-Search API/Signaturen nachziehen.
-- [ ] `test_monte_carlo.py` (4 Failures, 24 Errors): MC-Framework Umstrukturierung (Preisszenarien direkt aus `price_inputs`).
+- [x] `test_bess_only.py` (15 Failures): BESS-Only Logik wurde refactored. Tests an neue Implementierung anpassen.
+- [x] `test_main_price_extension.py` (12 Failures): Price-Extension Logik hat sich durch Szenario-basierte CSV-Reads geaendert.
+- [x] `test_grid_search.py` (4 Failures, 20 Errors): Grid-Search API/Signaturen nachziehen.
+- [x] `test_monte_carlo.py` (4 Failures, 24 Errors): MC-Framework Umstrukturierung (Preisszenarien direkt aus `price_inputs`).
 
 #### A6: Test-Coverage pruefen und erweitern
-- [ ] Coverage-Bericht erstellen (`pytest --cov=pv_bess_model`)
-- [ ] Kritische Funktionen mit fehlender Coverage identifizieren:
+- [x] Coverage-Bericht erstellen (`pytest --cov=pv_bess_model`)
+- [x] Kritische Funktionen mit fehlender Coverage identifizieren:
   - `timeseries.align_weather_to_forecast_year` – neue Funktion, vermutlich ungetestet
   - `optimizer._effective_green_price` – alle 6 Vermarktungsszenarien abdecken (Market, EEG, PPA-Floor, PPA-Collar, PPA-Baseload, PPA-Pay-as-Produced)
   - `cashflow.py` – Verlustvortrag ueber mehrere Jahre
   - `costs.py` – Unified Cost Schema mit fehlenden Feldern = 0
   - `tax.py` - Wird aktuell gar nicht getestet
-- [ ] Neue Unit-Tests schreiben fuer identifizierte Luecken
+- [x] Neue Unit-Tests schreiben fuer identifizierte Luecken
 
 ---
 
@@ -86,54 +86,54 @@ Es gibt drei Kategorien: **Integration/Testing**, **Logik** und **HTML-Report** 
 **Ziel:** Redundanzen entfernen, ungenutzten Code loeschen, Linting durchsetzen.
 
 #### B1: Redundante Berechnungen identifizieren und vereinheitlichen
-- [ ] Cashflow-Berechnung: Pruefen ob Revenue an mehreren Stellen unabhaengig berechnet wird (z.B. in `engine.py` vs `cashflow.py`)
-- [ ] Kosten-Berechnung: Pruefen ob CAPEX/OPEX an mehreren Stellen berechnet wird
-- [ ] Suche nach duplizierten Berechnungsmustern via Grep
+- [x] Cashflow-Berechnung: Pruefen ob Revenue an mehreren Stellen unabhaengig berechnet wird (z.B. in `engine.py` vs `cashflow.py`)
+- [x] Kosten-Berechnung: Pruefen ob CAPEX/OPEX an mehreren Stellen berechnet wird
+- [x] Suche nach duplizierten Berechnungsmustern via Grep
 
 #### B2: Ungenutzten Code entfernen
-- [ ] `price_loader.py`: `collect_scenario_columns` und weitere nicht mehr genutzte Funktionen identifizieren und entfernen
-- [ ] Pruefen ob `price_loader.py` selbst noch benoetigt wird oder ob die CSV-Logik vollstaendig in die Szenarien gewandert ist
-- [ ] Weitere Module auf toten Code pruefen (insbesondere nach den Kosmetik-Fixes: `price_unit`-Konvertierung, alte `price_inputs`-Felder)
-- [ ] Nicht mehr benoetigte Helper-Funktionen in Tests entfernen
+- [x] `price_loader.py`: `collect_scenario_columns` und weitere nicht mehr genutzte Funktionen identifizieren und entfernen
+- [x] Pruefen ob `price_loader.py` selbst noch benoetigt wird oder ob die CSV-Logik vollstaendig in die Szenarien gewandert ist
+- [x] Weitere Module auf toten Code pruefen (insbesondere nach den Kosmetik-Fixes: `price_unit`-Konvertierung, alte `price_inputs`-Felder)
+- [x] Nicht mehr benoetigte Helper-Funktionen in Tests entfernen
 
 #### B3: Linting & Formatting
-- [ ] `ruff check pv_bess_model/` ausfuehren und Violations beheben
-- [ ] `black --check pv_bess_model/` ausfuehren und formatieren
-- [ ] Fehlende Type-Hints an geaenderten Funktionen ergaenzen (nur wo geaendert, kein Komplett-Refactoring)
+- [x] `ruff check pv_bess_model/` ausfuehren und Violations beheben
+- [x] `black --check pv_bess_model/` ausfuehren und formatieren
+- [x] Fehlende Type-Hints an geaenderten Funktionen ergaenzen (nur wo geaendert, kein Komplett-Refactoring)
 
 #### B4: Tests nach Clean-Up verifizieren
-- [ ] Alle Unit-Tests erneut laufen lassen nach jeder Clean-Up Aenderung
-- [ ] Sicherstellen, dass Clean-Up keine Logik veraendert
+- [x] Alle Unit-Tests erneut laufen lassen nach jeder Clean-Up Aenderung
+- [x] Sicherstellen, dass Clean-Up keine Logik veraendert
 
 ---
 
 ### Phase C: Logik-Erweiterungen (Niedrigere Prioritaet, eigene Commits)
 
 #### C1: Solver-Wechsel zu OR-Tools/HiGHS
-- [ ] `scipy.optimize.linprog` durch `ortools.linear_solver.pywraplp` ersetzen
-- [ ] Solver: `pywraplp.Solver.CreateSolver('HiGHS')`
-- [ ] Betrifft: `pv_bess_model/dispatch/optimizer.py` (Hauptaenderung)
-- [ ] Betrifft: `pv_bess_model/config/defaults.py` (Solver-Konstante)
-- [ ] Alle bestehenden Unit-Tests und Integration-Tests muessen weiterhin bestehen
-- [ ] Performance-Vergleich: Sicherstellen dass <1ms pro LP-Solve erhalten bleibt
+- [x] `scipy.optimize.linprog` durch `ortools.linear_solver.pywraplp` ersetzen
+- [x] Solver: `pywraplp.Solver.CreateSolver('HiGHS')`
+- [x] Betrifft: `pv_bess_model/dispatch/optimizer.py` (Hauptaenderung)
+- [x] Betrifft: `pv_bess_model/config/defaults.py` (Solver-Konstante)
+- [x] Alle bestehenden Unit-Tests und Integration-Tests muessen weiterhin bestehen
+- [x] Performance-Vergleich: Sicherstellen dass <1ms pro LP-Solve erhalten bleibt
 
 #### C2: Simultanes Laden/Entladen verhindern
-- [ ] Problem: BESS kann in einem Zeitschritt gleichzeitig laden und entladen
-- [ ] Tritt nur bei negativen Preisen auf (Arbitrage durch Ineffizienz)
-- [ ] Loesung: Bei negativen Preisen `discharge = 0` erzwingen (pragmatischer Ansatz)
-- [ ] Alternative: Binary-Variable (MILP), aber deutlich langsamer
-- [ ] Implementierung in `optimizer.py`: Zusaetzliche Constraint wenn `price_spot[t] < 0`
-- [ ] Unit-Test: Verifizieren dass bei negativen Preisen kein simultanes Laden/Entladen
+- [x] Problem: BESS kann in einem Zeitschritt gleichzeitig laden und entladen
+- [x] Tritt nur bei negativen Preisen auf (Arbitrage durch Ineffizienz)
+- [x] Loesung: Bei negativen Preisen `discharge = 0` erzwingen (pragmatischer Ansatz)
+- [x] Alternative: Binary-Variable (MILP), aber deutlich langsamer
+- [x] Implementierung in `optimizer.py`: Zusaetzliche Constraint wenn `price_spot[t] < 0`
+- [x] Unit-Test: Verifizieren dass bei negativen Preisen kein simultanes Laden/Entladen
 
 #### C3: PPA-Baseload korrekt im LP implementieren
-- [ ] Aktuell: PPA-Baseload nicht vollstaendig im LP-Optimizer abgebildet
-- [ ] Erforderlich: Baseload-Constraint im LP, damit BESS den Baseload verlaengern kann
-- [ ] Revenue-Berechnung:
+- [x] Aktuell: PPA-Baseload nicht vollstaendig im LP-Optimizer abgebildet
+- [x] Erforderlich: Baseload-Constraint im LP, damit BESS den Baseload verlaengern kann
+- [x] Revenue-Berechnung:
   - Bei ausreichender Einspeisung (PV + BESS >= baseload): `max(spot_price, effective_price)`
   - Bei Unterdeckung: Einkaufskosten `(baseload - grid_export) * (spot_price - effective_price)`
-- [ ] Neue LP-Variablen: `shortfall[t]`, `excess[t]` relativ zum Baseload-Profil
-- [ ] Neue Spalten im Dispatch-CSV und Cashflow fuer Baseload-bezogene Groessen
-- [ ] Unit-Tests fuer alle PPA-Baseload Faelle (Ueberdeckung, Unterdeckung, genau Baseload)
+- [x] Neue LP-Variablen: `shortfall[t]`, `excess[t]` relativ zum Baseload-Profil
+- [x] Neue Spalten im Dispatch-CSV und Cashflow fuer Baseload-bezogene Groessen
+- [x] Unit-Tests fuer alle PPA-Baseload Faelle (Ueberdeckung, Unterdeckung, genau Baseload)
 
 ---
 
@@ -141,10 +141,10 @@ Es gibt drei Kategorien: **Integration/Testing**, **Logik** und **HTML-Report** 
 
 Siehe [Feature 10: HTML-Report](10_html_report.md).
 
-- [ ] Input-HTML (Szenario-Wizard)
-- [ ] Output-HTML (Ergebnis-Dashboard mit 6 Tabs)
-- [ ] LLM-Prompt-Template fuer Copilot-Workflow
-- [ ] Integration in den Main-Flow
+- [x] Input-HTML (Szenario-Wizard)
+- [x] Output-HTML (Ergebnis-Dashboard mit 6 Tabs)
+- [x] LLM-Prompt-Template fuer Copilot-Workflow
+- [x] Integration in den Main-Flow
 
 ---
 
