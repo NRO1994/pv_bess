@@ -1309,7 +1309,7 @@
         btnPng.onclick = () => downloadCanvasPNG(r.canvas, D.scenario_name + '_cashflow.png');
         btnCsv.onclick = () => {
           const h = ['Jahr', 'PV-Ertrag', 'BESS-Ertrag (Grün)', 'BESS-Ertrag (Grau)',
-            'CAPEX', 'OPEX', 'Debt_Service', 'Steuern', 'Grid_Import', 'Baseload_Matching',
+            'CAPEX', 'OPEX', 'Kapitalkosten', 'Steuern', 'Netzbezugskosten', 'Baseload-Ausgleichskosten',
             'Equity_CF', 'Kum_Equity_CF'];
           const rows = cfYears.map(yr => [
             yr.year,
