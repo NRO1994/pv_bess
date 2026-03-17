@@ -115,6 +115,9 @@ LP_SOLVER_METHOD: str = "highs"
 LP_INFEASIBILITY_TOLERANCE: float = 1e-6
 """Tolerance below which an LP solution is considered feasible."""
 
+MILP_TIME_LIMIT: float = 10.0
+"""Time limit in seconds for a single MILP solve (per day)."""
+
 # ---------------------------------------------------------------------------
 # Financial defaults
 # ---------------------------------------------------------------------------
