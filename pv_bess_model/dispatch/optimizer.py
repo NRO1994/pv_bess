@@ -301,7 +301,7 @@ def compute_daily_revenue(
         ``(revenue_per_step, breakdown)`` where *revenue_per_step* has shape
         ``(T,)`` and contains the per-timestep revenue in EUR.
     """
-    import_cost = float(np.sum(charge_grid * spot_prices))
+    import_cost = charge_grid * spot_prices
 
     if baseload_kwh > 0:
         # --- Baseload PPA settlement ---
@@ -311,7 +311,7 @@ def compute_daily_revenue(
         ppa_revenue_scalar = baseload_kwh * fixed_price
         shortfall_cost_arr = shortfall * spot_prices
 
-        revenue_per_step = ppa_revenue_scalar + spot_revenue_arr - shortfall_cost_arr
+        revenue_per_step = ppa_revenue_scalar + spot_revenue_arr - shortfall_cost_arr - import_cost
         shortfall_cost = float(np.sum(shortfall_cost_arr))
 
         # Split gross revenue (PPA + excess at spot) proportionally by
@@ -352,14 +352,14 @@ def compute_daily_revenue(
 
     total_revenue = (
         revenue_pv + revenue_green + revenue_grey
-        - import_cost - shortfall_cost
+        - sum(import_cost) - shortfall_cost
     )
 
     return revenue_per_step, DailyRevenueBreakdown(
         revenue_pv=revenue_pv,
         revenue_green=revenue_green,
         revenue_grey=revenue_grey,
-        import_cost=import_cost,
+        import_cost=np.sum(import_cost),
         shortfall_cost=shortfall_cost,
         total_revenue=total_revenue,
         bess_spot_revenue=bess_spot_revenue,
