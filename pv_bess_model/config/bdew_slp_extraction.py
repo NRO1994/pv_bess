@@ -1,12 +1,11 @@
 import pandas as pd
 import json
-from pathlib import Path
 
 # =========================
 # Konfiguration
 # =========================
 EXCEL_FILE = "C:/Users/roescni/Downloads/Kopie_von_Repräsentative_Profile_BDEW_H25_G25_L25_P25_S25_Veröffentlichung.xlsx"
-OUTPUT_JSON = ".data/bdew_profile_2025.json"
+OUTPUT_JSON = "../../.data/bdew_profile_2025.json"
 
 PROFILE_SHEETS = ["H25", "G25", "L25", "P25", "S25"]
 
@@ -17,52 +16,55 @@ MONTHS = [
 
 DAY_TYPES = ["SA", "FT", "WT"]
 
-# =========================
-# Hilfsfunktion
-# =========================
+
+def find_data_start(df: pd.DataFrame) -> int:
+    """
+    Findet die erste Zeile mit echten numerischen Zeitreihenwerten.
+    """
+    for i in range(len(df)):
+        numeric_count = pd.to_numeric(
+            df.iloc[i, 1:], errors="coerce"
+        ).notna().sum()
+
+        if numeric_count >= 10:
+            return i
+
+    raise ValueError("Keine Datenzeile gefunden")
+
+
 def parse_profile(sheet_name: str) -> dict:
-    """
-    Liest ein Profil-Sheet und erzeugt:
-    Monat -> SA/FT/WT -> [96 Werte]
-    """
-    # Sheet roh einlesen
-    df = pd.read_excel(
-        EXCEL_FILE,
-        sheet_name=sheet_name,
-        header=None
-    )
+    df = pd.read_excel(EXCEL_FILE, sheet_name=sheet_name, header=None)
 
-    # Die Zeitzeilen beginnen dort, wo die erste Spalte ein Zeitintervall enthält
-    time_row_start = df[df.iloc[:, 0].astype(str).str.contains(":")].index[0]
+    data_start = find_data_start(df)
 
-    df = df.iloc[time_row_start: time_row_start + 96]
+    # Rohdatenbereich (inkl. möglicher Zeitstrings)
+    raw = df.iloc[data_start : data_start + 120, 1:]  # bewusst >96
+    offset = 1
+    profile = {}
 
-    # Werte ohne Zeitspalte
-    values = df.iloc[:, 1:].reset_index(drop=True)
+    for m, month in enumerate(MONTHS):
+        profile[month] = {}
 
-    profile_data = {}
+        for d, day in enumerate(DAY_TYPES):
+            col_idx = m * 3 + d + offset
 
-    for month_idx, month in enumerate(MONTHS):
-        profile_data[month] = {}
-
-        for day_idx, day in enumerate(DAY_TYPES):
-            col_idx = month_idx * 3 + day_idx
-
+            # ✅ NUR numerische Werte extrahieren
             series = (
-                values.iloc[:, col_idx]
-                .astype(float)
+                pd.to_numeric(raw.iloc[:, col_idx], errors="coerce")
+                .dropna()
+                .iloc[:96]
                 .tolist()
             )
 
             if len(series) != 96:
                 raise ValueError(
-                    f"{sheet_name} – {month} – {day}: "
-                    f"{len(series)} Werte gefunden"
+                    f"{sheet_name} {month} {day}: "
+                    f"{len(series)} numerische Werte gefunden"
                 )
 
-            profile_data[month][day] = series
+            profile[month][day] = series
 
-    return profile_data
+    return profile
 
 
 # =========================
