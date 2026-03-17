@@ -1400,3 +1400,5 @@ Jede Session endet mit lauffähigen Tests (`pytest`). Kein Code ohne Tests.
    Soll daraus die Flottengröße abgeleitet werden (z.B. 1 Wallbox = 11 kW → 100 kW/a = ~9 Wallboxen/a)?
    Oder soll die Flottengröße separat definiert werden, um den `daily_energy_demand_kwh` korrekt zu
    skalieren?
+
+--> Startzeitpunkt (Jahr) vorgeben, ab wann die Flex erstmalig auftauchen soll (FW wird nicht vor 2040 gebaut)

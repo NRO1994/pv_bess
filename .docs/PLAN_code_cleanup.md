@@ -698,17 +698,320 @@ werden. Gleichzeitig wird die Revenue-Berechnung zentralisiert, was die Code-Obe
 
 ---
 
+## B10: Simultanes Be-/Entladen verhindern (LP-Constraint)
+
+### Status
+
+Das LP erlaubt derzeit gleichzeitiges Laden (`charge_pv[t] > 0`) und Entladen (`discharge_green[t] > 0`) im selben
+Zeitschritt. Die aktuelle Gegenmaßnahme – Entladung wird nur bei **negativen Spot-Preisen** auf 0 fixiert
+(`optimizer.py:540`, `optimizer.py:711-722`) – hat sich als unzureichend herausgestellt. Simultanes Be-/Entladen
+kann auch bei positiven Preisen auftreten.
+
+### Warum passiert das?
+
+In einem reinen LP gibt es kein "entweder-oder". Alle Variablen sind kontinuierlich, und der Solver kann für
+denselben Zeitschritt `charge_pv[t] > 0` UND `discharge_green[t] > 0` setzen. Das passiert in folgenden Fällen:
+
+1. **Degenerate Lösungen**: Wenn Laden+Entladen denselben Zielfunktionswert liefert wie der Netto-Fluss, kann der
+   Solver eine beliebige der äquivalenten Lösungen wählen – inklusive einer mit simultanem Be-/Entladen.
+
+2. **Floor-Pricing-Effekte**: Bei EEG/PPA-Floor ist `eff_price = max(spot, floor) + goo`. Wenn `spot < floor`, dann
+   ist der effektive Preis für alle PV-Nutzungen gleich (`floor + goo`). Der Solver hat keinen Anreiz, zwischen
+   direktem Export und Laden+Entladen zu unterscheiden.
+
+3. **Grid-Constraint-Binding**: Wenn `export_pv × glf + discharge × RTE ≤ grid_max` bindet und `RTE ≠ glf`, kann
+   der Solver durch gleichzeitiges Laden/Entladen eine andere Mischung von PV-Export und BESS-Discharge erzielen,
+   die bei bestimmten Preiskonstellationen äquivalent ist.
+
+4. **Grey Mode – Cross-Chamber**: Im Grey Mode kann `charge_pv[t] > 0` (Green-Kammer laden) und
+   `discharge_grey[t] > 0` (Grey-Kammer entladen) gleichzeitig auftreten. Dies ist physikalisch fragwürdig,
+   da die Batterie als Gesamtsystem nur eine Richtung gleichzeitig unterstützt.
+
+### Warum reicht "discharge = 0 bei negativen Preisen" nicht?
+
+- **Falsch-negativ**: Das Problem tritt auch bei positiven Preisen auf (siehe oben).
+- **Falsch-positiv**: Bei negativen Preisen könnte Entladen durchaus sinnvoll sein – z.B. wenn der BESS voll ist und
+  Platz für profitableres späteres Laden schaffen muss, oder um Baseload-Verpflichtungen zu erfüllen.
+- Die aktuelle Logik blockiert also Entladung pauschal bei negativen Preisen, statt das eigentliche Problem
+  (Simultaneität) zu adressieren.
+
+### Lösungsansätze
+
+#### Option A: Binärvariable (MILP) – **Empfohlen**
+
+Einführung einer binären Indikatorvariable `δ[t] ∈ {0,1}` pro Zeitschritt:
+
+```
+charge_total[t]     ≤ δ[t] × M_charge          ∀t
+discharge_total[t]  ≤ (1 - δ[t]) × M_discharge  ∀t
+```
+
+Wobei:
+- `charge_total[t] = charge_pv[t]` (Green Mode) bzw. `charge_pv[t] + charge_grid[t]` (Grey Mode)
+- `discharge_total[t] = discharge_green[t]` (Green Mode) bzw. `discharge_green[t] + discharge_grey[t]` (Grey Mode)
+- `M_charge = max_charge_kw × timestep_hours` (Big-M Schranke für Ladeleistung)
+- `M_discharge = max_discharge_kw × timestep_hours` (Big-M Schranke für Entladeleistung)
+- `δ[t] = 1` → Laden erlaubt, Entladen gesperrt
+- `δ[t] = 0` → Entladen erlaubt, Laden gesperrt
+
+**Voraussetzung**: `scipy.optimize.milp` ist verfügbar (scipy 1.15.3 installiert, ≥ 1.9 erforderlich). ✅
+
+**Vorteile:**
+- Mathematisch exakte Lösung, keine Heuristik
+- Kein Post-hoc-Patching nötig
+- Funktioniert für alle Preiskonstellationen und Modi
+
+**Nachteile:**
+- MILP ist langsamer als LP. Erwarteter Overhead: ~2-5× pro Solve (HiGHS MILP-Solver ist effizient, Big-M-
+  Formulierungen mit wenigen Binärvariablen sind gutmütig).
+- Problemgröße steigt um T Variablen (T = 24 oder 96 Binärvariablen pro Tag).
+- API-Umstellung: `scipy.optimize.linprog` → `scipy.optimize.milp` (andere Signatur und Constraint-Spezifikation).
+
+**Performance-Abschätzung:**
+- Aktuell: ~2-4ms pro LP-Solve (96 Zeitschritte, HiGHS LP)
+- Erwartet: ~5-15ms pro MILP-Solve (96 Zeitschritte + 96 Binärvariablen, HiGHS MILP)
+- 365 Tage × 25 Jahre = 9.125 Solves → aktuell ~27s, erwartet ~90s pro Grid-Punkt
+- Bei 16 Grid-Punkten (parallelisiert auf 8 Kerne): ~3 Minuten statt ~1 Minute
+- **Akzeptabel** – innerhalb des bestehenden Performance-Budgets (<10 Minuten)
+
+#### Option B: Post-hoc Netting (Fallback / Zwischenlösung)
+
+Nach jedem LP-Solve die Dispatch-Vektoren korrigieren:
+
+```python
+for t in range(T):
+    if charge_pv[t] > 0 and discharge_green[t] > 0:
+        net = charge_pv[t] - discharge_green[t]
+        if net > 0:
+            charge_pv[t] = net
+            discharge_green[t] = 0.0
+        else:
+            charge_pv[t] = 0.0
+            discharge_green[t] = -net
+        # SoC-Update anpassen
+```
+
+**Vorteile:**
+- Trivial zu implementieren, kein Solver-Wechsel
+- Kein Performance-Overhead
+- Korrekt, solange die LP-Lösung optimal ist (Netting ändert den Zielfunktionswert nicht)
+
+**Nachteile:**
+- Greift nur bei der Ergebnis-Interpretation, nicht im LP selbst
+- SoC-Verlauf muss nach Netting rekonstruiert werden
+- Grey Mode mit Dual-Chamber ist komplizierter (charge_pv + discharge_grey ist physikalisch möglich,
+  charge_pv + discharge_green nicht)
+- Kann zu Constraint-Verletzungen führen, wenn SoC-Bounds nach Netting nicht mehr passen
+
+#### Option C: Penalty-Term in Zielfunktion
+
+Kleinen Strafterm für Laden hinzufügen:
+
+```
+objective += ε × Σ_t charge_pv[t]    (mit ε ≈ 1e-6 €/kWh)
+```
+
+**Vorteile:** Bleibt LP, kein Solver-Wechsel, minimaler Performance-Overhead.
+**Nachteile:** Garantiert Simultaneitäts-Verhinderung **nicht**. Verschiebt den Break-even-Punkt nur leicht.
+Kann bei bestimmten Preiskonstellationen trotzdem versagen. **Nicht empfohlen.**
+
+### Empfohlene Lösung: Option A (MILP)
+
+#### Schritt 1: Migration von `linprog` zu `milp` (Infrastruktur)
+
+Die `scipy.optimize.milp`-API unterscheidet sich grundlegend von `linprog`:
+
+```python
+# Bisherig (linprog):
+result = linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq, bounds=bounds, method="highs")
+
+# Neu (milp):
+from scipy.optimize import milp, LinearConstraint, Bounds
+from scipy.sparse import csc_matrix
+
+constraints = LinearConstraint(A, lb, ub)  # Vereint A_ub/A_eq in einer Matrix
+integrality = np.zeros(n_vars)  # 0 = continuous, 1 = integer/binary
+integrality[binary_indices] = 1
+variable_bounds = Bounds(lb_array, ub_array)
+
+result = milp(c, constraints=constraints, integrality=integrality, bounds=variable_bounds)
+```
+
+**Wichtige Unterschiede:**
+- `milp` nutzt `LinearConstraint(A, lb, ub)` statt separatem `A_ub`/`A_eq`
+- Equality: `lb[row] == ub[row]` (z.B. beide = `pv_production[t]`)
+- Inequality ≤: `lb[row] = -np.inf`, `ub[row] = b_ub[row]`
+- Variable bounds über `Bounds(lb, ub)` statt Liste von Tupeln
+- Sparse Matrizen (`csc_matrix`) sind empfohlen für Performance
+- `integrality`-Array markiert Binärvariablen
+
+#### Schritt 2: Binärvariable `δ[t]` in Green-Mode LP (`_build_green_lp`)
+
+**Aktuelle Variablen (5T bzw. 6T):**
+```
+[charge_pv(T), discharge_green(T), export_pv(T), curtail(T), soc(T), (shortfall(T))]
+```
+
+**Neue Variablen (6T bzw. 7T):**
+```
+[charge_pv(T), discharge_green(T), export_pv(T), curtail(T), soc(T), delta(T), (shortfall(T))]
+```
+
+**Neue Constraints (2T zusätzliche Zeilen):**
+```
+charge_pv[t]        - δ[t] × M_charge    ≤ 0     ∀t    (Laden nur wenn δ=1)
+discharge_green[t]  + δ[t] × M_discharge ≤ M_discharge  ∀t    (Entladen nur wenn δ=0)
+```
+
+Äquivalent in Standardform:
+```
+charge_pv[t]        - M_charge × δ[t]    ≤ 0           ∀t
+discharge_green[t]  + M_discharge × δ[t]  ≤ M_discharge  ∀t
+```
+
+**Integrality-Array:**
+```python
+integrality = np.zeros(n_vars)
+integrality[5*T : 6*T] = 1  # δ[t] sind binär
+```
+
+**Bounds für δ:**
+```python
+# δ[t] ∈ {0, 1} → bounds (0, 1) + integrality = 1
+```
+
+**Entfernung der alten Logik:**
+```python
+# ALT (Zeile 540): discharge auf 0 fixieren bei negativen Preisen
+ub = 0.0 if spot_prices[t] < 0 else max_discharge_energy
+
+# NEU: Keine Sonderbehandlung negativer Preise nötig.
+# Die Binärvariable verhindert Simultaneität für ALLE Preise.
+ub = max_discharge_energy  # immer voll erlaubt
+```
+
+#### Schritt 3: Binärvariable `δ[t]` in Grey-Mode LP (`_build_grey_lp`)
+
+**Aktuelle Variablen (8T bzw. 9T):**
+```
+[charge_pv(T), discharge_green(T), export_pv(T), curtail(T),
+ charge_grid(T), discharge_grey(T), soc_green(T), soc_grey(T), (shortfall(T))]
+```
+
+**Neue Variablen (9T bzw. 10T):**
+```
+[charge_pv(T), discharge_green(T), export_pv(T), curtail(T),
+ charge_grid(T), discharge_grey(T), soc_green(T), soc_grey(T), delta(T), (shortfall(T))]
+```
+
+**Neue Constraints (2T zusätzliche Zeilen):**
+```
+charge_pv[t] + charge_grid[t]           - M_charge × δ[t]    ≤ 0             ∀t
+discharge_green[t] + discharge_grey[t]  + M_discharge × δ[t]  ≤ M_discharge   ∀t
+```
+
+Hier wird die **Gesamtladung** (PV + Grid) gegen die **Gesamtentladung** (Green + Grey) abgesichert.
+Eine Batterie kann physikalisch nicht gleichzeitig laden und entladen, unabhängig von der "Kammer".
+
+**Entfernung der alten Logik:**
+```python
+# ALT (Zeile 711, 720-721): discharge_green/grey auf 0 fixieren bei negativen Preisen
+# NEU: Binärvariable übernimmt die Aufgabe für alle Preise.
+```
+
+#### Schritt 4: `optimize_day()` anpassen
+
+```python
+# ALT:
+from scipy.optimize import linprog
+result = linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq, bounds=bounds, method=LP_SOLVER_METHOD)
+
+# NEU:
+from scipy.optimize import milp, LinearConstraint, Bounds
+from scipy.sparse import csc_matrix
+
+# _build_green_lp / _build_grey_lp liefern jetzt:
+# (c, A_combined, lb_combined, ub_combined, var_lb, var_ub, integrality)
+# statt (c, A_ub, b_ub, A_eq, b_eq, bounds)
+
+constraints = LinearConstraint(csc_matrix(A_combined), lb_combined, ub_combined)
+variable_bounds = Bounds(var_lb, var_ub)
+result = milp(c, constraints=constraints, integrality=integrality, bounds=variable_bounds)
+```
+
+**Rückgabe-Kompatibilität:** `milp` gibt ein `OptimizeResult` mit `.x` und `.success` zurück –
+identisch zu `linprog`. Die Ergebnis-Extraktion (`_extract_green_result`, `_extract_grey_result`)
+muss nur die Index-Offsets für die neuen `δ`-Variablen berücksichtigen (δ-Werte werden verworfen).
+
+#### Schritt 5: Konstanten in `config/defaults.py`
+
+```python
+# Solver-Konfiguration
+LP_SOLVER_METHOD = "highs"  # Bestehend, wird für milp nicht mehr benötigt
+MILP_SOLVER_OPTIONS = {"disp": False, "time_limit": 10.0}  # Optional: Timeout pro Solve
+```
+
+#### Schritt 6: Tests anpassen
+
+**Neue Tests:**
+- `test_optimizer.py`: Test, dass bei allen Preiskonstellationen (positiv, negativ, Floor-aktiv)
+  niemals `charge[t] > 0 AND discharge[t] > 0` für denselben Zeitschritt gilt
+- Parametrisierter Test über Green/Grey × alle Marketing-Typen
+- Performance-Regression-Test: MILP-Solve darf nicht >50ms pro Tag dauern (96 Zeitschritte)
+
+**Angepasste Tests:**
+- Alle Tests, die die alte "discharge = 0 bei negativen Preisen"-Logik testen, müssen
+  aktualisiert werden. Entladung bei negativen Preisen ist jetzt erlaubt (wenn nicht gleichzeitig geladen wird).
+- `dispatch_constraint_checker.py` um Simultaneitäts-Check erweitern
+
+**Bestehende Tests:**
+- Alle anderen Dispatch-Tests sollten weiterhin grün sein (identische optimale Lösung,
+  nur ohne phantom cycling)
+
+### Betroffene Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `dispatch/optimizer.py` | `_build_green_lp`, `_build_grey_lp`: Binärvariable + Constraints hinzufügen. `optimize_day`: `linprog` → `milp`. Alte "negative price → discharge=0"-Logik entfernen. |
+| `config/defaults.py` | Optional: MILP-Solver-Optionen |
+| `tests/test_optimizer.py` | Simultaneitäts-Tests hinzufügen, negative-Preis-Tests anpassen |
+| `tests/dispatch_constraint_checker.py` | Simultaneitäts-Check hinzufügen |
+
+### Risiko
+
+**Hoch.** Fundamentale Änderung am LP-Kern. Die Umstellung von `linprog` auf `milp` betrifft die Solver-Schnittstelle
+in der zentralen Funktion, die für jedes Tagesergebnis verantwortlich ist. Gründliches Testen ist zwingend erforderlich.
+
+### Priorität
+
+**Kritisch** – das Problem verfälscht Dispatch-Ergebnisse und damit Revenue-Berechnungen, Cashflows und IRR.
+Sollte vor allen Cleanup-Items umgesetzt werden.
+
+### Migrations-Strategie
+
+Um das Risiko zu minimieren, wird die Umstellung in zwei Schritten empfohlen:
+
+1. **Schritt A (Quick-Fix):** Post-hoc Netting (Option B) als sofortige Korrektur implementieren.
+   Kann in <1h umgesetzt und sofort deployed werden. Entfernt die alte "negative price → discharge=0"-Logik.
+2. **Schritt B (Ziellösung):** MILP-Umstellung (Option A). Ersetzt den Quick-Fix durch die saubere Lösung.
+   Post-hoc Netting wird entfernt, sobald MILP validiert ist.
+
+Alternativ kann Schritt B direkt umgesetzt werden, wenn ausreichend Zeit für Validierung vorhanden ist.
+
+---
+
 ## Empfohlene Reihenfolge der Umsetzung
 
-| # | Aktion                                      | Dateien                                                                    | Risiko      | Aufwand |
-|---|---------------------------------------------|----------------------------------------------------------------------------|-------------|---------|
-| 0 | **B9: Revenue vereinheitlichen (Bug-Fix)**  | `dispatch/optimizer.py`, `dispatch/engine.py`, Tests                       | **Hoch**    | Mittel  |
-| 1 | B1.1-B1.4: Toten Code entfernen             | `market/eeg.py`, `market/ppa.py`, `tests/test_eeg.py`, `tests/test_ppa.py` | Gering      | Klein   |
-| 2 | B2.1-B2.2: Duplizierung + Import            | `main.py`                                                                  | Sehr gering | Klein   |
-| 3 | B4: CSV-Writer Stats-Helper                 | `output/csv_writer.py`                                                     | Gering      | Klein   |
-| 4 | B5.1-B5.3: Array-Kopien                     | `optimizer.py`, `main.py`                                                  | Gering      | Klein   |
-| 5 | B3.1-B3.4: Vermarktungslogik verschieben    | `main.py`, `market/eeg.py`, `market/ppa.py`                                | Mittel      | Mittel  |
-| 6 | B6+B7: `run()` aufteilen + `ScenarioParams` | `main.py`                                                                  | Mittel      | Groß    |
+| #  | Aktion                                      | Dateien                                                                    | Risiko      | Aufwand |
+|----|---------------------------------------------|----------------------------------------------------------------------------|-------------|---------|
+| 0a | **B10: Simultanes Be-/Entladen (MILP)**    | `dispatch/optimizer.py`, `config/defaults.py`, Tests                       | **Hoch**    | Mittel  |
+| 0b | **B9: Revenue vereinheitlichen (Bug-Fix)**  | `dispatch/optimizer.py`, `dispatch/engine.py`, Tests                       | **Hoch**    | Mittel  |
+| 1  | B1.1-B1.4: Toten Code entfernen             | `market/eeg.py`, `market/ppa.py`, `tests/test_eeg.py`, `tests/test_ppa.py` | Gering      | Klein   |
+| 2  | B2.1-B2.2: Duplizierung + Import            | `main.py`                                                                  | Sehr gering | Klein   |
+| 3  | B4: CSV-Writer Stats-Helper                 | `output/csv_writer.py`                                                     | Gering      | Klein   |
+| 4  | B5.1-B5.3: Array-Kopien                     | `optimizer.py`, `main.py`                                                  | Gering      | Klein   |
+| 5  | B3.1-B3.4: Vermarktungslogik verschieben    | `main.py`, `market/eeg.py`, `market/ppa.py`                                | Mittel      | Mittel  |
+| 6  | B6+B7: `run()` aufteilen + `ScenarioParams` | `main.py`                                                                  | Mittel      | Groß    |
 
-**Gesamtaufwand:** ~4-6 Stunden (davon B6 allein ~2-3 Stunden)
+**Gesamtaufwand:** ~6-9 Stunden (B10 allein ~2-3 Stunden inkl. Validierung)
 
