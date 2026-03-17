@@ -261,7 +261,7 @@ def check_dispatch_constraints(
                     timestep=t,
                     expected=f"only discharge, or charge",
                     actual=total_discharge,
-                    severity="warning", ))
+                    severity="error", ))
             else:
                 if (total_charge > 0) and (abs(previous_soc + total_charge - soc[t]) > tolerance):
                     violations.append(ConstraintViolation(

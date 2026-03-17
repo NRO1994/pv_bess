@@ -475,7 +475,7 @@ def _build_green_lp(
     c = np.zeros(n_vars)
     for t in range(T):
         c[2 * T + t] = -(grid_loss_factor * eff_prices[t])  # export_pv[t]
-        c[T + t] = -(rte * grid_loss_factor * spot_prices[t])  # discharge_green[t]
+        c[T + t] = -(rte * grid_loss_factor * eff_prices[t])  # discharge_green[t]
     if has_baseload and shortfall_penalty_prices is not None:
         for t in range(T):
             # Shortfall penalty: +shortfall_penalty_prices[t] (positive = cost in minimisation)
