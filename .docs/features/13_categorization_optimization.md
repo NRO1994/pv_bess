@@ -196,7 +196,7 @@ Sie beinhaltet bereits:
 Fixe Größen:
 
 - PV-Leistung und Ertrag
-- PV-CAPEX / OPEX
+- CAPEX / OPEX von PV und BESS
 - Finanzierung, Laufzeit, Steuern
 
 Variable:
@@ -204,10 +204,10 @@ Variable:
 - Capture‑Rate \(c\)
 
 Durch die Berechnung der beiden extrem Punkte (PV-only (basecase), und max BESS Dimension) werden zwei Capture Rates
-definiert, die später die Grenze visualisieren, ab der das Projekt oberhalb de sZiel IRR's ist. Für den PV-Only case ist
-es einfach zu Rechnen: simples Finanzmodell, und den Jahresertrag so lange mit der durchschnittlichen Capture Rate
-multiplizieren, bis die Ziel IRR erreicht wird. Doch wie macht mand as für den max BESS Case? Eifnach CAPEX udn OPEX
-erhöhen reicht nicht aus, da auch eine höhere Produktion durch den BESS gewährt wird, die nciht so einfach zu bestimmen
+definiert, die später die Grenze visualisieren, ab der das Projekt oberhalb des Ziel IRR's ist. Für den PV-Only case ist
+es einfach zu rechnen: simples Finanzmodell, und den Jahresertrag so lange mit der durchschnittlichen Capture Rate
+anpassen, bis die Ziel IRR erreicht wird. Doch wie macht man das für den max BESS Case? Einfach CAPEX und OPEX
+erhöhen reicht nicht aus, da auch eine höhere Produktion durch den BESS gewährt wird, die nicht so einfach zu bestimmen
 ist - oder doch?
 Durch Variation von \(c\) wird bestimmt:
 
