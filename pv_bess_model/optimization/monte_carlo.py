@@ -466,13 +466,13 @@ def _run_mc_iteration_fast(
         bess_spot = rev_bess_green + rev_bess_grey
         annual_bess_spot_revenues.append(bess_spot)
 
-    total_production_kwh = dispatch.total_production_kwh * pv_availability_factor
     annual_pv_production_kwh = [
         p * pv_availability_factor for p in dispatch.annual_pv_production_kwh
     ]
     annual_bess_discharge_kwh = [
         d * bess_availability_factor for d in dispatch.annual_bess_discharge_kwh
     ]
+    total_production_kwh = annual_pv_production_kwh + annual_bess_discharge_kwh
 
     # --- Build cashflow projection ---
     debt_schedule = build_annuity_schedule(
@@ -527,7 +527,7 @@ def _run_mc_iteration_fast(
         annual_debt_service=annual_debt_service,
         total_capex=capex_total,
         total_opex_lifetime=total_opex_lifetime,
-        total_production_kwh=total_production_kwh,
+        total_production_kwh=float(np.sum(total_production_kwh)),
         discount_rate=base.discount_rate,
         annual_pv_production_kwh=annual_pv_production_kwh,
         annual_bess_discharge_kwh=annual_bess_discharge_kwh,
@@ -609,7 +609,7 @@ def _build_stats(
         ``(overall_stats, per_scenario_stats)`` where each inner dict maps
         metric names to :class:`MCStatistics`.
     """
-    metric_names = ("equity_irr", "project_irr", "npv", "dscr_min")
+    metric_names = ("equity_irr", "project_irr", "npv", "dscr_min", "capture_rate")
 
     overall_stats: dict[str, MCStatistics] = {
         m: _compute_statistics([getattr(r, m) for r in results])
@@ -672,7 +672,7 @@ def run_monte_carlo(
         All iteration results plus overall and per-scenario statistics.
     """
     n_scenarios = len(scenario_prices)
-    logger.info(
+    logger.debug(
         "Monte Carlo: %d iterations, %d price scenario(s), max_workers=%s.",
         mc_params.iterations,
         n_scenarios,

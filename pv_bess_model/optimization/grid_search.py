@@ -478,7 +478,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
 
     annual_revenues_p50 = [r.total_revenue for r in sim_p50.annual_results]
     annual_bess_spot_revenues_p50 = [r.bess_spot_revenue for r in sim_p50.annual_results]
-    total_production_kwh = sum(r.pv_production for r in sim_p50.annual_results)
+    total_production_kwh = sum(r.pv_production + r.bess_discharge_grey + r.bess_discharge_green for r in sim_p50.annual_results)
 
     # Optional downside simulation – used for conservative DSCR calculation, P90 only on PV revenue
     annual_revenues_downside = [

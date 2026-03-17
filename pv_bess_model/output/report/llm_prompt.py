@@ -114,7 +114,7 @@ def render_prompt(data: Any) -> str:
         sens_lines.append("### EEG-Sensitivitaet (20 Jahre Laufzeit)")
         for pt in data.eeg_sensitivity:
             floor = pt.get("floor_price_eur_per_kwh", 0) * 100
-            irr_mean = pt.get("irr_mean", 0)
+            irr_mean = pt.get("irr_median", 0)
             irr_std = pt.get("irr_std", 0)
             sens_lines.append(f"- Floor {floor:.2f} ct/kWh -> "
                               f"durchschnittlicher eq.IRR {irr_mean:.2f} %, Std.Abweichung eq.IRR {irr_std:.2f} %")
@@ -123,14 +123,14 @@ def render_prompt(data: Any) -> str:
         for pt in data.ppa_collar:
             floor = pt.get("floor_price_eur_per_kwh", 0) * 100
             cap = pt.get("cap_price_eur_per_kwh", 0) * 100
-            irr_mean = pt.get("irr_mean", 0)
+            irr_mean = pt.get("irr_median", 0)
             irr_std = pt.get("irr_std", 0)
             sens_lines.append(f"- Floor {floor:.2f} ct/kWh, Cap {cap:.2f} ct/kWh -> "
                               f"durchschnittlicher eq.IRR {irr_mean:.2f} %, Std.Abweichung eq.IRR {irr_std:.2f} %")
     if data.ppa_baseload:
         sens_lines.append(f"### PPA-Baseload-Analyse ({data.ppa_baseload_duration} Jahre Laufzeit)")
         for pt in data.ppa_baseload:
-            irr_mean = pt.get("irr_mean", 0)
+            irr_mean = pt.get("irr_median", 0)
             irr_std = pt.get("irr_std", 0)
             baseload = pt.get("baseload_mw", 0)
             ppa_price = pt.get("ppa_price_eur_per_kwh", 0) * 100
@@ -182,7 +182,7 @@ def render_prompt(data: Any) -> str:
             f"{data.baseline_market_irr:.2f} %" if data.baseline_market_irr is not None else "n/a"
         ),
         "{{equity_irr_target}}": (
-            f"{data.equity_irr_target*100:.1f} %" if data.equity_irr_target is not None else "nicht definiert"
+            f"{data.equity_irr_target:.1f} %" if data.equity_irr_target is not None else "nicht definiert"
         ),
     }
 

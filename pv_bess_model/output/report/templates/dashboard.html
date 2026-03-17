@@ -775,7 +775,7 @@
       irrHLines.push({y: D.baseline_market_irr, label: 'Direktvermarktung', color: '#888888', dash: [6, 4]});
     }
     if (D.equity_irr_target != null) {
-      irrHLines.push({y: D.equity_irr_target, label: 'Min. IRR', color: '#E74C3C', dash: [8, 3, 2, 3]});
+      irrHLines.push({y: D.equity_irr_target, label: 'Ziel IRR', color: '#E74C3C', dash: [8, 3, 2, 3]});
     }
 
     function addTab(id, title, condition, buildFn) {
@@ -1002,8 +1002,8 @@
     // ================================================================
     //  TAB 3: Grid-Search-Ergebnis
     // ================================================================
-    addTab('gridsearch', 'Grid-Search', D.grid_search_points && D.grid_search_points.length > 1, (panel) => {
-      panel.innerHTML = `<h2>BESS-Dimensionierung (Grid Search)</h2>`;
+    addTab('gridsearch', 'BESS-Dimensionierung', D.grid_search_points && D.grid_search_points.length > 1, (panel) => {
+      panel.innerHTML = `<h2>BESS-Dimensionierung (Grid Search auf Basis des Base Case)</h2>`;
 
       const actions = document.createElement('div'); actions.className = 'actions';
       const btnPng = document.createElement('button'); btnPng.textContent = 'PNG';

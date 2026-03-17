@@ -924,7 +924,7 @@ def run(args: argparse.Namespace) -> int:
             baseload_mw=0,
             skip_baseline=True,
         )
-        logger.info("Computing baseline Direktvermarktung IRR via Monte Carlo (pure spot market)…")
+        logger.info("Computing baseline Direktvermarktung IRR via Monte Carlo (pure spot market)...")
         baseline_mc_result = run_monte_carlo(
             base_config=baseline_market_config,
             optimal=optimal_setup,
@@ -1189,11 +1189,10 @@ def _generate_report(
 
     New flow:
     1. Collect all data into ``HtmlReportData``.
-    2. Create matplotlib PNG charts (optional, for standalone use).
-    3. Save rendered LLM prompt to output directory.
-    4. Interactive pause for LLM response (unless ``--skip-llm-prompt``
+    2. Save rendered LLM prompt to output directory.
+    3. Interactive pause for LLM response (unless ``--skip-llm-prompt``
        or ``--llm-response`` is used).
-    5. Build and write the HTML report.
+    4. Build and write the HTML report.
 
     Parameters
     ----------
@@ -1257,33 +1256,11 @@ def _generate_report(
         logger.error("Report data collection failed.", exc_info=True)
         return
 
-    # Step 2: Create matplotlib PNG charts (optional, for standalone use)
-    try:
-        from pv_bess_model.output.report.charts import create_all_charts
-
-        logger.info("Generating report charts…")
-        create_all_charts(
-            output_dir=output_dir,
-            grid_result=grid_result,
-            weather_timeseries=weather_data_for_report,
-            scenario_prices=scenario_prices,
-            commissioning_year=commissioning_year,
-            eeg_result=eeg_sens_result,
-            collar_result=collar_result,
-            baseload_result=baseload_result,
-            baseline_market_irr=baseline_market_irr,
-            equity_irr_target=equity_irr_target,
-        )
-    except ImportError:
-        logger.debug("matplotlib not available. Skipping PNG chart generation.")
-    except Exception:
-        logger.warning("Chart generation failed.", exc_info=True)
-
-    # Step 3 + 4: LLM prompt workflow
+    # Step 2 + 3: LLM prompt workflow
     llm_texts = _resolve_llm_texts(report_data, output_dir, args)
     report_data.llm_texts = llm_texts
 
-    # Step 5: Build HTML report
+    # Step 4: Build HTML report
     logger.info("Assembling HTML report…")
     try:
         html_path = build_html_report(report_data, output_dir)

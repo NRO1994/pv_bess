@@ -11,13 +11,13 @@
 - [x] Warum ist eine Vergrößerung der BESS Kapazität ein schlechterer IRR?
     - --> CAPEX Preisgestaltung ist Problematisch, sowie Grün/Grau sehr unterschiedlich
 - [x] baseload MUSS in die LP Optimierung aufgenommen werden, wenn es sich um einen PV/BESS Case handelt. PLan5 1-3
-- [ ] PaP Preise in Integration suite stimmen nicht
+- [x] PaP Preise in Integration suite stimmen nicht
 - [x] Financial Model integration Test: Logik ist falsch, mit Steffen klären
 - [x] Report
     - [x] Leaflet wird nicht richtig angezeigt
     - [x] Heder Input_wizard/Dashboard sind nicht identisch
     - [x] Format der Tabs soll vom Input_wizard übernommen werden
-    - [x] Das hervorheben des ersten Jahres in der Cashflow Analyse ist unnötig, entferne den Orangen Kasten
+    - [x] Das Hervorheben des ersten Jahres in der Cashflow Analyse ist unnötig, entferne den Orangen Kasten
     - [x] die Sensitivität im EEG-Tab soll nicht die Standardabweichung um den Mittelwert abbilden, sondern der orange
       Bereich zwischen P10 und P90 aufgespannt werden. Die Linie soll dann der Median sein. Alle Zahlen sind bereits in
       der Analyse vorhanden, es muss nur der data_collector entsprechend angepasst werden
@@ -26,18 +26,17 @@
         - [x] Wetterjahre miteinander vergleichen, nicht nur Sommer/winter
         - [x] EEG Standard Abweichung fehlt im Prompt
     - [x] Diagramm Datenreihen auf Deutsch
-- [ ] CSV Export
+- [x] CSV Export
     - [x] pv production in CSV Cashflow ist falsch
-    - [ ] baseload constraints mit ausgeben
-    - [ ] CSV Summary entfernen, allgemeiner clean up
+    - [x] baseload constraints mit ausgeben
 - [ ] LLM tags in input json entfernen
 - [x] MC Einzel Runs in csv mit ausgeben
     - Warum ist der MEAN von eq.irr bei 20% der P50 aber nur bei 2%?
-- [ ] Baseload passt noch nicht
+- [x] Baseload passt noch nicht
 - [x] Direktvermarktungs-Baseline muss MC Run sein, Eq.IRR soll dann ebenfalls der P50 der MC results sein
-- [ ] chart creation entfernen
-- [ ] Smoke Test fehlende JSON Objekte hinzufügen
-- [ ] im optimizer.py, bei den methoden: dispatch_offline_day, extract_green_result und extract_grey_result berechnen
+- [x] chart creation entfernen
+- [x] Smoke Test fehlende JSON Objekte hinzufügen
+- [x] im optimizer.py, bei den methoden: dispatch_offline_day, extract_green_result und extract_grey_result berechnen
   alle jeweils eigenständig die Kennzahlen der Optimierung. Das MUSS vereinheitlicht werden, da sonst keine
   Gleichbehandlung der Ergebniskalkulation gewährleistet werden kann. Zusätzlich wird der daily/yearly revenue erneut in
   der engine gebildet, das heißt es gibt vier Codefragmente, die das gleiche tun sollen - das MUSS vereinheitlicht
@@ -45,3 +44,7 @@
   falsch berechnet, da der effektive Preis af die gesamte erzeugung angerechnet wird, und nicht nur auf den baseload -
   der rest wird zum Spotpreis verkauft. Prüfe, ob dies in .docs/PLAN_code_cleanup.md enthalten ist, falls nicht füge
   eine detaillierte Beschreibung dieses cleanups hinzu.
+- [x] In LCoE Berechnung auch die "Produktion" vom BESS berücksichtigen
+- [ ] Gleichzeitiges Be-/Entladen des Speichers muss im LP verhindert werden. Die aktuelle Logik, dass dies nur bei
+  negativen Preisen der Fall ist, hat sich als falsch herausgestellt. Das bedeutet, dass diese Nebenbedingung
+  umfassender in den Solver aufgenommen werden müssen. Könnte das Einführen einer zusätzlichen Variablen helfen?

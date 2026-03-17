@@ -331,7 +331,7 @@ REPORT_LLM_PROMPT_FILENAME: str = "_llm_prompt.md"
 REPORT_LLM_RESPONSE_FILENAME: str = "_llm_response.json"
 """Suffix for the LLM response JSON file expected in the output directory."""
 
-REPORT_MODEL_VERSION: str = "0.1.0"
+REPORT_MODEL_VERSION: str = "1.0"
 """Version string displayed on the report cover page."""
 
 PRICE_DATA_ORIGIN: str = "Prognos 2026"

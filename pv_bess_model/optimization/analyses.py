@@ -245,6 +245,7 @@ def run_eeg_sensitivity(
             # EEG has no GoO or cap
             goo_prices_yearly=[0.0] * base_config.lifetime_years,
             cap_prices_yearly=[0.0] * base_config.lifetime_years,
+            baseload_mw=0
         )
 
         mc_result = run_monte_carlo(
@@ -343,6 +344,7 @@ def run_ppa_collar_analysis(
             fixed_prices_yearly=new_fixed,
             cap_prices_yearly=new_cap,
             goo_prices_yearly=new_goo,
+            baseload_mw=0
         )
 
         mc_result = run_monte_carlo(
