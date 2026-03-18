@@ -1,10 +1,10 @@
 """
 Strompreis-Daten Analyse-Skript.
 
-Fuehrt eine tiefgehende Analyse von Day-Ahead Strompreisdaten durch:
+Führt eine tiefgehende Analyse von Day-Ahead Strompreisdaten durch:
 - Deskriptive Statistik (pro Szenario, pro Jahr, gesamt)
 - Konstante-Perioden-Analyse (Erkennung, Dauer, Verteilung, Heatmaps)
-- Volatilitaets- & Verteilungsanalyse
+- Volatilitäts- & Verteilungsanalyse
 - Saisonale & zeitliche Muster
 - Szenario-Vergleich
 
@@ -28,12 +28,12 @@ import pandas as pd
 # ==============================================================================
 
 # Pfad zur CSV-Datei mit Strompreisdaten
-CSV_PATH = ".data/integration_test_inputs/finance/eeg_fixed_54_20y_22_5y.csv"
+CSV_PATH = ".data/scenarios/strompreise/other_prices_original_2025.csv"
 
 # Spaltennamen
-COL_TIMESTAMP = "timestamp"
+COL_TIMESTAMP = "Timestamp"
 COL_LOW = "Low"
-COL_MID = "MID"
+COL_MID = "Central"
 COL_HIGH = "High"
 SCENARIO_COLS = [COL_LOW, COL_MID, COL_HIGH]
 
@@ -41,21 +41,21 @@ SCENARIO_COLS = [COL_LOW, COL_MID, COL_HIGH]
 CSV_SEPARATOR = ";"
 CSV_DECIMAL = ","
 
-# Intervalle (Defaults fuer 15-min Aufloesung, werden bei load_data ueberschrieben)
-INTERVALS_PER_YEAR = 35_040
-INTERVALS_PER_DAY = 96
-INTERVALS_PER_HOUR = 4
-INTERVALS_PER_WEEK = 96 * 7
+# Intervalle (Defaults für 15-min Auflösung, werden bei load_data überschrieben)
+INTERVALS_PER_YEAR = 8760
+INTERVALS_PER_DAY = 24
+INTERVALS_PER_HOUR = 1
+INTERVALS_PER_WEEK = 24 * 7
 
 # Output
-OUTPUT_DIR = Path(".data/price_analysis")
+OUTPUT_DIR = Path(".data/scenarios/strompreise/price_analysis_other")
 DPI = 150
 
 # Schwellenwert: Ab wie vielen identischen aufeinanderfolgenden Werten gilt
 # eine Periode als "konstant"? (2 = schon ab 2 gleichen Werten hintereinander)
 CONST_MIN_LENGTH = 2
 
-# Toleranz fuer Gleichheit (floating point)
+# Toleranz für Gleichheit (floating point)
 CONST_TOLERANCE = 1e-10
 
 # ==============================================================================
@@ -65,15 +65,23 @@ CONST_TOLERANCE = 1e-10
 
 def load_data(csv_path: str) -> pd.DataFrame:
     """Lade CSV-Daten und parse Timestamps."""
+
     df = pd.read_csv(
         csv_path,
         sep=CSV_SEPARATOR,
         decimal=CSV_DECIMAL,
-        parse_dates=[COL_TIMESTAMP],
+        dtype={COL_TIMESTAMP: "string"},
     )
+
+    df[COL_TIMESTAMP] = pd.to_datetime(
+        df[COL_TIMESTAMP],
+        format="%d.%m.%Y %H:%M",
+        errors="raise",
+    )
+
     n_rows = len(df)
 
-    # Aufloesung automatisch erkennen anhand der Zeitdifferenz
+    # Auflösung automatisch erkennen anhand der Zeitdifferenz
     dt = df[COL_TIMESTAMP].iloc[1] - df[COL_TIMESTAMP].iloc[0]
     minutes_per_interval = int(dt.total_seconds() / 60)
     if minutes_per_interval == 15:
@@ -85,8 +93,12 @@ def load_data(csv_path: str) -> pd.DataFrame:
         intervals_per_year = 8_760
         intervals_per_hour = 1
     else:
-        raise ValueError(f"Unbekannte Aufloesung: {minutes_per_interval} min")
-
+        raise ValueError(f"Unbekannte Auflösung: {minutes_per_interval} min")
+    # Drop Unfilled years at the beginning
+    if df[COL_TIMESTAMP].dt.month[0] != 1 or df[COL_TIMESTAMP].dt.day[0] != 1:
+        drop_year = df[COL_TIMESTAMP].dt.year == df[COL_TIMESTAMP].dt.year[0]
+        df = df[-drop_year]
+        df.reset_index(inplace=True, drop=True)
     n_years = n_rows // intervals_per_year
 
     # Kalender-Jahr aus Timestamp
@@ -106,7 +118,7 @@ def load_data(csv_path: str) -> pd.DataFrame:
     # Wochentag (0=Mo, 6=So)
     df["weekday"] = df[COL_TIMESTAMP].dt.weekday
 
-    # Erkannte Aufloesung als Attribute speichern (fuer spaetere Nutzung)
+    # Erkannte Auflösung als Attribute speichern (für spätere Nutzung)
     df.attrs["intervals_per_day"] = intervals_per_day
     df.attrs["intervals_per_year"] = intervals_per_year
     df.attrs["intervals_per_hour"] = intervals_per_hour
@@ -120,7 +132,7 @@ def find_constant_periods(
     values: np.ndarray, min_length: int = CONST_MIN_LENGTH, tol: float = CONST_TOLERANCE
 ) -> list[dict]:
     """
-    Finde zusammenhaengende Perioden mit konstanten Werten.
+    Finde zusammenhängende Perioden mit konstanten Werten.
 
     Returns:
         Liste von dicts mit: start_idx, end_idx, length, value
@@ -164,7 +176,7 @@ def format_intervals_as_duration(intervals: int) -> str:
 
 
 def ensure_output_dir() -> Path:
-    """Erstelle Output-Verzeichnis falls noetig."""
+    """Erstelle Output-Verzeichnis falls nötig."""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     return OUTPUT_DIR
 
@@ -204,7 +216,7 @@ def descriptive_statistics(df: pd.DataFrame) -> str:
         md += f"| {name} | {vals} |\n"
 
     # --- Pro Jahr ---
-    md += "\n### 1.2 Jaehrliche Statistik\n\n"
+    md += "\n### 1.2 Jährliche Statistik\n\n"
     for col in SCENARIO_COLS:
         md += f"\n#### Szenario: {col}\n\n"
         md += "| Jahr | Mean | Median | Std | Min | Max | P5 | P95 | Neg% |\n"
@@ -236,7 +248,7 @@ def plot_annual_means(df: pd.DataFrame, output_dir: Path) -> str:
 
     ax.set_xlabel("Jahr")
     ax.set_ylabel("Durchschnittspreis (EUR/MWh)")
-    ax.set_title("Jaehrliche Durchschnittspreise pro Szenario")
+    ax.set_title("Jährliche Durchschnittspreise pro Szenario")
     ax.legend()
     ax.grid(True, alpha=0.3)
     path = output_dir / "01_annual_means.png"
@@ -309,8 +321,8 @@ def constant_periods_analysis(df: pd.DataFrame) -> tuple[str, dict]:
         md += f"### 2.1 Szenario: {col}\n\n"
         md += f"- **Anzahl konstanter Perioden**: {len(periods):,}\n"
         md += f"- **Gesamtanteil konstanter Intervalle**: {total_const:,} / {total_intervals:,} = **{total_const / total_intervals * 100:.2f}%**\n"
-        md += f"- **Kuerzeste Periode**: {lengths.min()} Intervalle ({format_intervals_as_duration(lengths.min())})\n"
-        md += f"- **Laengste Periode**: {lengths.max()} Intervalle ({format_intervals_as_duration(lengths.max())})\n"
+        md += f"- **Kürzeste Periode**: {lengths.min()} Intervalle ({format_intervals_as_duration(lengths.min())})\n"
+        md += f"- **Längste Periode**: {lengths.max()} Intervalle ({format_intervals_as_duration(lengths.max())})\n"
         md += f"- **Mittlere Dauer**: {lengths.mean():.1f} Intervalle ({format_intervals_as_duration(int(lengths.mean()))})\n"
         md += f"- **Median Dauer**: {np.median(lengths):.0f} Intervalle ({format_intervals_as_duration(int(np.median(lengths)))})\n\n"
 
@@ -342,10 +354,10 @@ def constant_periods_analysis(df: pd.DataFrame) -> tuple[str, dict]:
 
         md += "\n"
 
-        # Top 20 laengste Perioden
+        # Top 20 längste Perioden
         sorted_periods = sorted(periods, key=lambda p: p["length"], reverse=True)
         top_n = min(20, len(sorted_periods))
-        md += f"#### Top {top_n} laengste konstante Perioden\n\n"
+        md += f"#### Top {top_n} längste konstante Perioden\n\n"
         md += "| # | Start-Index | Dauer | Dauer (lesbar) | Wert (EUR/kWh) | Start-Timestamp |\n"
         md += "|---|------------|-------|----------------|---------------|----------------|\n"
 
@@ -366,7 +378,7 @@ def constant_periods_analysis(df: pd.DataFrame) -> tuple[str, dict]:
 
         md += f"#### Preisniveaus mit konstanten Perioden ({len(unique_values)} verschiedene Werte)\n\n"
         if len(unique_values) <= 30:
-            md += "| Preis (EUR/kWh) | Anzahl Perioden | Gesamt-Intervalle | Laengste Periode |\n"
+            md += "| Preis (EUR/kWh) | Anzahl Perioden | Gesamt-Intervalle | Längste Periode |\n"
             md += "|----------------|----------------|-------------------|------------------|\n"
             for v in sorted(unique_values):
                 mask = const_values == v
@@ -376,7 +388,7 @@ def constant_periods_analysis(df: pd.DataFrame) -> tuple[str, dict]:
                 md += f"| {v:.5f} | {n_per} | {sum_int:,} | {format_intervals_as_duration(max_len)} |\n"
         else:
             md += f"Zu viele verschiedene Werte ({len(unique_values)}). Top 15 nach Gesamtdauer:\n\n"
-            md += "| Preis (EUR/kWh) | Anzahl Perioden | Gesamt-Intervalle | Laengste Periode |\n"
+            md += "| Preis (EUR/kWh) | Anzahl Perioden | Gesamt-Intervalle | Längste Periode |\n"
             md += "|----------------|----------------|-------------------|------------------|\n"
             value_total = {}
             for v in unique_values:
@@ -392,10 +404,10 @@ def constant_periods_analysis(df: pd.DataFrame) -> tuple[str, dict]:
 
         md += "\n"
 
-    # --- Synchronitaet zwischen Szenarien ---
-    md += "### 2.2 Synchronitaet konstanter Perioden zwischen Szenarien\n\n"
+    # --- Synchronität zwischen Szenarien ---
+    md += "### 2.2 Synchronität konstanter Perioden zwischen Szenarien\n\n"
 
-    # Markiere fuer jedes Intervall ob es in einer konstanten Periode liegt
+    # Markiere für jedes Intervall ob es in einer konstanten Periode liegt
     const_masks = {}
     for col in SCENARIO_COLS:
         mask = np.zeros(len(df), dtype=bool)
@@ -436,11 +448,11 @@ def constant_periods_analysis(df: pd.DataFrame) -> tuple[str, dict]:
 
     md += "\n"
 
-    # --- Jaehrliche Aufschluesselung ---
+    # --- Jährliche Aufschlüsselung ---
     md += "### 2.3 Konstante Perioden pro Jahr\n\n"
     for col in SCENARIO_COLS:
         md += f"#### Szenario: {col}\n\n"
-        md += "| Jahr | Anz. Perioden | Anteil konstant (%) | Laengste (Intervalle) | Laengste (lesbar) |\n"
+        md += "| Jahr | Anz. Perioden | Anteil konstant (%) | Längste (Intervalle) | Längste (lesbar) |\n"
         md += "|------|--------------|--------------------|-----------------------|-------------------|\n"
         for year in sorted(df["year"].unique()):
             year_mask = df["year"] == year
@@ -465,7 +477,7 @@ def constant_periods_analysis(df: pd.DataFrame) -> tuple[str, dict]:
 def plot_constant_periods_heatmap(
     df: pd.DataFrame, all_periods: dict, output_dir: Path
 ) -> str:
-    """Heatmap: Konstante Perioden ueber das Jahr (Tag x Stunde)."""
+    """Heatmap: Konstante Perioden über das Jahr (Tag x Stunde)."""
     n_years = len(df["year"].unique())
     fig, axes = plt.subplots(
         1, len(SCENARIO_COLS), figsize=(6 * len(SCENARIO_COLS), max(5, n_years * 0.25))
@@ -476,7 +488,7 @@ def plot_constant_periods_heatmap(
     images = []
     for ax, col in zip(axes, SCENARIO_COLS):
         # Erzeuge 2D-Matrix: Tag x Intervall-im-Tag
-        # Aggregiert ueber alle Jahre
+        # Aggregiert über alle Jahre
         heatmap = np.zeros((365, INTERVALS_PER_DAY))
         count_map = np.zeros((365, INTERVALS_PER_DAY))
 
@@ -504,9 +516,9 @@ def plot_constant_periods_heatmap(
 
     # Gemeinsame Colorbar
     fig.colorbar(
-        images[-1], ax=axes, label="Mittlere Haeufigkeit (pro Jahr)", shrink=0.8
+        images[-1], ax=axes, label="Mittlere Häufigkeit (pro Jahr)", shrink=0.8
     )
-    fig.suptitle("Heatmap: Konstante Perioden (Tag x Stunde, gemittelt ueber alle Jahre)", y=1.02)
+    fig.suptitle("Heatmap: Konstante Perioden (Tag x Stunde, gemittelt über alle Jahre)", y=1.02)
 
     path = output_dir / "03_constant_periods_heatmap.png"
     fig.tight_layout()
@@ -597,7 +609,7 @@ def plot_constant_periods_timeline(
         x = np.arange(len(prices))
         ax.plot(x, prices, linewidth=0.3, color="steelblue", alpha=0.7)
 
-        # Konstante Perioden fuer dieses Jahr
+        # Konstante Perioden für dieses Jahr
         year_periods = find_constant_periods(df_year[col].values)
         for p in year_periods:
             if p["length"] >= 12:  # Nur Perioden >= 3h markieren
@@ -634,8 +646,8 @@ def plot_constant_periods_timeline(
 
 
 def volatility_analysis(df: pd.DataFrame) -> str:
-    """Volatilitaets- und Verteilungsanalyse."""
-    md = "## 3. Volatilitaets- & Verteilungsanalyse\n\n"
+    """Volatilitäts- und Verteilungsanalyse."""
+    md = "## 3. Volatilitäts- & Verteilungsanalyse\n\n"
 
     # Intraday-Spread pro Tag
     md += "### 3.1 Intraday-Spread (Max - Min pro Tag)\n\n"
@@ -669,8 +681,8 @@ def volatility_analysis(df: pd.DataFrame) -> str:
             corrs.append(f"{corr:.4f}")
         md += f"| {col} | " + " | ".join(corrs) + " |\n"
 
-    # Tage ohne Preisaenderung
-    md += "\n### 3.3 Tage mit Null-Volatilitaet (identischer Preis den ganzen Tag)\n\n"
+    # Tage ohne Preisänderung
+    md += "\n### 3.3 Tage mit Null-Volatilität (identischer Preis den ganzen Tag)\n\n"
     for col in SCENARIO_COLS:
         daily_std = df.groupby(["year", "day_of_year"])[col].std()
         zero_vol_days = (daily_std < CONST_TOLERANCE).sum()
@@ -713,7 +725,7 @@ def plot_rolling_volatility(df: pd.DataFrame, output_dir: Path) -> str:
 
     for col in SCENARIO_COLS:
         rolling_std = df[col].rolling(window=window, center=True).std() * 1000
-        # Subsample fuer Performance (jeden Tag ein Wert)
+        # Subsample für Performance (jeden Tag ein Wert)
         subsample = rolling_std.iloc[::INTERVALS_PER_DAY]
         ax.plot(
             df[COL_TIMESTAMP].iloc[subsample.index],
@@ -725,7 +737,7 @@ def plot_rolling_volatility(df: pd.DataFrame, output_dir: Path) -> str:
 
     ax.set_xlabel("Zeit")
     ax.set_ylabel("Rolling Std (7-Tage, EUR/MWh)")
-    ax.set_title("Rolling Volatilitaet (7-Tage-Fenster)")
+    ax.set_title("Rolling Volatilität (7-Tage-Fenster)")
     ax.legend()
     ax.grid(True, alpha=0.3)
     ax.xaxis.set_major_locator(mdates.YearLocator(2))
@@ -914,8 +926,8 @@ def scenario_comparison(df: pd.DataFrame) -> str:
                     f"| {spread.max():.3f} |\n"
                 )
 
-    # Jaehrliche Divergenz
-    md += "\n### 5.3 Jaehrliche Divergenz (Spread High-Low, EUR/MWh)\n\n"
+    # Jährliche Divergenz
+    md += "\n### 5.3 Jährliche Divergenz (Spread High-Low, EUR/MWh)\n\n"
     if COL_HIGH in df.columns and COL_LOW in df.columns:
         md += "| Jahr | Mean Spread | Std Spread |\n"
         md += "|------|-----------|----------|\n"
@@ -934,7 +946,7 @@ def scenario_comparison(df: pd.DataFrame) -> str:
                 const_spread_pct = spread.value_counts().iloc[0] / len(spread) * 100 if len(spread) > 0 else 0
                 md += (
                     f"- **{label}**: {unique_spreads:,} verschiedene Spread-Werte. "
-                    f"Haeufigster Wert: {spread.mode().iloc[0] * 1000:.3f} EUR/MWh "
+                    f"Häufigster Wert: {spread.mode().iloc[0] * 1000:.3f} EUR/MWh "
                     f"(Anteil: {const_spread_pct:.1f}%)\n"
                 )
 
@@ -943,7 +955,7 @@ def scenario_comparison(df: pd.DataFrame) -> str:
 
 
 def plot_spread_over_time(df: pd.DataFrame, output_dir: Path) -> str:
-    """Spread zwischen Szenarien ueber Zeit (taeglich gemittelt)."""
+    """Spread zwischen Szenarien über Zeit (täglich gemittelt)."""
     if COL_HIGH not in df.columns or COL_LOW not in df.columns:
         return ""
 
@@ -958,7 +970,7 @@ def plot_spread_over_time(df: pd.DataFrame, output_dir: Path) -> str:
 
     ax.set_xlabel("Zeit")
     ax.set_ylabel("Spread High-Low (EUR/MWh)")
-    ax.set_title("Taeglicher Spread High - Low")
+    ax.set_title("Täglicher Spread High - Low")
     ax.legend()
     ax.grid(True, alpha=0.3)
 
@@ -966,7 +978,7 @@ def plot_spread_over_time(df: pd.DataFrame, output_dir: Path) -> str:
     fig.tight_layout()
     fig.savefig(path, dpi=DPI)
     plt.close(fig)
-    return f"![Spread ueber Zeit]({path.name})\n\n"
+    return f"![Spread über Zeit]({path.name})\n\n"
 
 
 # ==============================================================================
@@ -1015,7 +1027,7 @@ def plot_constant_periods_per_year(
 
 
 def main() -> None:
-    """Fuehre alle Analysen durch und schreibe Ergebnisse."""
+    """Führe alle Analysen durch und schreibe Ergebnisse."""
     print("=" * 60)
     print("STROMPREIS-DATEN ANALYSE")
     print("=" * 60)
@@ -1024,7 +1036,7 @@ def main() -> None:
     print(f"\nLade Daten aus: {CSV_PATH}")
     df = load_data(CSV_PATH)
 
-    # Globale Intervall-Konstanten aus erkannter Aufloesung setzen
+    # Globale Intervall-Konstanten aus erkannter Auflösung setzen
     global INTERVALS_PER_DAY, INTERVALS_PER_YEAR, INTERVALS_PER_HOUR, INTERVALS_PER_WEEK
     INTERVALS_PER_DAY = df.attrs["intervals_per_day"]
     INTERVALS_PER_YEAR = df.attrs["intervals_per_year"]
@@ -1034,7 +1046,7 @@ def main() -> None:
 
     n_years = df.attrs["n_years"]
     print(f"Geladen: {len(df):,} Zeilen, {n_years} Jahre ({df['year'].min()}-{df['year'].max()})")
-    print(f"Erkannte Aufloesung: {minutes_per_interval}-Minuten-Intervalle ({INTERVALS_PER_YEAR:,} pro Jahr)")
+    print(f"Erkannte Auflösung: {minutes_per_interval}-Minuten-Intervalle ({INTERVALS_PER_YEAR:,} pro Jahr)")
     print(f"Spalten: {list(df.columns[:4])}")
     print(f"Output-Verzeichnis: {output_dir}")
 
@@ -1044,7 +1056,7 @@ def main() -> None:
     md += f"- **Zeilen**: {len(df):,}\n"
     md += f"- **Jahre**: {n_years} ({df['year'].min()} - {df['year'].max()})\n"
     md += f"- **Szenarien**: {', '.join(SCENARIO_COLS)}\n"
-    md += f"- **Aufloesung**: {minutes_per_interval}-Minuten-Intervalle ({INTERVALS_PER_YEAR:,} pro Jahr)\n\n"
+    md += f"- **Auflösung**: {minutes_per_interval}-Minuten-Intervalle ({INTERVALS_PER_YEAR:,} pro Jahr)\n\n"
     md += "---\n\n"
 
     # 1. Deskriptive Statistik
@@ -1065,8 +1077,8 @@ def main() -> None:
     md += plot_constant_periods_per_year(df, all_periods, output_dir)
     md += "---\n\n"
 
-    # 3. Volatilitaet
-    print("[3/5] Volatilitaetsanalyse...")
+    # 3. Volatilität
+    print("[3/5] Volatilitätsanalyse...")
     md += volatility_analysis(df)
     md += plot_price_distribution(df, output_dir)
     md += plot_rolling_volatility(df, output_dir)

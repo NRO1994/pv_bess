@@ -451,6 +451,7 @@ def collect_report_data(
     analyses: dict[str, Any] | None = None,
     baseline_market_irr: float | None = None,
     equity_irr_target: float | None = None,
+    price_inflation_factors: np.ndarray[float] | None = None,
 ) -> HtmlReportData:
     """Aggregate all simulation results into an ``HtmlReportData`` instance.
 
@@ -529,7 +530,7 @@ def collect_report_data(
         leverage_pct=float(finance.get("leverage_pct", 0)),
         interest_rate_pct=float(finance.get("interest_rate_pct", 0)),
         loan_tenor_years=int(finance.get("loan_tenor_years", 0)),
-        inflation_rate=float(finance.get("inflation_rate", 0)),
+        inflation_rate=float(np.mean(price_inflation_factors)) if price_inflation_factors is not None else float(finance.get("inflation_rate", 0)),
         # Timeseries
         pv_monthly_by_year=pv_monthly,
         pv_production_model=location.get("pvgis_database", ""),

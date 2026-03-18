@@ -543,15 +543,15 @@ def run(args: argparse.Namespace) -> int:
 
     opex_inflation_factors = build_opex_inflation_factors(
         inflation_rate=inflation_rate,
-        lifetime_years=lifetime,
+        lifetime_years=scenario.lifetime_years,
         yearly_rates=yearly_inflation_rates,
-        commissioning_year=commissioning_year,
+        commissioning_year=scenario.commissioning_year,
     )
     price_inflation_factors = build_price_inflation_factors(
         inflation_rate=inflation_rate,
-        lifetime_years=lifetime,
+        lifetime_years=scenario.lifetime_years,
         yearly_rates=yearly_inflation_rates,
-        commissioning_year=commissioning_year,
+        commissioning_year=scenario.commissioning_year,
     )
 
     leverage_pct = float(finance.get("leverage_pct", 0.0))
@@ -785,7 +785,7 @@ def run(args: argparse.Namespace) -> int:
 
         # Extend prices to lifetime (hourly first, then replicate to 15min)
         extended_prices_hourly = _extend_all_price_columns(
-            price_data, [sc.csv_column], lifetime, HOURS_PER_YEAR
+            price_data, [sc.csv_column], lifetime, INTERVALS_PER_YEAR
         )
 
         # Replicate hourly prices to 15min: each hour repeats 4x
@@ -1186,6 +1186,7 @@ def run(args: argparse.Namespace) -> int:
         analyses=analyses_cfg,
         baseline_market_irr=baseline_market_irr,
         equity_irr_target=equity_irr_target,
+        price_inflation_factors=list(yearly_inflation_rates.values()) if yearly_inflation_rates is not None else None
     )
 
     # ------------------------------------------------------------------
@@ -1214,6 +1215,7 @@ def _generate_report(
     analyses: dict,
     baseline_market_irr: float | None = None,
     equity_irr_target: float | None = None,
+    price_inflation_factors: list[float] | None = None,
 ) -> None:
     """Generate the interactive HTML report (Step 7b).
 
@@ -1281,6 +1283,7 @@ def _generate_report(
             analyses=analyses,
             baseline_market_irr=baseline_market_irr,
             equity_irr_target=equity_irr_target,
+            price_inflation_factors=price_inflation_factors
         )
     except Exception:
         logger.error("Report data collection failed.", exc_info=True)

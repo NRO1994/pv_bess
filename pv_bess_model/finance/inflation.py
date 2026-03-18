@@ -199,16 +199,26 @@ def build_price_inflation_factors(
 
     factors: list[float] = []
     cumulative = 1.0
-    for y in range(lifetime_years):
-        calendar_year = commissioning_year + y
+    n = 0 # Start index for inflation rate post commissioning year
+    for calendar_year in sorted(yearly_rates.keys()):
+        if calendar_year < commissioning_year:
+            n += 1
         rate = yearly_rates.get(calendar_year, inflation_rate)
-        if calendar_year not in yearly_rates:
-            logger.warning(
-                "Inflation timeseries has no entry for year %d, "
-                "using fixed rate %.4f as fallback.",
-                calendar_year,
-                inflation_rate,
-            )
         cumulative *= (1.0 + rate)
         factors.append(cumulative)
-    return factors
+
+    # Check if inflation timeline is as long as lifetime
+    relevant_factors = factors[n:lifetime_years+n]
+    last_val = cumulative
+
+    while len(relevant_factors) < lifetime_years:
+        logger.warning(
+            "Inflation timeseries has %d too less entries, "
+            "using fixed rate %.4f as fallback.",
+            lifetime_years - len(relevant_factors),
+            inflation_rate,
+        )
+        last_val *= inflation_rate
+        relevant_factors.append(last_val)
+
+    return relevant_factors
