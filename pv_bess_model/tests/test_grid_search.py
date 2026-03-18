@@ -99,7 +99,7 @@ def _make_config(
         leverage_pct=0.0,      # no debt → no debt-service drag
         interest_rate_pct=4.5,
         loan_tenor_years=3,
-        inflation_rate=0.02,
+        opex_inflation_factors=[(1.0 + 0.02) ** i for i in range(lifetime)],
         discount_rate=0.06,
         afa_years_pv=5,
         afa_years_bess=5,

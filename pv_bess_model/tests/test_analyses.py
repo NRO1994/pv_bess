@@ -23,7 +23,7 @@ class TestBuildEegFixedPrices:
         result = _build_eeg_fixed_prices(
             floor_price_eur_per_kwh=0.07,
             lifetime=5,
-            inflation_rate=0.02,
+            opex_inflation_factors=[(1.0 + 0.02) ** i for i in range(5)],
             eeg_inflation=False,
             fixed_price_years=3,
         )
@@ -38,7 +38,7 @@ class TestBuildEegFixedPrices:
         result = _build_eeg_fixed_prices(
             floor_price_eur_per_kwh=0.07,
             lifetime=3,
-            inflation_rate=0.05,
+            opex_inflation_factors=[(1.0 + 0.05) ** i for i in range(3)],
             eeg_inflation=True,
             fixed_price_years=3,
         )
@@ -54,7 +54,7 @@ class TestBuildEegFixedPrices:
         result = _build_eeg_fixed_prices(
             floor_price_eur_per_kwh=0.07,
             lifetime=2,
-            inflation_rate=0.0,
+            opex_inflation_factors=[(1.0 + 0.0) ** i for i in range(2)],
             eeg_inflation=False,
             fixed_price_years=10,
         )
@@ -65,7 +65,7 @@ class TestBuildEegFixedPrices:
         result = _build_eeg_fixed_prices(
             floor_price_eur_per_kwh=0.07,
             lifetime=3,
-            inflation_rate=0.0,
+            opex_inflation_factors=[(1.0 + 0.0) ** i for i in range(3)],
             eeg_inflation=False,
             fixed_price_years=0,
         )
@@ -82,7 +82,7 @@ class TestBuildCollarPrices:
             duration_years=2,
             inflation_on_ppa=False,
             goo_premium_eur_per_kwh=0.005,
-            inflation_rate=0.02,
+            opex_inflation_factors=[(1.0 + 0.02) ** i for i in range(4)],
             lifetime=4,
         )
         assert len(fixed) == len(cap) == len(goo) == 4
@@ -105,7 +105,7 @@ class TestBuildCollarPrices:
             duration_years=2,
             inflation_on_ppa=True,
             goo_premium_eur_per_kwh=0.005,
-            inflation_rate=0.03,
+            opex_inflation_factors=[(1.0 + 0.03) ** i for i in range(3)],
             lifetime=3,
         )
         # Year 1: no inflation
@@ -128,7 +128,7 @@ class TestBuildBaseloadPrices:
             duration_years=2,
             inflation_on_ppa=False,
             goo_premium_eur_per_kwh=0.005,
-            inflation_rate=0.02,
+            opex_inflation_factors=[(1.0 + 0.02) ** i for i in range(4)],
             lifetime=4,
         )
         assert len(fixed) == len(goo) == 4
@@ -146,7 +146,7 @@ class TestBuildBaseloadPrices:
             duration_years=2,
             inflation_on_ppa=True,
             goo_premium_eur_per_kwh=0.005,
-            inflation_rate=0.04,
+            opex_inflation_factors=[(1.0 + 0.04) ** i for i in range(3)],
             lifetime=3,
         )
         # Year 1: no inflation on price, goo still added
@@ -162,7 +162,7 @@ class TestBuildBaseloadPrices:
             duration_years=1,
             inflation_on_ppa=False,
             goo_premium_eur_per_kwh=0.0,
-            inflation_rate=0.0,
+            opex_inflation_factors=[(1.0 + 0.0) ** i for i in range(2)],
             lifetime=2,
         )
         assert fixed[0] == pytest.approx(0.08)

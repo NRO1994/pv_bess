@@ -128,6 +128,12 @@ DEFAULT_DISCOUNT_RATE: float = 0.06
 DEFAULT_INFLATION_RATE: float = 0.02
 """Default annual inflation rate (2 %) applied to OPEX and optionally to prices."""
 
+DEFAULT_INFLATION_YEAR_COLUMN: str = "year"
+"""Default column name for the year field in inflation timeseries CSV files."""
+
+DEFAULT_INFLATION_VALUE_COLUMN: str = "inflation_pct"
+"""Default column name for the inflation rate (%) field in inflation CSV files."""
+
 DEFAULT_LEVERAGE_PCT: float = 75.0
 """Default debt leverage as a percentage of total CAPEX."""
 

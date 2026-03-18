@@ -25,7 +25,6 @@ from pv_bess_model.finance.debt import (
     get_debt_components,
     get_debt_service,
 )
-from pv_bess_model.finance.inflation import inflate_value
 from pv_bess_model.finance.tax import calculate_tax_for_year
 
 
@@ -73,7 +72,7 @@ def build_cashflow_projection(
     lifetime_years: int,
     annual_revenues: list[float],
     base_opex: float,
-    inflation_rate: float,
+    opex_inflation_factors: list[float],
     capex_total: float,
     capex_pv: float,
     capex_bess: float,
@@ -102,7 +101,8 @@ def build_cashflow_projection(
         annual_revenues: Revenue per operating year (list of length ``lifetime_years``).
             Index 0 = year 1, index 1 = year 2, etc.
         base_opex: Base-year annual OPEX (before inflation).
-        inflation_rate: Annual inflation rate as decimal.
+        opex_inflation_factors: Per-year cumulative inflation factors for OPEX.
+            List of length ``lifetime_years``.  Index 0 = year 1.
         capex_total: Total project CAPEX.
         capex_pv: PV CAPEX (for depreciation).
         capex_bess: BESS CAPEX (for depreciation).
@@ -161,7 +161,7 @@ def build_cashflow_projection(
         revenue = annual_revenues[idx]
 
         # OPEX with inflation
-        opex = inflate_value(base_opex, inflation_rate, y)
+        opex = base_opex * opex_inflation_factors[idx]
 
         # Optimization fee (not inflated - already based on current-year revenue)
         if optimization_fee_pct > 0.0 and annual_bess_spot_revenues:

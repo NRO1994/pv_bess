@@ -62,11 +62,12 @@ def _build_simple_projection(
     if revenues is None:
         revenues = [200_000.0] * lifetime
     sched = build_annuity_schedule(capex_total, leverage, rate, tenor)
+    opex_inflation_factors = [(1.0 + inflation) ** i for i in range(lifetime)]
     return build_cashflow_projection(
         lifetime_years=lifetime,
         annual_revenues=revenues,
         base_opex=base_opex,
-        inflation_rate=inflation,
+        opex_inflation_factors=opex_inflation_factors,
         capex_total=capex_total,
         capex_pv=capex_pv,
         capex_bess=capex_bess,

@@ -49,7 +49,7 @@ from pv_bess_model.dispatch.engine import (
 )
 from pv_bess_model.finance.cashflow import build_cashflow_projection
 from pv_bess_model.finance.debt import build_annuity_schedule
-from pv_bess_model.finance.inflation import inflate_value
+
 from pv_bess_model.finance.metrics import compute_all_metrics
 from pv_bess_model.optimization.grid_search import GridPointResult, GridSearchConfig
 
@@ -488,7 +488,7 @@ def _run_mc_iteration_fast(
         lifetime_years=base.lifetime_years,
         annual_revenues=annual_revenues,
         base_opex=opex_base,
-        inflation_rate=base.inflation_rate,
+        opex_inflation_factors=base.opex_inflation_factors,
         capex_total=capex_total,
         capex_pv=capex_pv,
         capex_bess=capex_bess,
@@ -510,7 +510,7 @@ def _run_mc_iteration_fast(
 
     annual_opex = []
     for y in range(1, base.lifetime_years + 1):
-        opex_y = inflate_value(opex_base, base.inflation_rate, y)
+        opex_y = opex_base * base.opex_inflation_factors[y - 1]
         if base.optimization_fee_pct > 0.0:
             opex_y += annual_bess_spot_revenues[y - 1] * base.optimization_fee_pct / 100.0
         annual_opex.append(opex_y)

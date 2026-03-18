@@ -179,11 +179,12 @@ class TestBuildSpotPricesYearlyWithExtendedPrices:
             pd, ["LOW", "MID", "HIGH"], target_years=lifetime
         )
 
+        no_inflation_factors = [1.0] * lifetime
         for col, expected_val in [("LOW", 0.03), ("MID", 0.05), ("HIGH", 0.08)]:
             yearly = _build_spot_prices_yearly(
                 extended[col],
                 lifetime_years=lifetime,
-                inflation_rate=0.0,
+                price_inflation_factors=no_inflation_factors,
                 apply_inflation=False,
             )
             assert len(yearly) == lifetime
@@ -196,10 +197,11 @@ class TestBuildSpotPricesYearlyWithExtendedPrices:
         pd = _make_price_data({"MID": 0.05}, n_years=1)
         extended = _extend_all_price_columns(pd, ["MID"], target_years=3)
 
+        inflation_factors = [(1.02) ** i for i in range(3)]
         yearly = _build_spot_prices_yearly(
             extended["MID"],
             lifetime_years=3,
-            inflation_rate=0.02,
+            price_inflation_factors=inflation_factors,
             apply_inflation=True,
         )
 
@@ -219,11 +221,12 @@ class TestBuildSpotPricesYearlyWithExtendedPrices:
             pd, ["LOW", "HIGH"], target_years=lifetime
         )
 
+        no_inflation_factors = [1.0] * lifetime
         yearly_low = _build_spot_prices_yearly(
-            extended["LOW"], lifetime, 0.0, False
+            extended["LOW"], lifetime, no_inflation_factors, False
         )
         yearly_high = _build_spot_prices_yearly(
-            extended["HIGH"], lifetime, 0.0, False
+            extended["HIGH"], lifetime, no_inflation_factors, False
         )
 
         np.testing.assert_allclose(yearly_low[0], 0.02)

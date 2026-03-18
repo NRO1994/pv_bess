@@ -25,8 +25,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from pv_bess_model.config.loader import PriceWeatherScenario
-from pv_bess_model.finance.inflation import inflate_value
-from pv_bess_model.market.eeg import EegConfig, effective_eeg_price
+from pv_bess_model.market.eeg import EegConfig
 from pv_bess_model.optimization.grid_search import GridPointResult, GridSearchConfig
 from pv_bess_model.optimization.monte_carlo import MCParams, MCResult, run_monte_carlo
 
@@ -64,7 +63,7 @@ class SensitivityResult:
 def _build_eeg_fixed_prices(
     floor_price_eur_per_kwh: float,
     lifetime: int,
-    inflation_rate: float,
+    opex_inflation_factors: list[float],
     eeg_inflation: bool,
     fixed_price_years: int,
 ) -> list[float]:
@@ -76,8 +75,8 @@ def _build_eeg_fixed_prices(
         EEG floor price in EUR/kWh.
     lifetime:
         Project lifetime in years.
-    inflation_rate:
-        Annual inflation rate as fraction.
+    opex_inflation_factors:
+        Per-year cumulative inflation factors (base = commissioning year).
     eeg_inflation:
         Whether to apply inflation to the EEG floor price.
     fixed_price_years:
@@ -88,15 +87,15 @@ def _build_eeg_fixed_prices(
     list[float]
         Floor price per year (length = lifetime). 0.0 after fixed_price_years.
     """
-    cfg = EegConfig(
-        floor_price_eur_per_kwh=floor_price_eur_per_kwh,
-        fixed_price_years=fixed_price_years,
-        inflation_enabled=eeg_inflation,
-    )
-    return [
-        effective_eeg_price(cfg, year, inflation_rate)
-        for year in range(1, lifetime + 1)
-    ]
+    prices: list[float] = []
+    for year in range(1, lifetime + 1):
+        if year > fixed_price_years:
+            prices.append(0.0)
+        elif eeg_inflation:
+            prices.append(floor_price_eur_per_kwh * opex_inflation_factors[year - 1])
+        else:
+            prices.append(floor_price_eur_per_kwh)
+    return prices
 
 
 def _build_collar_prices(
@@ -105,7 +104,7 @@ def _build_collar_prices(
     duration_years: int,
     inflation_on_ppa: bool,
     goo_premium_eur_per_kwh: float,
-    inflation_rate: float,
+    opex_inflation_factors: list[float],
     lifetime: int,
 ) -> tuple[list[float], list[float], list[float]]:
     """Build per-year fixed, cap, and GoO prices for a PPA Collar scenario.
@@ -122,8 +121,9 @@ def _build_collar_prices(
     for year in range(1, lifetime + 1):
         if year <= duration_years:
             if inflation_on_ppa:
-                floor = inflate_value(floor_eur_per_kwh, inflation_rate, year)
-                cap = inflate_value(cap_eur_per_kwh, inflation_rate, year)
+                factor = opex_inflation_factors[year - 1]
+                floor = floor_eur_per_kwh * factor
+                cap = cap_eur_per_kwh * factor
             else:
                 floor = floor_eur_per_kwh
                 cap = cap_eur_per_kwh
@@ -143,7 +143,7 @@ def _build_baseload_prices(
     duration_years: int,
     inflation_on_ppa: bool,
     goo_premium_eur_per_kwh: float,
-    inflation_rate: float,
+    opex_inflation_factors: list[float],
     lifetime: int,
 ) -> tuple[list[float], list[float]]:
     """Build per-year fixed and GoO prices for a PPA Baseload scenario.
@@ -162,7 +162,7 @@ def _build_baseload_prices(
     for year in range(1, lifetime + 1):
         if year <= duration_years:
             if inflation_on_ppa:
-                price = inflate_value(ppa_price_eur_per_kwh, inflation_rate, year)
+                price = ppa_price_eur_per_kwh * opex_inflation_factors[year - 1]
             else:
                 price = ppa_price_eur_per_kwh
             # For baseload, GoO is baked into fixed price (like pay-as-produced)
@@ -186,7 +186,7 @@ def run_eeg_sensitivity(
     mc_params: MCParams,
     scenario_prices: list[PriceWeatherScenario],
     floor_prices: list[float],
-    inflation_rate: float,
+    opex_inflation_factors: list[float],
     eeg_inflation: bool,
     fixed_price_years: int,
     scenario_pv_timeseries: dict[str, np.ndarray] | None = None,
@@ -208,8 +208,8 @@ def run_eeg_sensitivity(
         Per-scenario spot price arrays for MC.
     floor_prices:
         List of EEG floor prices to sweep (EUR/kWh).
-    inflation_rate:
-        Annual inflation rate as fraction.
+    opex_inflation_factors:
+        Per-year cumulative inflation factors (base = commissioning year).
     eeg_inflation:
         Whether EEG floor price is inflation-adjusted.
     fixed_price_years:
@@ -234,7 +234,7 @@ def run_eeg_sensitivity(
         new_fixed = _build_eeg_fixed_prices(
             floor_price_eur_per_kwh=floor_price,
             lifetime=base_config.lifetime_years,
-            inflation_rate=inflation_rate,
+            opex_inflation_factors=opex_inflation_factors,
             eeg_inflation=eeg_inflation,
             fixed_price_years=fixed_price_years,
         )
@@ -275,7 +275,7 @@ def run_ppa_collar_analysis(
     duration_years: int,
     inflation_on_ppa: bool,
     goo_premium_eur_per_kwh: float,
-    inflation_rate: float,
+    opex_inflation_factors: list[float],
 ) -> SensitivityResult:
     """Run PPA Collar 2D sensitivity analysis.
 
@@ -302,10 +302,8 @@ def run_ppa_collar_analysis(
         Whether PPA prices are inflation-adjusted.
     goo_premium_eur_per_kwh:
         GoO premium in EUR/kWh.
-    inflation_rate:
-        Annual inflation rate as fraction.
-    scenario_pv_timeseries:
-        Optional per-scenario PV timeseries for MC.
+    opex_inflation_factors:
+        Per-year cumulative inflation factors (base = commissioning year).
 
     Returns
     -------
@@ -335,7 +333,7 @@ def run_ppa_collar_analysis(
             duration_years=duration_years,
             inflation_on_ppa=inflation_on_ppa,
             goo_premium_eur_per_kwh=goo_premium_eur_per_kwh,
-            inflation_rate=inflation_rate,
+            opex_inflation_factors=opex_inflation_factors,
             lifetime=base_config.lifetime_years,
         )
 
@@ -378,7 +376,7 @@ def run_ppa_baseload_analysis(
     duration_years: int,
     inflation_on_ppa: bool,
     goo_premium_eur_per_kwh: float,
-    inflation_rate: float,
+    opex_inflation_factors: list[float],
 ) -> SensitivityResult:
     """Run PPA Baseload 2D sensitivity analysis.
 
@@ -407,10 +405,8 @@ def run_ppa_baseload_analysis(
         Whether PPA prices are inflation-adjusted.
     goo_premium_eur_per_kwh:
         GoO premium in EUR/kWh.
-    inflation_rate:
-        Annual inflation rate as fraction.
-    scenario_pv_timeseries:
-        Optional per-scenario PV timeseries for MC.
+    opex_inflation_factors:
+        Per-year cumulative inflation factors (base = commissioning year).
 
     Returns
     -------
@@ -436,7 +432,7 @@ def run_ppa_baseload_analysis(
             duration_years=duration_years,
             inflation_on_ppa=inflation_on_ppa,
             goo_premium_eur_per_kwh=goo_premium_eur_per_kwh,
-            inflation_rate=inflation_rate,
+            opex_inflation_factors=opex_inflation_factors,
             lifetime=base_config.lifetime_years,
         )
 
