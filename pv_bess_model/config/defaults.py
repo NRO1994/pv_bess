@@ -355,6 +355,12 @@ DEFAULT_PERFECT_FORESIGHT_DISCOUNT: float = 0.8
 account for the over-estimation caused by perfect day-ahead price foresight.
 A value of 0.8 means 80 % of the theoretical arbitrage revenue is retained."""
 
+DEFAULT_HEAT_UNMET_PENALTY_EUR_PER_KWH: float = 10.0
+"""Penalty cost in EUR per kWh_th for heat demand not met by the heat pump
+and thermal storage.  A high value ensures the LP only uses backup (unmet)
+heat when the heat pump physically cannot cover the demand on peak days.
+The penalty is applied in the LP objective to keep the problem feasible."""
+
 DEFAULT_PORTFOLIO_LIFETIME_YEARS: int = 25
 """Default project lifetime for portfolio/Systemwert simulations (years)."""
 

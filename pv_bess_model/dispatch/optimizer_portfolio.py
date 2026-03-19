@@ -23,7 +23,7 @@ Base variables (always present):
 
 Conditional blocks (appended in order if present):
   BESS:  charge(T), discharge(T), soc(T+1)
-  HP:    wp_load(T), thermal_soc(T+1)
+  HP:    wp_load(T), thermal_soc(T+1), heat_unmet(T)
   EV:    ev_charge(T), ev_discharge(T), ev_soc(T+1)
 
 Typical usage::
@@ -53,6 +53,7 @@ import numpy as np
 from scipy.optimize import linprog
 
 from pv_bess_model.config.defaults import (
+    DEFAULT_HEAT_UNMET_PENALTY_EUR_PER_KWH,
     DEFAULT_PERFECT_FORESIGHT_DISCOUNT,
     INTERVALS_PER_DAY,
     TIMESTEP_HOURS,
@@ -224,6 +225,7 @@ class PortfolioDailyResult:
     solver_status: str
     wp_load: np.ndarray | None = None
     thermal_soc: np.ndarray | None = None
+    heat_unmet: np.ndarray | None = None
     end_thermal_soc_kwh: float = 0.0
     ev_charge: np.ndarray | None = None
     ev_discharge: np.ndarray | None = None
@@ -338,7 +340,7 @@ def _solve_lp(
     Variable layout (conditionally built):
         Base: [grid_sell(T), grid_buy(T)]
         + BESS: [charge(T), discharge(T), soc(T+1)]
-        + HP:   [wp_load(T), thermal_soc(T+1)]
+        + HP:   [wp_load(T), thermal_soc(T+1), heat_unmet(T)]
         + EV:   [ev_charge(T), ev_discharge(T), ev_soc(T+1)]
 
     Objective (minimize):
@@ -380,11 +382,12 @@ def _solve_lp(
         next_idx += 3 * T + 1
 
     # HP variables (conditional)
-    i_wp = i_tsoc = -1
+    i_wp = i_tsoc = i_hunmet = -1
     if has_hp:
         i_wp = next_idx              # wp_load:       next..next+T-1
         i_tsoc = next_idx + T        # thermal_soc:   next+T..next+2T (T+1 vars)
-        next_idx += 2 * T + 1
+        i_hunmet = next_idx + 2 * T + 1  # heat_unmet: next+2T+1..next+3T
+        next_idx += 3 * T + 1
 
     # EV variables (conditional)
     i_ev_chg = i_ev_dis = i_ev_soc = -1
@@ -424,6 +427,11 @@ def _solve_lp(
         c[i_sell + t] = -prices[t] * discount
         c[i_buy + t] = prices[t]
 
+    # Penalize unmet heat demand so the LP only uses it when physically necessary
+    if has_hp:
+        for t in range(T):
+            c[i_hunmet + t] = DEFAULT_HEAT_UNMET_PENALTY_EUR_PER_KWH
+
     # --- Bounds ---
     bounds: list[tuple[float, float]] = []
     # grid_sell: [0, sell_bound_t] per interval
@@ -460,6 +468,9 @@ def _solve_lp(
         bounds.extend((0.0, wp_max_energy) for _ in range(T))
         # thermal_soc: [0, thermal_storage_kwh]
         bounds.extend((0.0, hp.thermal_storage_kwh) for _ in range(T + 1))
+        # heat_unmet: [0, max demand per interval] – slack for infeasible days
+        for t in range(T):
+            bounds.append((0.0, float(hp.heat_demand_profile[t])))
 
     if has_ev:
         # ev_charge: [0, ev_max_charge] within window, fixed to 0 outside
@@ -514,14 +525,10 @@ def _solve_lp(
     if has_bess:
         eq_rows.append(({i_soc: 1.0}, bess.start_soc_kwh))
 
-    # 4. HP daily energy balance (1 row)
-    if has_hp:
-        row_hp: dict[int, float] = {}
-        for t in range(T):
-            row_hp[i_wp + t] = hp.cop_profile[t]
-        eq_rows.append((row_hp, hp.daily_heat_demand_kwh))
-
-    # 5. Thermal SoC linking (T rows)
+    # 4. Thermal SoC linking (T rows)
+    #    tsoc[t+1] = tsoc[t] + wp_load[t]*cop[t] + heat_unmet[t] - heat_demand[t]
+    #    heat_unmet[t] is a slack variable that absorbs demand the HP cannot cover
+    #    on peak days, preventing LP infeasibility.
     if has_hp:
         for t in range(T):
             eq_rows.append((
@@ -529,15 +536,16 @@ def _solve_lp(
                     i_tsoc + t + 1: 1.0,
                     i_tsoc + t: -1.0,
                     i_wp + t: -hp.cop_profile[t],
+                    i_hunmet + t: -1.0,
                 },
                 -hp.heat_demand_profile[t],
             ))
 
-    # 6. Thermal SoC initial (1 row)
+    # 5. Thermal SoC initial (1 row)
     if has_hp:
         eq_rows.append(({i_tsoc: 1.0}, hp.start_thermal_soc_kwh))
 
-    # 7. EV SoC linking (T rows)
+    # 6. EV SoC linking (T rows)
     #    ev_soc[t+1] = ev_soc[t] + ev_charge[t] - ev_discharge[t]
     if has_ev:
         for t in range(T):
@@ -551,7 +559,7 @@ def _solve_lp(
                 0.0,
             ))
 
-    # 8. EV SoC initial (1 row): ev_soc[0] = start_soc
+    # 7. EV SoC initial (1 row): ev_soc[0] = start_soc
     if has_ev:
         eq_rows.append(({i_ev_soc: 1.0}, ev.start_soc_kwh))
 
@@ -633,10 +641,12 @@ def _solve_lp(
 
     wp_load_out: np.ndarray | None = None
     thermal_soc_out: np.ndarray | None = None
+    heat_unmet_out: np.ndarray | None = None
     end_thermal_soc = 0.0
     if has_hp:
         wp_load_out = x[i_wp: i_wp + T]
         thermal_soc_out = x[i_tsoc: i_tsoc + T + 1]
+        heat_unmet_out = x[i_hunmet: i_hunmet + T]
         end_thermal_soc = float(thermal_soc_out[-1])
 
     ev_charge_out: np.ndarray | None = None
@@ -664,6 +674,7 @@ def _solve_lp(
         solver_status="optimal",
         wp_load=wp_load_out,
         thermal_soc=thermal_soc_out,
+        heat_unmet=heat_unmet_out,
         end_thermal_soc_kwh=end_thermal_soc,
         ev_charge=ev_charge_out,
         ev_discharge=ev_discharge_out,
