@@ -33,6 +33,7 @@ from pv_bess_model.config.defaults import (
 )
 from pv_bess_model.dispatch.optimizer_portfolio import (
     BessFlexParams,
+    HeatPumpFlexParams,
     PortfolioDailyResult,
     PortfolioLPConfig,
     optimize_portfolio_day,
@@ -114,6 +115,8 @@ class PortfolioAnnualResult:
     total_bess_throughput_kwh: float
     bess_capacity_kwh: float
     bess_power_kw: float
+    wp_power_kw: float = 0.0
+    total_wp_electrical_kwh: float = 0.0
 
 
 @dataclass
@@ -130,6 +133,7 @@ class FlexCapacityYear:
 
     bess_capacity_kwh: float
     bess_power_kw: float
+    wp_power_kw: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +204,40 @@ def compute_bess_tranche_capacity(
 
 
 # ---------------------------------------------------------------------------
+# WP capacity model
+# ---------------------------------------------------------------------------
+
+
+def compute_wp_capacity(
+    annual_addition_kw: float,
+    project_year: int,
+    start_year: int = 1,
+) -> float:
+    """Compute cumulative heat pump power for a project year.
+
+    Heat pumps have no degradation — capacity grows linearly.
+
+    Parameters
+    ----------
+    annual_addition_kw:
+        kW of WP power added each year.
+    project_year:
+        Current project year (1-indexed).
+    start_year:
+        First project year in which additions begin (1-indexed, default 1).
+
+    Returns
+    -------
+    float
+        Total installed WP power in kW.
+    """
+    if project_year < start_year or annual_addition_kw <= 0.0:
+        return 0.0
+    n_years = project_year - start_year + 1
+    return annual_addition_kw * n_years
+
+
+# ---------------------------------------------------------------------------
 # Multi-year simulation
 # ---------------------------------------------------------------------------
 
@@ -218,15 +256,23 @@ def run_portfolio_simulation(
     pv_degradation_rate: float,
     load_growth_factor: float = 1.0,
     start_year: int = 1,
+    wp_annual_addition_kw: float = 0.0,
+    wp_cop_profile_base: np.ndarray | None = None,
+    wp_heat_demand_profile_base: np.ndarray | None = None,
+    wp_daily_heat_demand_base: np.ndarray | None = None,
+    wp_thermal_storage_kwh: float = 0.0,
+    wp_start_year: int = 1,
+    wp_base_power_kw: float = 0.0,
 ) -> list[PortfolioAnnualResult]:
-    """Run a multi-year portfolio simulation with annual BESS build-out.
+    """Run a multi-year portfolio simulation with annual flex build-out.
 
     For each project year:
       1. Apply PV degradation to the base PV profile.
       2. Apply load growth to the base load profile.
       3. Compute BESS capacity via tranche model (with degradation).
-      4. Run 365 daily LP optimizations.
-      5. Aggregate daily results into annual totals.
+      4. Compute WP capacity (linear, no degradation).
+      5. Run 365 daily LP optimizations.
+      6. Aggregate daily results into annual totals.
 
     Spot prices are *not* inflated here -- the caller should provide
     already-inflated prices if needed (same base array reused each year
@@ -260,6 +306,20 @@ def run_portfolio_simulation(
         Multiplicative annual load growth factor (e.g. 1.01 = +1%/year).
     start_year:
         First project year when BESS additions begin (1-indexed).
+    wp_annual_addition_kw:
+        WP electrical power added each year (kW). 0 for no WP.
+    wp_cop_profile_base:
+        Base COP profile per interval (length = intervals_per_year).
+    wp_heat_demand_profile_base:
+        Base heat demand profile per interval (kWh_th, length = intervals_per_year).
+    wp_daily_heat_demand_base:
+        Daily heat demand array (kWh_th, length = 365).
+    wp_thermal_storage_kwh:
+        Base thermal storage capacity in kWh_th (scales with WP capacity).
+    wp_start_year:
+        First project year when WP additions begin (1-indexed).
+    wp_base_power_kw:
+        Reference WP power for scaling heat demand and thermal storage.
 
     Returns
     -------
@@ -273,10 +333,20 @@ def run_portfolio_simulation(
         perfect_foresight_discount=config.perfect_foresight_discount,
     )
 
+    # Check if WP is active
+    has_wp = (
+        wp_annual_addition_kw > 0.0
+        and wp_cop_profile_base is not None
+        and wp_heat_demand_profile_base is not None
+        and wp_daily_heat_demand_base is not None
+        and wp_base_power_kw > 0.0
+    )
+
     annual_results: list[PortfolioAnnualResult] = []
 
     # SoC carried across years
     carry_soc_kwh = 0.0
+    carry_thermal_soc_kwh = 0.0
 
     for year in range(1, config.lifetime_years + 1):
         # 1. PV degradation
@@ -314,13 +384,26 @@ def run_portfolio_simulation(
                 start_soc_kwh=start_soc,
             )
 
-        # 4. Run 365 daily LP optimizations
+        # 4. WP capacity (linear, no degradation)
+        wp_power = 0.0
+        wp_scale = 0.0
+        if has_wp:
+            wp_power = compute_wp_capacity(
+                annual_addition_kw=wp_annual_addition_kw,
+                project_year=year,
+                start_year=wp_start_year,
+            )
+            if wp_power > 0.0:
+                wp_scale = wp_power / wp_base_power_kw
+
+        # 5. Run 365 daily LP optimizations
         year_system_cost = 0.0
         year_grid_sell_kwh = 0.0
         year_grid_buy_kwh = 0.0
         year_grid_sell_eur = 0.0
         year_grid_buy_eur = 0.0
         year_bess_throughput = 0.0
+        year_wp_electrical_kwh = 0.0
 
         for day in range(DAYS_PER_YEAR):
             day_start = day * T
@@ -343,12 +426,33 @@ def run_portfolio_simulation(
                     start_soc_kwh=carry_soc_kwh,
                 )
 
+            # Build HP params for this day (or None)
+            hp_params: HeatPumpFlexParams | None = None
+            if has_wp and wp_power > 0.0:
+                cop_day = wp_cop_profile_base[day_start:day_end]
+                heat_demand_day = wp_heat_demand_profile_base[day_start:day_end] * wp_scale
+                daily_heat = wp_daily_heat_demand_base[day] * wp_scale
+                thermal_cap = wp_thermal_storage_kwh * wp_scale
+
+                # Clip thermal SoC carry-over
+                start_tsoc = max(0.0, min(carry_thermal_soc_kwh, thermal_cap))
+
+                hp_params = HeatPumpFlexParams(
+                    power_kw=wp_power,
+                    cop_profile=cop_day,
+                    daily_heat_demand_kwh=daily_heat,
+                    thermal_storage_kwh=thermal_cap,
+                    heat_demand_profile=heat_demand_day,
+                    start_thermal_soc_kwh=start_tsoc,
+                )
+
             result: PortfolioDailyResult = optimize_portfolio_day(
                 pv_production=pv_day,
                 load_demand=load_day,
                 spot_prices=prices_day,
                 bess_params=bess_params,
                 config=lp_config,
+                hp_params=hp_params,
             )
 
             year_system_cost += result.system_cost
@@ -363,9 +467,13 @@ def run_portfolio_simulation(
             year_grid_buy_eur += float(np.sum(result.grid_buy * prices_day))
             year_bess_throughput += float(np.sum(result.bess_discharge))
 
-            carry_soc_kwh = result.end_soc_kwh
+            if result.wp_load is not None:
+                year_wp_electrical_kwh += float(np.sum(result.wp_load))
 
-        # 5. Record annual result
+            carry_soc_kwh = result.end_soc_kwh
+            carry_thermal_soc_kwh = result.end_thermal_soc_kwh
+
+        # 6. Record annual result
         annual_results.append(
             PortfolioAnnualResult(
                 year=year,
@@ -377,16 +485,19 @@ def run_portfolio_simulation(
                 total_bess_throughput_kwh=year_bess_throughput,
                 bess_capacity_kwh=bess_capacity,
                 bess_power_kw=bess_power,
+                wp_power_kw=wp_power,
+                total_wp_electrical_kwh=year_wp_electrical_kwh,
             )
         )
 
         logger.debug(
             "Year %d: system_cost=%.0f EUR, bess=%.0f kW / %.0f kWh, "
-            "sell=%.0f MWh, buy=%.0f MWh",
+            "wp=%.0f kW, sell=%.0f MWh, buy=%.0f MWh",
             year,
             year_system_cost,
             bess_power,
             bess_capacity,
+            wp_power,
             year_grid_sell_kwh / 1000.0,
             year_grid_buy_kwh / 1000.0,
         )

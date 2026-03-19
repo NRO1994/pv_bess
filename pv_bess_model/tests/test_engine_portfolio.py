@@ -10,6 +10,7 @@ from pv_bess_model.dispatch.engine_portfolio import (
     PortfolioAnnualResult,
     PortfolioEngineConfig,
     compute_bess_tranche_capacity,
+    compute_wp_capacity,
     run_portfolio_simulation,
 )
 
@@ -455,3 +456,171 @@ class TestPortfolioSimulation:
         assert results[2].bess_power_kw == pytest.approx(100.0)
         # Year 5: 300 kW (3 tranches)
         assert results[4].bess_power_kw == pytest.approx(300.0)
+
+
+# ---------------------------------------------------------------------------
+# compute_wp_capacity tests
+# ---------------------------------------------------------------------------
+
+
+class TestWpCapacity:
+    """Tests for the WP (heat pump) capacity model."""
+
+    def test_zero_addition(self) -> None:
+        """Zero addition produces zero capacity."""
+        assert compute_wp_capacity(0.0, 5) == 0.0
+
+    def test_linear_growth(self) -> None:
+        """WP capacity grows linearly (no degradation)."""
+        for year in range(1, 6):
+            assert compute_wp_capacity(100.0, year) == pytest.approx(100.0 * year)
+
+    def test_start_year_delay(self) -> None:
+        """WP capacity is zero before start_year."""
+        assert compute_wp_capacity(100.0, 2, start_year=3) == 0.0
+        assert compute_wp_capacity(100.0, 3, start_year=3) == pytest.approx(100.0)
+        assert compute_wp_capacity(100.0, 5, start_year=3) == pytest.approx(300.0)
+
+
+# ---------------------------------------------------------------------------
+# Portfolio simulation with WP tests
+# ---------------------------------------------------------------------------
+
+
+class TestPortfolioSimulationWithWP:
+    """Tests for portfolio simulation with heat pump flexibility."""
+
+    @pytest.fixture
+    def wp_profiles(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Base WP profiles: COP, heat demand (interval), daily heat demand."""
+        n = 365 * 24
+        cop = np.full(n, 3.0)
+        heat_demand = np.full(n, 2.0)  # 2 kWh_th per hour
+        daily_heat = np.full(365, 48.0)  # 24 × 2 = 48 kWh_th/day
+        return cop, heat_demand, daily_heat
+
+    def test_wp_power_grows_over_years(
+        self,
+        engine_config_short: PortfolioEngineConfig,
+        flat_pv_profile: np.ndarray,
+        flat_load_profile: np.ndarray,
+        flat_prices: np.ndarray,
+        wp_profiles: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """WP power should grow linearly each year."""
+        cop, heat_demand, daily_heat = wp_profiles
+        results = run_portfolio_simulation(
+            config=engine_config_short,
+            pv_profile_base=flat_pv_profile,
+            load_profile_base=flat_load_profile,
+            spot_prices_base=flat_prices,
+            annual_addition_kw=0.0,
+            e_to_p_ratio=2.0,
+            bess_rte=0.88,
+            bess_min_soc_pct=10.0,
+            bess_max_soc_pct=90.0,
+            bess_degradation_rate=0.0,
+            pv_degradation_rate=0.0,
+            wp_annual_addition_kw=50.0,
+            wp_cop_profile_base=cop,
+            wp_heat_demand_profile_base=heat_demand,
+            wp_daily_heat_demand_base=daily_heat,
+            wp_thermal_storage_kwh=10.0,
+            wp_base_power_kw=50.0,
+        )
+        for r in results:
+            assert r.wp_power_kw == pytest.approx(50.0 * r.year)
+
+    def test_wp_electrical_consumption_grows(
+        self,
+        engine_config_short: PortfolioEngineConfig,
+        flat_pv_profile: np.ndarray,
+        flat_load_profile: np.ndarray,
+        flat_prices: np.ndarray,
+        wp_profiles: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """WP electrical consumption should increase as capacity grows."""
+        cop, heat_demand, daily_heat = wp_profiles
+        results = run_portfolio_simulation(
+            config=engine_config_short,
+            pv_profile_base=flat_pv_profile,
+            load_profile_base=flat_load_profile,
+            spot_prices_base=flat_prices,
+            annual_addition_kw=0.0,
+            e_to_p_ratio=2.0,
+            bess_rte=0.88,
+            bess_min_soc_pct=10.0,
+            bess_max_soc_pct=90.0,
+            bess_degradation_rate=0.0,
+            pv_degradation_rate=0.0,
+            wp_annual_addition_kw=50.0,
+            wp_cop_profile_base=cop,
+            wp_heat_demand_profile_base=heat_demand,
+            wp_daily_heat_demand_base=daily_heat,
+            wp_thermal_storage_kwh=10.0,
+            wp_base_power_kw=50.0,
+        )
+        # More capacity → more electrical consumption
+        for i in range(1, len(results)):
+            assert results[i].total_wp_electrical_kwh > results[i - 1].total_wp_electrical_kwh
+
+    def test_wp_start_year_delays_consumption(
+        self,
+        engine_config_short: PortfolioEngineConfig,
+        flat_pv_profile: np.ndarray,
+        flat_load_profile: np.ndarray,
+        flat_prices: np.ndarray,
+        wp_profiles: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """WP start_year=3 means no WP consumption in years 1-2."""
+        cop, heat_demand, daily_heat = wp_profiles
+        results = run_portfolio_simulation(
+            config=engine_config_short,
+            pv_profile_base=flat_pv_profile,
+            load_profile_base=flat_load_profile,
+            spot_prices_base=flat_prices,
+            annual_addition_kw=0.0,
+            e_to_p_ratio=2.0,
+            bess_rte=0.88,
+            bess_min_soc_pct=10.0,
+            bess_max_soc_pct=90.0,
+            bess_degradation_rate=0.0,
+            pv_degradation_rate=0.0,
+            wp_annual_addition_kw=50.0,
+            wp_cop_profile_base=cop,
+            wp_heat_demand_profile_base=heat_demand,
+            wp_daily_heat_demand_base=daily_heat,
+            wp_thermal_storage_kwh=10.0,
+            wp_base_power_kw=50.0,
+            wp_start_year=3,
+        )
+        assert results[0].wp_power_kw == 0.0
+        assert results[0].total_wp_electrical_kwh == 0.0
+        assert results[1].wp_power_kw == 0.0
+        assert results[2].wp_power_kw == pytest.approx(50.0)
+        assert results[2].total_wp_electrical_kwh > 0.0
+
+    def test_no_wp_params_backward_compat(
+        self,
+        engine_config_short: PortfolioEngineConfig,
+        flat_pv_profile: np.ndarray,
+        flat_load_profile: np.ndarray,
+        flat_prices: np.ndarray,
+    ) -> None:
+        """Without WP params, simulation should work as before."""
+        results = run_portfolio_simulation(
+            config=engine_config_short,
+            pv_profile_base=flat_pv_profile,
+            load_profile_base=flat_load_profile,
+            spot_prices_base=flat_prices,
+            annual_addition_kw=0.0,
+            e_to_p_ratio=2.0,
+            bess_rte=0.88,
+            bess_min_soc_pct=10.0,
+            bess_max_soc_pct=90.0,
+            bess_degradation_rate=0.0,
+            pv_degradation_rate=0.0,
+        )
+        for r in results:
+            assert r.wp_power_kw == 0.0
+            assert r.total_wp_electrical_kwh == 0.0
