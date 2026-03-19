@@ -38,13 +38,13 @@ Hinzufügen von Flexibilitäten erzeugt wird.
 
 ### Was direkt wiederverwendbar ist
 
-| Bestehende Komponente | Nutzung im Meta-Modell |
-|---|---|
-| `dispatch/optimizer.py` (Daily LP) | Strukturvorlage für den neuen Portfolio-Optimizer |
-| `dispatch/engine.py` (Multi-Year Loop) | Vorlage für 25-Jahres-Simulation |
-| `market/price_loader.py` | Spotpreis-Zeitreihen laden und auf Projektlaufzeit strecken |
-| `pv/pvgis_client.py`, `pv/timeseries.py` | PV-Erzeugungsprofile (P50/P90) + Temperaturdaten |
-| `finance/inflation.py` | Inflation auf Preise |
+| Bestehende Komponente                    | Nutzung im Meta-Modell                                      |
+|------------------------------------------|-------------------------------------------------------------|
+| `dispatch/optimizer.py` (Daily LP)       | Strukturvorlage für den neuen Portfolio-Optimizer           |
+| `dispatch/engine.py` (Multi-Year Loop)   | Vorlage für 25-Jahres-Simulation                            |
+| `market/price_loader.py`                 | Spotpreis-Zeitreihen laden und auf Projektlaufzeit strecken |
+| `pv/pvgis_client.py`, `pv/timeseries.py` | PV-Erzeugungsprofile (P50/P90) + Temperaturdaten            |
+| `finance/inflation.py`                   | Inflation auf Preise                                        |
 
 ### Was neu gebaut werden muss
 
@@ -131,6 +131,7 @@ Variablen-Sets im LP abgebildet (z.B. `bess_1_charge[t]`, `bess_2_charge[t]`).
 
 Luft-Wasser und Wasser-Wasser verwenden identische LP-Constraints. Der Unterschied liegt ausschließlich
 in den Input-Parametern:
+
 - COP-Nennwert und Referenztemperatur (bestimmt die temperaturabhängige COP-Kurve)
 - Thermischer Speicher in kWh_th (bestimmt `max_shift_hours` implizit)
 
@@ -233,6 +234,13 @@ Alle Tranchen werden im LP als ein aggregierter BESS modelliert. Die Gesamtkapaz
 
 ## 6. SLP-Aufbereitung (Interne Methode)
 
+--> Anpassungen: Die SLP Daten liegen in .data/bdew_profile_2025.json. Die Profile müssen nicht mehr jährlich gebildet
+werden, sondern nur einmalig, basierend auf dem Wetterjahr des Preisszenarios. Cache das Ergebnis in.data/bdew_cache um
+die Berechnungen für neue Szenarien zu beschleunigen. Der Cache muss nur erneuert werden, wenn das Änderungsdatum der
+bdew_profile_2025.json aktueller ist, als das des caches.
+Die Vorgehensweise zur Dynamisierung und Anwendung ist in
+.docs/2025-03-17_AWH_Aktuallisierte_SLP_Strom_2025_Veröffentlichung.pdf zu entnehmen.
+
 ### Anforderung
 
 Die BDEW-SLP-Daten müssen **jahresabhängig** aufbereitet werden, da Tagestypen (Werktag/Samstag/Sonntag/
@@ -316,6 +324,7 @@ Für jeden Tag:
 ```
 
 **Auswirkung**:
+
 - 4 LP-Solves pro Tag statt 1 → **4× mehr Rechenzeit**
 - 28 Punkte × 25 Jahre × 365 Tage × 4 Solves = ~1M LP-Solves → ca. 30-35 min (parallelisiert: ~8-10 min)
 - Das ist grenzwertig für den MVP, aber machbar
@@ -388,7 +397,10 @@ bestehenden Modell.
         "type": "pv",
         "name": "PV Aggregiert",
         "peak_power_kwp": 19500,
-        "location": {"latitude": 53.55, "longitude": 9.99},
+        "location": {
+          "latitude": 53.55,
+          "longitude": 9.99
+        },
         "degradation_rate_pct_per_year": 0.4,
         "system_loss_pct": 14.0,
         "mounting_type": "free",
@@ -412,8 +424,19 @@ bestehenden Modell.
     {
       "type": "bess",
       "name": "Grossspeicher",
-      "annual_addition_kw": [0, 20, 50, 100, 200, 500],
-      "e_to_p_ratio_hours": [1, 2, 4],
+      "annual_addition_kw": [
+        0,
+        20,
+        50,
+        100,
+        200,
+        500
+      ],
+      "e_to_p_ratio_hours": [
+        1,
+        2,
+        4
+      ],
       "round_trip_efficiency_pct": 88.0,
       "min_soc_pct": 10.0,
       "max_soc_pct": 90.0,
@@ -422,7 +445,13 @@ bestehenden Modell.
     {
       "type": "heat_pump",
       "name": "Fernwaerme-WP Luft-Wasser",
-      "annual_addition_kw": [0, 50, 100, 250, 500],
+      "annual_addition_kw": [
+        0,
+        50,
+        100,
+        250,
+        500
+      ],
       "cop_nominal": 3.5,
       "cop_reference_temp_c": 7.0,
       "annual_thermal_demand_mwh": 15000,
@@ -431,7 +460,12 @@ bestehenden Modell.
     {
       "type": "heat_pump",
       "name": "Dezentrale Haus-WP",
-      "annual_addition_kw": [0, 25, 50, 100],
+      "annual_addition_kw": [
+        0,
+        25,
+        50,
+        100
+      ],
       "cop_nominal": 4.0,
       "cop_reference_temp_c": 7.0,
       "annual_thermal_demand_mwh": 5000,
@@ -440,9 +474,18 @@ bestehenden Modell.
     {
       "type": "ev_charging",
       "name": "Wallbox-Fleet V2G",
-      "annual_addition_kw": [0, 20, 50, 100, 200],
+      "annual_addition_kw": [
+        0,
+        20,
+        50,
+        100,
+        200
+      ],
       "daily_energy_demand_kwh": 5000,
-      "time_window": {"arrival_hour": 17, "departure_hour": 7},
+      "time_window": {
+        "arrival_hour": 17,
+        "departure_hour": 7
+      },
       "v2g_enabled": true,
       "v2g_rte_pct": 90.0,
       "min_departure_soc_pct": 80.0,
@@ -451,15 +494,31 @@ bestehenden Modell.
     {
       "type": "ev_charging",
       "name": "Wallbox-Fleet unidirektional",
-      "annual_addition_kw": [0, 20, 50, 100, 200],
+      "annual_addition_kw": [
+        0,
+        20,
+        50,
+        100,
+        200
+      ],
       "daily_energy_demand_kwh": 5000,
-      "time_window": {"arrival_hour": 17, "departure_hour": 7},
+      "time_window": {
+        "arrival_hour": 17,
+        "departure_hour": 7
+      },
       "v2g_enabled": false,
       "min_departure_soc_pct": 80.0,
       "usable_battery_kwh_per_kw": 3.0
     }
   ],
   "price_inputs": {
+    "inflation_timeseries": {
+      "csv_path": "/test.csv",
+      "inflation_column": "I",
+      "year_column": "Y",
+      "separator": ",",
+      "decimal": "."
+    },
     "scenarios": [
       {
         "name": "Central",
@@ -503,19 +562,21 @@ bestehenden Modell.
         "csv_timestamp_column": "timestamp",
         "csv_timestamp_format": "%Y-%m-%dT%H:%M:%S"
       }
-    ],
-    "price_unit": "eur_per_mwh",
-    "inflation_rate": 0.02
+    ]
   }
 }
 ```
 
+--> Nutze ebenfalls die jährliche Inflation aus dem Basis Modell.
 Beachte:
+
 - `generation` und `load` sind Listen, erweiterbar um weitere Erzeuger/Lastgruppen
 - `flexibilities` erlaubt mehrere Instanzen desselben Typs (z.B. zwei `heat_pump`-Einträge)
 - `price_inputs.scenarios[]` ist identisch zur bestehenden Struktur aus dem PV+BESS-Modell
 - Monte Carlo ist komplett entfernt (Post-MVP)
 - `weather_year` in den Preisszenarien steuert, für welches Kalenderjahr das SLP generiert wird
+  --> Die Listen von Generation, Load, und Flexibilities sollen ebenfalls die Möglichkeit besitzen, die Zubauraten erst
+  ab Simulationsjahr X starten zu lassen.
 
 ---
 
@@ -557,6 +618,7 @@ Phase 7: Output (CSV + HTML-Dashboard)                      ── Ergebnisdarst
 ```
 
 Abhängigkeitsgraph:
+
 ```
 Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4 ──→ Phase 7
                   │           │
@@ -577,6 +639,7 @@ Phase 7 kann teilweise parallel zu Phase 4–6 entwickelt werden (CSV-Skeleton).
 **Voraussetzungen:** Keine (erster Schritt).
 
 **Wiederverwendung aus bestehender Codebase:**
+
 - `config/schema.py` → Vorlage für JSON-Validierung (jsonschema-Library)
 - `config/loader.py` → `PriceWeatherScenario`-Dataclass und `load_price_csv()` direkt wiederverwendbar
 - `config/defaults.py` → Zeitkonstanten (INTERVALS_PER_DAY=96, TIMESTEP_HOURS=0.25) bereits vorhanden
@@ -608,6 +671,7 @@ Neues Schema für die Portfolio-Input-Datei. Separates Schema, nicht das bestehe
 ```
 
 Validiert:
+
 - `meta_model`-Block (name, baseline_year, lifetime, output)
 - `portfolio.generation[]`-Liste (type=pv, peak_power_kwp, location, etc.)
 - `portfolio.load[]`-Liste (type=slp, slp_type, customer_count, annual_consumption, growth_factor)
@@ -632,6 +696,7 @@ class GenerationConfig:
     longitude: float
     # ... (alle PV-Felder aus JSON)
 
+
 @dataclass
 class LoadGroupConfig:
     type: str  # "slp"
@@ -642,12 +707,14 @@ class LoadGroupConfig:
     annual_consumption_kwh_per_customer: float
     annual_growth_factor: float
 
+
 @dataclass
 class FlexConfig:
     type: str  # "bess" | "heat_pump" | "ev_charging"
     name: str
     annual_addition_kw: list[float]
     # ... typspezifische Felder
+
 
 @dataclass
 class PortfolioScenarioConfig:
@@ -687,6 +754,7 @@ pv_bess_model/portfolio/
 ```
 
 **Tests für Phase 1:**
+
 - `tests/test_schema_portfolio.py` – JSON-Validierung (gültige/ungültige Inputs)
 - `tests/test_loader_portfolio.py` – Laden und Parsen einer Beispiel-JSON
 
@@ -699,6 +767,7 @@ pv_bess_model/portfolio/
 **Voraussetzungen:** Phase 1 (Loader kennt Pfade und Konfiguration).
 
 **Wiederverwendung:**
+
 - `pv/pvgis_client.py` → PVGIS-Abruf (muss um T2m-Temperatur erweitert werden)
 - `pv/timeseries.py` → `hourly_to_quarter_hourly()` direkt wiederverwendbar
 - `market/price_loader.py` → `load_price_csv()` direkt wiederverwendbar
@@ -725,10 +794,10 @@ def fetch_hourly_data(...) -> dict:
 # pv_bess_model/portfolio/load_profiles.py
 
 def load_bdew_slp(
-    excel_path: str,
-    slp_type: str,        # "H0"
-    year: int,            # Kalenderjahr (für Tagestyp-Zuordnung)
-    temperature: np.ndarray,  # 8760 Stunden-Temperaturen aus PVGIS
+        excel_path: str,
+        slp_type: str,  # "H0"
+        year: int,  # Kalenderjahr (für Tagestyp-Zuordnung)
+        temperature: np.ndarray,  # 8760 Stunden-Temperaturen aus PVGIS
 ) -> np.ndarray:
     """
     Erzeugt 35.040 normierte Viertelstundenwerte (auf 1.000 kWh/a).
@@ -741,13 +810,15 @@ def load_bdew_slp(
     5. Cache: .data/slp_cache/{slp_type}_{year}.npy
     """
 
+
 def scale_slp(
-    slp_normalized: np.ndarray,  # 35.040 Werte, normiert auf 1.000 kWh/a
-    annual_consumption_kwh: float,
-    customer_count: int,
+        slp_normalized: np.ndarray,  # 35.040 Werte, normiert auf 1.000 kWh/a
+        annual_consumption_kwh: float,
+        customer_count: int,
 ) -> np.ndarray:
     """Skaliert SLP auf tatsächlichen Verbrauch."""
     return slp_normalized * (annual_consumption_kwh / 1000.0) * customer_count
+
 
 def generate_calendar(year: int) -> list[str]:
     """Erzeugt Tagestyp-Kalender: 365 Einträge ('W', 'SA', 'SO')."""
@@ -755,11 +826,13 @@ def generate_calendar(year: int) -> list[str]:
 ```
 
 **Offene Frage (muss VOR Implementierung geklärt werden):**
+
 - Welche BDEW-Excel-Datei? Format? Bereits vorhanden?
 - Zeitzone: UTC oder MEZ/MESZ? (Preise sind UTC, SLP typisch MEZ)
 
 **Dateien:** `pv_bess_model/portfolio/load_profiles.py` (neu)
 **Tests:** `tests/test_load_profiles.py` (neu)
+
 - Test: Normiertes SLP summiert sich auf 1.000 kWh
 - Test: Korrekte Tagestyp-Zuordnung (Feiertag = Sonntag)
 - Test: Skalierung mit customer_count und annual_consumption
@@ -771,9 +844,9 @@ def generate_calendar(year: int) -> list[str]:
 # pv_bess_model/portfolio/heat_demand.py
 
 def compute_heat_demand(
-    temperature_hourly: np.ndarray,   # 8760 Stunden-Temperaturen (°C)
-    annual_thermal_demand_mwh: float,  # Jahres-Wärmebedarf in MWh
-    heizgrenze_c: float = 15.0,       # Heizgrenztemperatur
+        temperature_hourly: np.ndarray,  # 8760 Stunden-Temperaturen (°C)
+        annual_thermal_demand_mwh: float,  # Jahres-Wärmebedarf in MWh
+        heizgrenze_c: float = 15.0,  # Heizgrenztemperatur
 ) -> np.ndarray:
     """
     Gradtagszahl-basiertes Wärmelastprofil (35.040 Viertelstundenwerte in kWh_th).
@@ -783,11 +856,12 @@ def compute_heat_demand(
     3. Expansion: Stunde → 4 Viertelstunden (÷4)
     """
 
+
 def compute_cop(
-    temperature_hourly: np.ndarray,
-    cop_nominal: float,
-    cop_reference_temp_c: float,
-    temp_coefficient: float = 0.025,
+        temperature_hourly: np.ndarray,
+        cop_nominal: float,
+        cop_reference_temp_c: float,
+        temp_coefficient: float = 0.025,
 ) -> np.ndarray:
     """
     COP-Kennlinie (vereinfacht linear):
@@ -799,6 +873,7 @@ def compute_cop(
 
 **Dateien:** `pv_bess_model/portfolio/heat_demand.py` (neu)
 **Tests:** `tests/test_heat_demand.py` (neu)
+
 - Test: Wärmebedarf = 0 bei T > Heizgrenze
 - Test: Jahressumme = annual_thermal_demand (Energieerhaltung)
 - Test: COP steigt mit Temperatur
@@ -814,8 +889,8 @@ Neue Hilfsfunktion in `portfolio/` die alle `generation[]`-Einträge aggregiert:
 # pv_bess_model/portfolio/generation.py  (oder in system_value.py)
 
 def build_aggregated_pv_profile(
-    generation_configs: list[GenerationConfig],
-    weather_year: int,
+        generation_configs: list[GenerationConfig],
+        weather_year: int,
 ) -> np.ndarray:
     """
     Für jeden Erzeuger: PVGIS-Daten holen, quarter-hourly konvertieren.
@@ -835,6 +910,7 @@ def build_aggregated_pv_profile(
 **Voraussetzungen:** Phase 2 (alle Zeitreihen verfügbar).
 
 **Wiederverwendung:**
+
 - `dispatch/optimizer.py` → Strukturvorlage für LP-Aufbau (scipy.optimize.linprog, HiGHS)
 - `dispatch/engine.py` → `DispatchEngineConfig`-Muster für Konfiguration
 
@@ -846,10 +922,10 @@ Einfachste Berechnung – kein LP nötig:
 # pv_bess_model/portfolio/system_value.py
 
 def compute_world_a(
-    pv_profile: np.ndarray,      # 35.040 kWh (aggregierte PV-Erzeugung)
-    load_profile: np.ndarray,    # 35.040 kWh (aggregierte Last)
-    spot_prices: np.ndarray,     # 35.040 €/kWh
-    timestep_hours: float = 0.25,
+        pv_profile: np.ndarray,  # 35.040 kWh (aggregierte PV-Erzeugung)
+        load_profile: np.ndarray,  # 35.040 kWh (aggregierte Last)
+        spot_prices: np.ndarray,  # 35.040 €/kWh
+        timestep_hours: float = 0.25,
 ) -> WorldAResult:
     """
     Netto-Position pro Viertelstunde:
@@ -864,6 +940,7 @@ def compute_world_a(
 ```
 
 **Tests:**
+
 - Test: Reine PV (keine Last) → System-Erlös = Σ(pv × spot)
 - Test: Reine Last (keine PV) → Systemkosten = Σ(last × spot)
 - Test: PV = Last → Systemkosten = 0
@@ -884,6 +961,7 @@ class PortfolioLPConfig:
     intervals_per_day: int  # 96
     perfect_foresight_discount: float
 
+
 @dataclass
 class BessFlexParams:
     """BESS-Parameter für das Portfolio-LP."""
@@ -894,23 +972,25 @@ class BessFlexParams:
     max_soc_pct: float
     start_soc_kwh: float
 
+
 @dataclass
 class PortfolioDailyResult(TypedDict):
     """Ergebnis eines täglichen LP-Solves."""
-    grid_sell: np.ndarray       # 96 Werte
-    grid_buy: np.ndarray        # 96 Werte
-    bess_charge: np.ndarray     # 96 Werte
+    grid_sell: np.ndarray  # 96 Werte
+    grid_buy: np.ndarray  # 96 Werte
+    bess_charge: np.ndarray  # 96 Werte
     bess_discharge: np.ndarray  # 96 Werte
-    bess_soc: np.ndarray        # 97 Werte (inkl. End-SoC)
-    system_cost: float          # Tages-Systemkosten
-    daily_revenue: float        # Tages-Erlös
+    bess_soc: np.ndarray  # 97 Werte (inkl. End-SoC)
+    system_cost: float  # Tages-Systemkosten
+    daily_revenue: float  # Tages-Erlös
+
 
 def optimize_portfolio_day(
-    pv_production: np.ndarray,      # 96 kWh-Werte
-    load_demand: np.ndarray,        # 96 kWh-Werte
-    spot_prices: np.ndarray,        # 96 €/kWh-Werte
-    bess_params: BessFlexParams | None,
-    config: PortfolioLPConfig,
+        pv_production: np.ndarray,  # 96 kWh-Werte
+        load_demand: np.ndarray,  # 96 kWh-Werte
+        spot_prices: np.ndarray,  # 96 €/kWh-Werte
+        bess_params: BessFlexParams | None,
+        config: PortfolioLPConfig,
 ) -> PortfolioDailyResult:
     """
     LP-Formulierung:
@@ -939,6 +1019,7 @@ def optimize_portfolio_day(
 ```
 
 **Wichtiger Unterschied zum bestehenden Optimizer:**
+
 - Bestehendes Modell: Netzanschluss-Limit, Green/Grey-Mode, Floor/Cap-Preise, GoO
 - Portfolio-LP: Keine Netzanschluss-Limitierung, kein Green/Grey, keine PPA/EEG
 - Portfolio-LP: `perfect_foresight_discount` als Skalierungsfaktor auf Sell-Erlöse
@@ -946,6 +1027,7 @@ def optimize_portfolio_day(
 
 **Dateien:** `pv_bess_model/dispatch/optimizer_portfolio.py` (neu)
 **Tests:** `tests/test_optimizer_portfolio.py` (neu)
+
 - Test: Ohne BESS (bess_params=None) → Ergebnis = Welt-A
 - Test: BESS vorhanden, alle Preise gleich → keine Arbitrage (charge=0, discharge=0)
 - Test: BESS vorhanden, Preissprung → Arbitrage (laden bei niedrigem Preis, entladen bei hohem)
@@ -963,6 +1045,7 @@ def optimize_portfolio_day(
 **Voraussetzungen:** Phase 3 (Portfolio-LP funktioniert für einzelne Tage).
 
 **Wiederverwendung:**
+
 - `dispatch/engine.py` → Vorlage für Multi-Year-Loop (Degradation, Inflation, SoC-Kopplung)
 - `pv/degradation.py` → `apply_degradation()` für PV
 - `finance/inflation.py` → `inflate_value()` für Preise
@@ -982,6 +1065,7 @@ class PortfolioEngineConfig:
     intervals_per_year: int
     perfect_foresight_discount: float
 
+
 @dataclass
 class PortfolioAnnualResult:
     """Ergebnis eines Simulationsjahres."""
@@ -992,6 +1076,7 @@ class PortfolioAnnualResult:
     total_bess_throughput_kwh: float
     # ... je nach Flex-Typ
 
+
 @dataclass
 class FlexCapacityYear:
     """Flex-Kapazitäten für ein Projektjahr (nach Zubau + Degradation)."""
@@ -1000,11 +1085,12 @@ class FlexCapacityYear:
     # wp_power_kw: float        # Phase 5
     # ev_power_kw: float        # Phase 6
 
+
 def compute_bess_tranche_capacity(
-    annual_addition_kw: float,
-    e_to_p_ratio: float,
-    project_year: int,          # 1-basiert
-    degradation_rate: float,
+        annual_addition_kw: float,
+        e_to_p_ratio: float,
+        project_year: int,  # 1-basiert
+        degradation_rate: float,
 ) -> tuple[float, float]:
     """
     Tranchenmodell: Jede jährliche Zubau-Tranche degradiert unabhängig.
@@ -1015,16 +1101,17 @@ def compute_bess_tranche_capacity(
     Returns: (total_power_kw, total_capacity_kwh)
     """
 
+
 def run_portfolio_simulation(
-    config: PortfolioEngineConfig,
-    pv_profile_base: np.ndarray,      # 35.040 kWh (Basis-Jahr)
-    load_profile_base: np.ndarray,    # 35.040 kWh (Basis-Jahr)
-    spot_prices_base: np.ndarray,     # 35.040 €/kWh (Basis-Jahr)
-    flex_config: FlexConfig,
-    annual_addition_kw: float,        # Konkreter Zubau-Punkt
-    pv_degradation_rate: float,
-    load_growth_factor: float,
-    inflation_rate: float,
+        config: PortfolioEngineConfig,
+        pv_profile_base: np.ndarray,  # 35.040 kWh (Basis-Jahr)
+        load_profile_base: np.ndarray,  # 35.040 kWh (Basis-Jahr)
+        spot_prices_base: np.ndarray,  # 35.040 €/kWh (Basis-Jahr)
+        flex_config: FlexConfig,
+        annual_addition_kw: float,  # Konkreter Zubau-Punkt
+        pv_degradation_rate: float,
+        load_growth_factor: float,
+        inflation_rate: float,
 ) -> list[PortfolioAnnualResult]:
     """
     25-Jahres-Simulation:
@@ -1040,6 +1127,7 @@ def run_portfolio_simulation(
 
 **Dateien:** `pv_bess_model/dispatch/engine_portfolio.py` (neu)
 **Tests:** `tests/test_engine_portfolio.py` (neu)
+
 - Test: 1-Jahres-Simulation ohne Flex = Welt A
 - Test: Zubau 100 kW/a → Jahr 5 hat 500 kW (ohne Degradation)
 - Test: Tranchenmodell: Gesamtkapazität < naive_kW bei Degradation > 0
@@ -1058,25 +1146,27 @@ class SystemValuePoint:
     flex_name: str
     flex_type: str
     annual_addition_kw: float
-    e_to_p_ratio: float | None       # Nur BESS
+    e_to_p_ratio: float | None  # Nur BESS
     cumulative_system_value_eur: float  # Σ_jahre [cost_A(j) - cost_B(j)]
-    annual_system_values: list[float]   # Pro-Jahr-Werte
+    annual_system_values: list[float]  # Pro-Jahr-Werte
     marginal_value_eur_per_kw_a: float  # Grenznutzen
+
 
 @dataclass
 class SystemValueResult:
     """Gesamtergebnis der Enumeration."""
-    world_a_annual_costs: list[float]   # 25 Jahres-Systemkosten ohne Flex
-    points: list[SystemValuePoint]      # Alle berechneten Punkte
+    world_a_annual_costs: list[float]  # 25 Jahres-Systemkosten ohne Flex
+    points: list[SystemValuePoint]  # Alle berechneten Punkte
+
 
 def run_enumeration(
-    config: PortfolioEngineConfig,
-    pv_profiles: dict[str, np.ndarray],     # Pro Preisszenario
-    load_profiles: dict[str, np.ndarray],   # Pro Preisszenario (SLP+Wetterjahr)
-    spot_prices: dict[str, np.ndarray],     # Pro Preisszenario
-    flexibilities: list[FlexConfig],
-    central_scenario: str,
-    **kwargs,
+        config: PortfolioEngineConfig,
+        pv_profiles: dict[str, np.ndarray],  # Pro Preisszenario
+        load_profiles: dict[str, np.ndarray],  # Pro Preisszenario (SLP+Wetterjahr)
+        spot_prices: dict[str, np.ndarray],  # Pro Preisszenario
+        flexibilities: list[FlexConfig],
+        central_scenario: str,
+        **kwargs,
 ) -> SystemValueResult:
     """
     Enumeration aller Flex × Zubau-Rate × E/P-Ratio Kombinationen.
@@ -1098,7 +1188,7 @@ def run_enumeration(
 # pv_bess_model/portfolio/marginal_value.py
 
 def compute_marginal_values(
-    points: list[SystemValuePoint],
+        points: list[SystemValuePoint],
 ) -> list[MarginalValuePoint]:
     """
     Grenznutzen = ΔSystemwert / ΔKapazität
@@ -1111,11 +1201,13 @@ def compute_marginal_values(
 ```
 
 **Dateien:**
+
 - `pv_bess_model/portfolio/system_value.py` (erweitern)
 - `pv_bess_model/portfolio/marginal_value.py` (neu)
 - `pv_bess_model/dispatch/engine_portfolio.py` (erweitern)
 
 **Tests:**
+
 - Test: Systemwert bei Zubau=0 ist 0
 - Test: Systemwert ist monoton steigend mit Zubau (bei positiven Preisspreads)
 - Test: Grenznutzen ist monoton fallend (sinkender Grenzertrag)
@@ -1137,10 +1229,10 @@ def compute_marginal_values(
 @dataclass
 class HeatPumpFlexParams:
     """Wärmepumpe-Parameter für das Portfolio-LP."""
-    power_kw: float                 # Elektrische Nennleistung
-    cop_profile: np.ndarray         # 96 COP-Werte (temperaturabhängig, pro Tag)
-    daily_heat_demand_kwh: float    # Tages-Wärmebedarf in kWh_th
-    thermal_storage_kwh: float      # Thermischer Speicher in kWh_th
+    power_kw: float  # Elektrische Nennleistung
+    cop_profile: np.ndarray  # 96 COP-Werte (temperaturabhängig, pro Tag)
+    daily_heat_demand_kwh: float  # Tages-Wärmebedarf in kWh_th
+    thermal_storage_kwh: float  # Thermischer Speicher in kWh_th
 ```
 
 #### Schritt 5.2: WP-Variablen und Constraints im LP
@@ -1169,6 +1261,7 @@ Der Optimizer verschiebt WP-Laufzeiten in günstige Stunden.
 
 **Dateien:** `pv_bess_model/dispatch/optimizer_portfolio.py` (erweitern)
 **Tests:** `tests/test_optimizer_portfolio.py` (erweitern)
+
 - Test: Ohne WP → Ergebnis wie Phase 3
 - Test: WP ohne thermischen Speicher → WP läuft proportional zum Wärmebedarf (keine Verschiebung)
 - Test: WP mit thermischem Speicher → WP verschiebt Last in günstige Stunden
@@ -1178,6 +1271,7 @@ Der Optimizer verschiebt WP-Laufzeiten in günstige Stunden.
 #### Schritt 5.3: WP-Zubau in Engine
 
 Erweiterung von `engine_portfolio.py`:
+
 - WP hat keinen Kapazitätsverlust (keine Degradation)
 - Zubau: `wp_power_year_n = annual_addition_kw × n`
 - Wärmebedarf skaliert mit installierter WP-Kapazität
@@ -1199,14 +1293,14 @@ Kann **parallel zu Phase 5** entwickelt werden.
 @dataclass
 class EVFlexParams:
     """EV/Wallbox-Parameter für das Portfolio-LP."""
-    power_kw: float                   # Ladeleistung
-    daily_energy_demand_kwh: float    # Tages-Energiebedarf der Flotte
-    usable_battery_kwh: float         # Nutzbare Batterie-Kapazität der Flotte
-    arrival_interval: int             # Ankunft (0-95)
-    departure_interval: int           # Abfahrt (0-95)
+    power_kw: float  # Ladeleistung
+    daily_energy_demand_kwh: float  # Tages-Energiebedarf der Flotte
+    usable_battery_kwh: float  # Nutzbare Batterie-Kapazität der Flotte
+    arrival_interval: int  # Ankunft (0-95)
+    departure_interval: int  # Abfahrt (0-95)
     v2g_enabled: bool
-    v2g_rte: float                    # V2G Round-Trip-Efficiency
-    min_departure_soc_pct: float      # Mindest-SoC bei Abfahrt
+    v2g_rte: float  # V2G Round-Trip-Efficiency
+    min_departure_soc_pct: float  # Mindest-SoC bei Abfahrt
 ```
 
 #### Schritt 6.2: EV-Variablen und Constraints im LP
@@ -1235,6 +1329,7 @@ Anpassung der Netto-Position:
 
 **Dateien:** `pv_bess_model/dispatch/optimizer_portfolio.py` (erweitern)
 **Tests:** `tests/test_optimizer_portfolio.py` (erweitern)
+
 - Test: Ohne V2G → nur Laden, kein Entladen
 - Test: Mit V2G → Laden bei niedrigem Preis, Entladen bei hohem
 - Test: Mindest-SoC bei Abfahrt eingehalten
@@ -1258,6 +1353,7 @@ Anpassung der Netto-Position:
 **Voraussetzungen:** Phase 4 (Systemwert-Ergebnisse vorhanden). Kann teilweise parallel entwickelt werden.
 
 **Wiederverwendung:**
+
 - `output/csv_writer.py` → Vorlage für CSV-Format, Delimiter, Dezimaltrennzeichen
 - `output/formatting.py` → Number/Currency-Formatierung
 - `output/report/` → HTML-Dashboard-Architektur (data_collector, html_builder, charts)
@@ -1270,11 +1366,14 @@ Anpassung der Netto-Position:
 def write_baseline_csv(path, world_a_results):
     """Welt-A: Jährliche Systemkosten ohne Flex."""
 
+
 def write_system_value_csv(path, system_value_result):
     """Eine Zeile pro (Flex, Zubau-Rate, E/P): kumulierter Systemwert."""
 
+
 def write_marginal_value_csv(path, marginal_values):
     """Grenznutzenkurve: €/kW·a pro Ausbaustufe und Flex-Instanz."""
+
 
 def write_portfolio_dispatch_sample_csv(path, daily_results, year):
     """Viertelstundenscharfer Dispatch (96 × 365 = 35.040 Zeilen)."""
@@ -1293,6 +1392,7 @@ Neues Tab-Set im bestehenden Dashboard-Framework:
 5. **Dispatch-Sample** – Viertelstunden-Dispatch eines ausgewählten Tages/Woche
 
 **Dateien:**
+
 - `pv_bess_model/output/report/data_collector_portfolio.py` (neu)
 - `pv_bess_model/output/report/templates/dashboard_portfolio.html` (neu)
 - `pv_bess_model/output/report/html_builder.py` (erweitern oder neuer Builder)
@@ -1303,32 +1403,63 @@ Entry Point vervollständigen:
 
 ```python
 # Gesamtablauf in main_portfolio.py:
-1. JSON laden und validieren
-2. PVGIS-Daten abrufen (PV + Temperatur) pro weather_year
-3. SLP-Profile generieren pro weather_year
-4. Wärmelast-Profile berechnen
-5. Preis-Zeitreihen laden
-6. Welt A berechnen (Zentralszenario)
-7. Enumeration: Alle Flex × Zubau-Rate × E/P durchrechnen (parallelisiert)
-8. Grenznutzen-Kurven berechnen
-9. CSV-Dateien schreiben
-10. HTML-Dashboard generieren
-11. Zusammenfassung auf stdout
+1.
+JSON
+laden
+und
+validieren
+2.
+PVGIS - Daten
+abrufen(PV + Temperatur)
+pro
+weather_year
+3.
+SLP - Profile
+generieren
+pro
+weather_year
+4.
+Wärmelast - Profile
+berechnen
+5.
+Preis - Zeitreihen
+laden
+6.
+Welt
+A
+berechnen(Zentralszenario)
+7.
+Enumeration: Alle
+Flex × Zubau - Rate × E / P
+durchrechnen(parallelisiert)
+8.
+Grenznutzen - Kurven
+berechnen
+9.
+CSV - Dateien
+schreiben
+10.
+HTML - Dashboard
+generieren
+11.
+Zusammenfassung
+auf
+stdout
 ```
 
 ---
 
 ### Zusammenfassung: Dateien und Aufwand
 
-| Phase | Neue Dateien | Geänderte Dateien | Geschätzter Aufwand |
-|-------|-------------|-------------------|---------------------|
-| 1 | schema_portfolio.py, loader_portfolio.py, main_portfolio.py, portfolio/__init__.py | defaults.py | Mittel |
-| 2 | portfolio/load_profiles.py, portfolio/heat_demand.py | pv/pvgis_client.py | Hoch (BDEW-Excel-Parsing) |
-| 3 | dispatch/optimizer_portfolio.py, portfolio/system_value.py (Welt A) | – | Hoch (neuer LP) |
-| 4 | dispatch/engine_portfolio.py, portfolio/marginal_value.py | portfolio/system_value.py | Hoch (Multi-Year + Enum) |
-| 5 | – | dispatch/optimizer_portfolio.py, dispatch/engine_portfolio.py | Mittel (LP-Erweiterung) |
-| 6 | – | dispatch/optimizer_portfolio.py, dispatch/engine_portfolio.py | Mittel (LP-Erweiterung) |
-| 7 | output/csv_writer_portfolio.py, report/data_collector_portfolio.py, templates/dashboard_portfolio.html | main_portfolio.py | Mittel |
+| Phase | Neue Dateien                                                                                           | Geänderte Dateien                                             | Geschätzter Aufwand       |
+|-------|--------------------------------------------------------------------------------------------------------|---------------------------------------------------------------|---------------------------|
+| 1     | schema_portfolio.py, loader_portfolio.py, main_portfolio.py, portfolio/__init__.py                     | defaults.py                                                   | Mittel                    |
+| 2     | portfolio/load_profiles.py, portfolio/heat_demand.py                                                   | pv/pvgis_client.py                                            | Hoch (BDEW-Excel-Parsing) |
+| 3     | dispatch/optimizer_portfolio.py, portfolio/system_value.py (Welt A)                                    | –                                                             | Hoch (neuer LP)           |
+| 4     | dispatch/engine_portfolio.py, portfolio/marginal_value.py                                              | portfolio/system_value.py                                     | Hoch (Multi-Year + Enum)  |
+| 5     | –                                                                                                      | dispatch/optimizer_portfolio.py, dispatch/engine_portfolio.py | Mittel (LP-Erweiterung)   |
+| 6     | –                                                                                                      | dispatch/optimizer_portfolio.py, dispatch/engine_portfolio.py | Mittel (LP-Erweiterung)   |
+| 7     | output/csv_writer_portfolio.py, report/data_collector_portfolio.py, templates/dashboard_portfolio.html | main_portfolio.py                                             | Mittel                    |
 
 **Gesamtumfang:** ~12-15 neue Dateien, ~3-5 geänderte bestehende Dateien.
 
@@ -1386,19 +1517,18 @@ Jede Session endet mit lauffähigen Tests (`pytest`). Kein Code ohne Tests.
 ## 15. Verbleibende offene Fragen
 
 1. **BDEW-Excel-Datei**: Welche Version der BDEW-SLP-Daten soll verwendet werden? Hast du die Datei
-   bereits, oder muss sie beschafft werden? Gibt es eine bestimmte Quelle/URL?
+   bereits, oder muss sie beschafft werden? Gibt es eine bestimmte Quelle/URL? --> Ja, siehe oben Punkt 6.
 
 2. **Sommer-/Winterzeit im SLP**: Sollen die SLP-Profile in UTC oder in MEZ/MESZ aufbereitet werden?
-   Die Preisszenarien sind vermutlich in UTC (da Day-Ahead Spotmarkt) – konsistente Zeitzone ist kritisch.
+   Die Preisszenarien sind vermutlich in UTC (da Day-Ahead Spotmarkt) – konsistente Zeitzone ist kritisch. --> UTC
 
 3. **PVGIS-Temperatur für SLP-Dynamisierung**: Die BDEW-Dynamisierungsfunktion braucht eine
    Tages-Durchschnittstemperatur. Soll diese aus denselben PVGIS-Daten kommen, die auch für die
    PV-Erzeugung und Gradtagszahl verwendet werden? Das wäre konsistent, aber PVGIS liefert T2m
-   (2m-Temperatur), nicht die für SLP übliche Temperatur der nächstgelegenen Wetterstation.
+   (2m-Temperatur), nicht die für SLP übliche Temperatur der nächstgelegenen Wetterstation. --> Ja, zur konsistenz
+   sollen die gleichen PVGIS Daten verwendet werden.
 
 4. **EV-Flottengröße und Zubau**: Im JSON ist `annual_addition_kw` als Ladeleistungszubau definiert.
    Soll daraus die Flottengröße abgeleitet werden (z.B. 1 Wallbox = 11 kW → 100 kW/a = ~9 Wallboxen/a)?
    Oder soll die Flottengröße separat definiert werden, um den `daily_energy_demand_kwh` korrekt zu
-   skalieren?
-
---> Startzeitpunkt (Jahr) vorgeben, ab wann die Flex erstmalig auftauchen soll (FW wird nicht vor 2040 gebaut)
+   skalieren? --> es soll separat definiert werden. Diese Flexibilitätskategorie benötigt also 'mean_kw_per_unit' und 'annual_additional_units'
