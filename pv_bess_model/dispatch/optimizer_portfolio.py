@@ -525,10 +525,19 @@ def _solve_lp(
     if has_bess:
         eq_rows.append(({i_soc: 1.0}, bess.start_soc_kwh))
 
-    # 4. Thermal SoC linking (T rows)
+    # 4. HP daily energy balance with slack (1 row)
+    #    Σ wp_load[t]*cop[t] + Σ heat_unmet[t] = daily_heat_demand_kwh
+    #    heat_unmet[t] absorbs demand the HP cannot cover on peak days,
+    #    preventing LP infeasibility while maintaining the daily cycle.
+    if has_hp:
+        row_hp: dict[int, float] = {}
+        for t in range(T):
+            row_hp[i_wp + t] = hp.cop_profile[t]
+            row_hp[i_hunmet + t] = 1.0
+        eq_rows.append((row_hp, hp.daily_heat_demand_kwh))
+
+    # 5. Thermal SoC linking (T rows)
     #    tsoc[t+1] = tsoc[t] + wp_load[t]*cop[t] + heat_unmet[t] - heat_demand[t]
-    #    heat_unmet[t] is a slack variable that absorbs demand the HP cannot cover
-    #    on peak days, preventing LP infeasibility.
     if has_hp:
         for t in range(T):
             eq_rows.append((
@@ -541,11 +550,11 @@ def _solve_lp(
                 -hp.heat_demand_profile[t],
             ))
 
-    # 5. Thermal SoC initial (1 row)
+    # 6. Thermal SoC initial (1 row)
     if has_hp:
         eq_rows.append(({i_tsoc: 1.0}, hp.start_thermal_soc_kwh))
 
-    # 6. EV SoC linking (T rows)
+    # 7. EV SoC linking (T rows)
     #    ev_soc[t+1] = ev_soc[t] + ev_charge[t] - ev_discharge[t]
     if has_ev:
         for t in range(T):
@@ -559,7 +568,7 @@ def _solve_lp(
                 0.0,
             ))
 
-    # 7. EV SoC initial (1 row): ev_soc[0] = start_soc
+    # 8. EV SoC initial (1 row): ev_soc[0] = start_soc
     if has_ev:
         eq_rows.append(({i_ev_soc: 1.0}, ev.start_soc_kwh))
 
