@@ -1,0 +1,115 @@
+{
+  "meta_model": {
+    "name": "Systemwert-Modell Demo",
+    "baseline_year": 2025,
+    "project_lifetime_years": 20,
+    "perfect_foresight_discount": 0.25,
+    "bundesland": "SH",
+    "output": {
+      "directory": "./outputs/systemwert_demo/",
+      "export_dispatch_sample": true,
+      "csv_separator": ";",
+      "csv_decimal": ","
+    }
+  },
+  "portfolio": {
+    "generation": [
+      {
+        "type": "pv",
+        "name": "PV-Dachanlage Betriebshof",
+        "peak_power_kwp": 750,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1
+      }
+    ],
+    "load": [
+      {
+        "type": "slp",
+        "name": "Haushaltskunden",
+        "slp_type": "H25",
+        "customer_count": 12000,
+        "annual_consumption_kwh_per_customer": 2500,
+        "annual_growth_factor": 1.01
+      }
+    ]
+  },
+  "flexibilities": [
+    {
+      "type": "bess",
+      "name": "BESS-Demo",
+      "annual_addition_kw": [100, 150],
+      "e_to_p_ratio_hours": [2, 3],
+      "round_trip_efficiency_pct": 85,
+      "min_soc_pct": 10,
+      "max_soc_pct": 90,
+      "degradation_rate_pct_per_year": 2,
+      "start_year": 1
+    },
+    {
+      "type": "heat_pump",
+      "name": "WP-Quartier",
+      "annual_addition_kw": [50],
+      "cop_nominal": 3.5,
+      "cop_reference_temp_c": 2,
+      "annual_thermal_demand_mwh": 900,
+      "thermal_storage_kwh": 600,
+      "start_year": 2
+    },
+    {
+      "type": "ev_charging",
+      "name": "Öffentliche Ladesäulen",
+      "mean_kw_per_unit": 22,
+      "annual_additional_units": [5, 10, 10],
+      "daily_energy_demand_kwh_per_unit": 12,
+      "time_window": {
+        "arrival_hour": 17,
+        "departure_hour": 7
+      },
+      "v2g_enabled": false,
+      "v2g_rte_pct": 0,
+      "min_departure_soc_pct": 60,
+      "usable_battery_kwh_per_unit": 50,
+      "start_year": 1
+    }
+  ],
+  "price_inputs": {
+    "scenarios": [
+      {
+        "name": "Base",
+        "label": "Basis-Szenario",
+        "csv_column": "price_eur_mwh",
+        "weather_year": 2018,
+        "weight": 0.5,
+        "is_central": true,
+        "price_csv": "prices/base_2018.csv",
+        "inflation_on_input_data": false,
+        "csv_separator": ";",
+        "csv_decimal": ",",
+        "csv_timestamp_column": "timestamp",
+        "csv_timestamp_format": "%Y-%m-%d %H:%M"
+      },
+      {
+        "name": "High",
+        "csv_column": "price_eur_mwh",
+        "weather_year": 2016,
+        "weight": 0.5,
+        "is_central": false,
+        "price_csv": "prices/high_2016.csv",
+        "inflation_on_input_data": true,
+        "csv_separator": ";",
+        "csv_decimal": ",",
+        "csv_timestamp_column": "timestamp",
+        "csv_timestamp_format": "%Y-%m-%d %H:%M"
+      }
+    ]
+  }
+}

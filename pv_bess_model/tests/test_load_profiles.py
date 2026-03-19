@@ -352,10 +352,10 @@ class TestScaleSlp:
 class TestSlpWithRealData:
     """Tests using the real BDEW JSON file."""
 
-    REAL_JSON = Path(".data/bdew_profile_2025.json")
+    REAL_JSON = Path("../../.data/bdew_profile_2025.json")
 
     @pytest.mark.skipif(
-        not Path(".data/bdew_profile_2025.json").exists(),
+        not Path("../../.data/bdew_profile_2025.json").exists(),
         reason="BDEW JSON not available",
     )
     def test_real_h25_profile(self) -> None:
@@ -366,7 +366,7 @@ class TestSlpWithRealData:
         assert np.all(slp >= 0)
 
     @pytest.mark.skipif(
-        not Path(".data/bdew_profile_2025.json").exists(),
+        not Path("../../.data/bdew_profile_2025.json").exists(),
         reason="BDEW JSON not available",
     )
     def test_real_g25_profile(self) -> None:
@@ -376,7 +376,7 @@ class TestSlpWithRealData:
         assert abs(np.sum(slp) - SLP_NORMIERUNG_KWH) < 1.0
 
     @pytest.mark.skipif(
-        not Path(".data/bdew_profile_2025.json").exists(),
+        not Path("../../.data/bdew_profile_2025.json").exists(),
         reason="BDEW JSON not available",
     )
     def test_all_profile_types(self) -> None:

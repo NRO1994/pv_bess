@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Portfolio / Systemwert – Eingabe</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+:root {
+  --c1:#FF8200;--c2:#F73E5E;--c3:#A51BA7;--c4:#00467A;--c5:#006EB2;--c6:#00BDDC;
+  --bg:#f8fafc;--fg:#0f172a;--muted:#64748b;--surface:#fff;--border:#e2e8f0;
+  --error:#dc2626;--success:#16a34a;--focus:var(--c5);
+}
+[data-theme="dark"]{
+  --bg:#0b1220;--fg:#e5e7eb;--muted:#94a3b8;--surface:#1e293b;--border:#334155;
+  --error:#ef4444;--success:#22c55e;--focus:var(--c6);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,-apple-system,sans-serif;line-height:1.6;min-height:100vh}
+.wrap{max-width:1200px;margin:0 auto;padding:16px 28px 100px}
+
+/* Header */
+.hdr{display:flex;align-items:center;gap:16px;padding:16px 0;border-bottom:3px solid var(--c1);margin-bottom:20px}
+.hdr img{height:48px}
+.hdr-text h1{font-size:18px;color:var(--c4);font-weight:700}
+.hdr-text p{font-size:12px;color:var(--muted)}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+
+/* Toolbar */
+.tb{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;align-items:center}
+.tb-info{font-size:12px;color:var(--muted);flex:1}
+
+/* Buttons */
+btn,button,.btn{border:1px solid var(--border);background:var(--surface);color:var(--fg);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s}
+.btn:hover{border-color:var(--c1)}
+.btn-primary{background:var(--c1);color:#fff;border-color:var(--c1)}
+.btn-primary:hover{background:#e67300}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-ghost{background:transparent;border:1px dashed var(--border)}
+.btn-danger{color:var(--error);border-color:var(--error)}
+
+/* Stepper */
+.stepper{display:flex;gap:6px;margin-bottom:20px;overflow-x:auto;padding-bottom:4px}
+.stepper .s{padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600;border:2px solid var(--border);color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .2s}
+.stepper .s:hover{border-color:var(--c5)}
+.stepper .s.active{border-color:var(--c1);color:var(--c1);background:rgba(255,130,0,.08)}
+.stepper .s.done{border-color:var(--success);color:var(--success)}
+.stepper .s.hidden-tab{display:none}
+
+/* Card / Section */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:16px}
+.card .card{background:var(--bg)}
+.sec-title{font-size:15px;font-weight:700;color:var(--c4);margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid var(--c1)}
+.sub-title{font-size:13px;font-weight:700;color:var(--c5);margin:12px 0 8px}
+
+/* Grid */
+.g{display:grid;gap:16px}
+.g2{grid-template-columns:1fr 1fr}
+.g3{grid-template-columns:1fr 1fr 1fr}
+.g4{grid-template-columns:1fr 1fr 1fr 1fr}
+@media(max-width:700px){.g2,.g3,.g4{grid-template-columns:1fr}}
+
+/* Form */
+label{display:block;font-size:12px;font-weight:600;color:var(--fg);margin-bottom:3px}
+input[type="text"],input[type="number"],select{width:100%;border:1px solid var(--border);background:var(--surface);color:var(--fg);padding:8px 10px;border-radius:8px;font-size:13px;transition:border .15s}
+input:focus,select:focus{outline:none;border-color:var(--c1);box-shadow:0 0 0 3px rgba(255,130,0,.12)}
+.hint{font-size:11px;color:var(--muted);margin-top:2px}
+.req::after{content:" *";color:var(--c2)}
+
+/* Switch */
+.sw{display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;user-select:none}
+.sw input{accent-color:var(--c1);width:16px;height:16px}
+
+/* Dynamic lists */
+.dyn-list{display:grid;gap:6px;margin-top:6px}
+.dyn-item{display:flex;gap:8px;align-items:end}
+.dyn-item input{flex:1}
+.dyn-item .btn-rm{padding:6px 10px;color:var(--error);cursor:pointer;border:1px solid var(--error);border-radius:8px;background:transparent;font-size:12px}
+
+/* Section visibility */
+section[data-step]{display:none}
+section[data-step].visible{display:block}
+
+/* Bottom bar */
+.bottom{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(transparent,var(--bg) 30%);padding:12px 20px}
+.bottom-inner{max-width:1200px;margin:0 auto;display:flex;justify-content:space-between;align-items:center}
+
+/* Banner */
+.banner{padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:13px;display:none;border:1px solid var(--border)}
+.banner.show{display:block}
+.banner.ok{border-color:var(--success);color:var(--success)}
+.banner.err{border-color:var(--error);color:var(--error)}
+
+/* Review table */
+.rv-table{width:100%;border-collapse:collapse;font-size:12px}
+.rv-table th{text-align:left;padding:4px 8px;background:var(--bg);color:var(--c4);border-bottom:2px solid var(--c1)}
+.rv-table td{padding:4px 8px;border-bottom:1px solid var(--border)}
+.rv-table td:first-child{font-weight:600;width:40%}
+
+hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
+
+/* Tooltip */
+[data-tip]{position:relative}
+[data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:100%;left:0;background:var(--fg);color:var(--bg);padding:4px 8px;border-radius:6px;font-size:11px;white-space:nowrap;z-index:99}
+
+/* Map */
+#mapContainer{height:300px;border-radius:8px;border:1px solid var(--border);margin-top:8px;z-index:1}
+/* --- Ergänzungen für Portfolio-Wizard --- */
+input.invalid, select.invalid, textarea.invalid{border-color: var(--error) !important; box-shadow: 0 0 0 3px rgba(220,38,38,.10) !important;}
+.small{font-size:12px;color:var(--muted)}
+.item-head{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:8px}
+.item-head .left{display:flex;gap:10px;align-items:center}
+.badge{font-size:11px;font-weight:700;color:var(--c4);background:rgba(0,70,122,.08);border:1px solid rgba(0,70,122,.2);padding:3px 8px;border-radius:999px}
+.card-actions{display:flex;gap:8px;align-items:center}
+.mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
+textarea{width:100%;min-height:220px;border:1px solid var(--border);background:var(--surface);color:var(--fg);padding:10px;border-radius:10px;font-size:12px;}
+.kpi{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.pill{padding:6px 10px;border-radius:999px;border:1px solid var(--border);background:var(--bg);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER -->
+  <div class="hdr">
+    <img src="data:image/png;base64,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" alt="Logo"/>
+    <div class="hdr-text">
+      <h1>Portfolio / Systemwert – Eingabemaske</h1>
+      <p>Stand-alone Wizard · erzeugt JSON strikt nach <span class="mono">portfolio_schema.json</span></p>
+    </div>
+    <div class="hdr-right">
+      <img src="data:image/png;base64,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" alt="SWL" style="height:32px"/>
+    </div>
+  </div>
+
+  <!-- TOOLBAR -->
+  <div class="tb">
+    <span class="tb-info">Alle Eingaben bleiben lokal im Browser (LocalStorage). Import/Export als JSON.</span>
+    <input type="file" id="fileImport" accept=".json" style="display:none"/>
+    <button class="btn" onclick="document.getElementById('fileImport').click()">JSON importieren</button>
+    <button class="btn btn-primary" onclick="doExport()">JSON exportieren</button>
+  </div>
+  <div class="banner" id="banner"></div>
+
+  <!-- STEPPER -->
+  <div class="stepper" id="stepper">
+    <div class="s active" data-step="1">1 · Meta-Modell</div>
+    <div class="s" data-step="2">2 · Portfolio: Erzeugung</div>
+    <div class="s" data-step="3">3 · Portfolio: Last</div>
+    <div class="s" data-step="4">4 · Flexibilitäten</div>
+    <div class="s" data-step="5">5 · Preis-Szenarien</div>
+    <div class="s" data-step="6">6 · Review & Export</div>
+  </div>
+
+  <!-- STEP 1: META MODEL -->
+  <section class="card" data-step="1">
+    <div class="sec-title">Meta-Modell</div>
+
+    <div class="g g3">
+      <div>
+        <label class="req">Name</label>
+        <input id="mm_name" type="text" placeholder="z.B. Portfolio_Systemwert_2026"/>
+        <div class="hint">Pflichtfeld (minLength 1).</div>
+      </div>
+      <div>
+        <label class="req">Baseline-Jahr</label>
+        <input id="mm_baseline_year" type="number" min="2020" step="1" value="2026"/>
+      </div>
+      <div>
+        <label class="req">Projektlaufzeit (Jahre)</label>
+        <input id="mm_lifetime" type="number" min="1" step="1" value="25"/>
+      </div>
+    </div>
+
+    <hr class="sep"/>
+    <div class="sub-title">Optionen</div>
+    <div class="g g3">
+      <div>
+        <label>Perfect foresight discount (0..1)</label>
+        <input id="mm_pfd" type="number" min="0" max="1" step="0.01" placeholder="0.2"/>
+      </div>
+      <div>
+        <label>Bundesland (2 Zeichen)</label>
+        <input id="mm_bundesland" type="text" maxlength="2" placeholder="SH"/>
+      </div>
+    </div>
+
+    <hr class="sep"/>
+    <div class="sub-title">Output</div>
+    <div class="g g3">
+      <div>
+        <label class="req">Output-Verzeichnis</label>
+        <input id="out_dir" type="text" value=".data/output/"/>
+      </div>
+      <div style="display:flex;align-items:end">
+        <label class="sw"><input id="out_export_dispatch" type="checkbox"/> Dispatch-Sample exportieren</label>
+      </div>
+      <div>
+        <label>CSV Separator</label>
+        <input id="out_csv_sep" type="text" placeholder=";"/>
+      </div>
+      <div>
+        <label>CSV Decimal</label>
+        <input id="out_csv_dec" type="text" placeholder=","/>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 2: PORTFOLIO GENERATION -->
+  <section class="card" data-step="2">
+    <div class="sec-title">Portfolio – Erzeugung</div>
+    <div class="small">Schema: <span class="mono">portfolio.generation[]</span> (minItems 1). Aktuell ist nur <span class="mono">type=pv</span> erlaubt.</div>
+    <div id="gen_list" style="margin-top:12px"></div>
+    <button class="btn btn-ghost" type="button" onclick="addGeneration()">+ PV-Anlage hinzufügen</button>
+  </section>
+
+  <!-- STEP 3: PORTFOLIO LOAD -->
+  <section class="card" data-step="3">
+    <div class="sec-title">Portfolio – Last</div>
+    <div class="small">Schema: <span class="mono">portfolio.load[]</span> (minItems 1). Aktuell: <span class="mono">type=slp</span> + <span class="mono">slp_type</span>-Enum.</div>
+    <div id="load_list" style="margin-top:12px"></div>
+    <button class="btn btn-ghost" type="button" onclick="addLoad()">+ SLP-Last hinzufügen</button>
+  </section>
+
+  <!-- STEP 4: FLEXIBILITIES -->
+  <section class="card" data-step="4">
+    <div class="sec-title">Flexibilitäten</div>
+    <div class="small">Schema: <span class="mono">flexibilities[]</span> (minItems 1) als <span class="mono">oneOf</span>: <span class="mono">bess</span>, <span class="mono">heat_pump</span>, <span class="mono">ev_charging</span>.</div>
+
+    <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
+      <select id="flex_add_type">
+        <option value="bess">BESS</option>
+        <option value="heat_pump">Wärmepumpe</option>
+        <option value="ev_charging">EV Charging</option>
+      </select>
+      <button class="btn btn-ghost" type="button" onclick="addFlex(document.getElementById('flex_add_type').value)">+ Flexibilität hinzufügen</button>
+    </div>
+
+    <div id="flex_list" style="margin-top:12px"></div>
+  </section>
+
+  <!-- STEP 5: PRICE INPUTS -->
+  <section class="card" data-step="5">
+    <div class="sec-title">Preis-Inputs</div>
+    <div class="small">Schema: <span class="mono">price_inputs.scenarios[]</span> (minItems 1). Gewichte müssen 0..1 sein.</div>
+    <div id="price_list" style="margin-top:12px"></div>
+    <button class="btn btn-ghost" type="button" onclick="addPriceScenario()">+ Preis-Szenario hinzufügen</button>
+  </section>
+
+  <!-- STEP 6: REVIEW -->
+  <section class="card" data-step="6">
+    <div class="sec-title">Review & Export</div>
+    <div id="reviewArea" style="font-size:13px"></div>
+
+    <div class="kpi" id="kpi"></div>
+
+    <hr class="sep"/>
+    <div class="sub-title">JSON Vorschau</div>
+    <textarea id="jsonPreview" class="mono" readonly></textarea>
+
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap">
+      <button class="btn btn-primary" type="button" onclick="doExport()" style="font-size:15px;padding:12px 32px">JSON herunterladen</button>
+      <button class="btn" type="button" onclick="copyJSON()">JSON in Zwischenablage</button>
+      <button class="btn btn-danger" type="button" onclick="resetAll()">Zurücksetzen</button>
+    </div>
+    <div class="hint" style="text-align:center;margin-top:8px">Validierung erfolgt strikt gegen das eingebettete JSON-Schema (required, type, min/max, enums, oneOf, minItems).</div>
+  </section>
+
+  <!-- Bottom navigation -->
+  <div class="bottom">
+    <div class="bottom-inner">
+      <button class="btn" id="btnPrev" type="button" onclick="goStep(curStep-1)">Zurück</button>
+      <span id="stepLabel" style="font-size:12px;color:var(--muted)">Schritt 1 von 6</span>
+      <button class="btn btn-primary" id="btnNext" type="button" onclick="goStep(curStep+1)">Weiter</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// Embedded JSON schema (draft-07)
+const PORTFOLIO_SCHEMA = {"$schema": "http://json-schema.org/draft-07/schema#", "title": "Portfolio / Systemwert Configuration", "type": "object", "required": ["meta_model", "portfolio", "flexibilities", "price_inputs"], "properties": {"meta_model": {"type": "object", "required": ["name", "baseline_year", "project_lifetime_years"], "properties": {"name": {"type": "string", "minLength": 1}, "baseline_year": {"type": "integer", "minimum": 2020}, "project_lifetime_years": {"type": "integer", "minimum": 1}, "perfect_foresight_discount": {"type": "number", "minimum": 0, "maximum": 1}, "bundesland": {"type": "string", "minLength": 2, "maxLength": 2}, "output": {"type": "object", "required": ["directory"], "properties": {"directory": {"type": "string", "minLength": 1}, "export_dispatch_sample": {"type": "boolean"}, "csv_separator": {"type": "string", "minLength": 1}, "csv_decimal": {"type": "string", "minLength": 1}}, "additionalProperties": false}}, "additionalProperties": false}, "portfolio": {"type": "object", "required": ["generation", "load"], "properties": {"generation": {"type": "array", "items": {"type": "object", "required": ["type", "name", "peak_power_kwp", "location"], "properties": {"type": {"type": "string", "enum": ["pv"]}, "name": {"type": "string", "minLength": 1}, "peak_power_kwp": {"type": "number", "exclusiveMinimum": 0}, "location": {"type": "object", "required": ["latitude", "longitude"], "properties": {"latitude": {"type": "number", "minimum": -90, "maximum": 90}, "longitude": {"type": "number", "minimum": -180, "maximum": 180}, "pvgis_database": {"type": "string", "minLength": 1}}, "additionalProperties": false}, "degradation_rate_pct_per_year": {"type": "number", "minimum": 0, "maximum": 100}, "system_loss_pct": {"type": "number", "minimum": 0, "maximum": 100}, "mounting_type": {"type": "string", "enum": ["free", "building"]}, "azimuth_deg": {"type": "number", "minimum": -180, "maximum": 180}, "tilt_deg": {"type": "number", "minimum": 0, "maximum": 90}, "start_year": {"type": "integer", "minimum": 1}}, "additionalProperties": false}, "minItems": 1}, "load": {"type": "array", "items": {"type": "object", "required": ["type", "name", "slp_type", "customer_count", "annual_consumption_kwh_per_customer"], "properties": {"type": {"type": "string", "enum": ["slp"]}, "name": {"type": "string", "minLength": 1}, "slp_type": {"type": "string", "enum": ["H25", "G25", "L25", "P25", "S25"]}, "customer_count": {"type": "integer", "minimum": 1}, "annual_consumption_kwh_per_customer": {"type": "number", "exclusiveMinimum": 0}, "annual_growth_factor": {"type": "number", "exclusiveMinimum": 0}}, "additionalProperties": false}, "minItems": 1}}, "additionalProperties": false}, "flexibilities": {"type": "array", "items": {"oneOf": [{"type": "object", "required": ["type", "name", "annual_addition_kw", "e_to_p_ratio_hours"], "properties": {"type": {"type": "string", "enum": ["bess"]}, "name": {"type": "string", "minLength": 1}, "annual_addition_kw": {"type": "array", "items": {"type": "number", "minimum": 0}, "minItems": 1}, "e_to_p_ratio_hours": {"type": "array", "items": {"type": "number", "exclusiveMinimum": 0}, "minItems": 1}, "round_trip_efficiency_pct": {"type": "number", "minimum": 0, "maximum": 100}, "min_soc_pct": {"type": "number", "minimum": 0, "maximum": 100}, "max_soc_pct": {"type": "number", "minimum": 0, "maximum": 100}, "degradation_rate_pct_per_year": {"type": "number", "minimum": 0, "maximum": 100}, "start_year": {"type": "integer", "minimum": 1}}, "additionalProperties": false}, {"type": "object", "required": ["type", "name", "annual_addition_kw", "cop_nominal", "annual_thermal_demand_mwh", "thermal_storage_kwh"], "properties": {"type": {"type": "string", "enum": ["heat_pump"]}, "name": {"type": "string", "minLength": 1}, "annual_addition_kw": {"type": "array", "items": {"type": "number", "minimum": 0}, "minItems": 1}, "cop_nominal": {"type": "number", "exclusiveMinimum": 0}, "cop_reference_temp_c": {"type": "number"}, "annual_thermal_demand_mwh": {"type": "number", "exclusiveMinimum": 0}, "thermal_storage_kwh": {"type": "number", "minimum": 0}, "start_year": {"type": "integer", "minimum": 1}}, "additionalProperties": false}, {"type": "object", "required": ["type", "name", "mean_kw_per_unit", "annual_additional_units", "daily_energy_demand_kwh_per_unit", "time_window", "usable_battery_kwh_per_unit"], "properties": {"type": {"type": "string", "enum": ["ev_charging"]}, "name": {"type": "string", "minLength": 1}, "mean_kw_per_unit": {"type": "number", "exclusiveMinimum": 0}, "annual_additional_units": {"type": "array", "items": {"type": "integer", "minimum": 0}, "minItems": 1}, "daily_energy_demand_kwh_per_unit": {"type": "number", "exclusiveMinimum": 0}, "time_window": {"type": "object", "required": ["arrival_hour", "departure_hour"], "properties": {"arrival_hour": {"type": "integer", "minimum": 0, "maximum": 23}, "departure_hour": {"type": "integer", "minimum": 0, "maximum": 23}}, "additionalProperties": false}, "v2g_enabled": {"type": "boolean"}, "v2g_rte_pct": {"type": "number", "minimum": 0, "maximum": 100}, "min_departure_soc_pct": {"type": "number", "minimum": 0, "maximum": 100}, "usable_battery_kwh_per_unit": {"type": "number", "exclusiveMinimum": 0}, "start_year": {"type": "integer", "minimum": 1}}, "additionalProperties": false}]}, "minItems": 1}, "price_inputs": {"type": "object", "required": ["scenarios"], "properties": {"scenarios": {"type": "array", "items": {"type": "object", "required": ["name", "csv_column", "weather_year", "weight", "price_csv", "csv_separator", "csv_decimal", "csv_timestamp_column", "csv_timestamp_format"], "properties": {"name": {"type": "string", "minLength": 1}, "label": {"type": "string"}, "csv_column": {"type": "string", "minLength": 1}, "weather_year": {"type": "integer", "minimum": 1900}, "weight": {"type": "number", "minimum": 0, "maximum": 1}, "is_central": {"type": "boolean"}, "price_csv": {"type": "string", "minLength": 1}, "inflation_on_input_data": {"type": "boolean"}, "csv_separator": {"type": "string", "minLength": 1}, "csv_decimal": {"type": "string", "minLength": 1}, "csv_timestamp_column": {"type": "string", "minLength": 1}, "csv_timestamp_format": {"type": "string", "minLength": 1}}, "additionalProperties": false}, "minItems": 1}}, "additionalProperties": false}}, "additionalProperties": false};
+
+const TOTAL=6;
+let curStep=1;
+const LS_KEY='portfolio_wizard_full_v1';
+
+/* ---------------- Navigation ---------------- */
+function goStep(n){
+  if(n<1 || n>TOTAL) return;
+  curStep=n;
+  document.querySelectorAll('section[data-step]').forEach(s=>s.classList.remove('visible'));
+  const sec=document.querySelector('section[data-step="'+n+'"]');
+  if(sec) sec.classList.add('visible');
+
+  document.querySelectorAll('.stepper .s').forEach(s=>{
+    const sn=+s.dataset.step;
+    s.classList.toggle('active', sn===n);
+    s.classList.toggle('done', sn<n);
+  });
+
+  document.getElementById('stepLabel').innerHTML = '<div style="text-align:center">Schritt '+n+' von '+TOTAL+'<br>Version 1.0 · Portfolio/Systemwert Wizard</div>';
+  document.getElementById('btnPrev').style.visibility = n===1?'hidden':'visible';
+  document.getElementById('btnNext').textContent = n===TOTAL?'Fertig':'Weiter';
+
+  if(n===TOTAL) buildReview();
+  window.scrollTo(0,0);
+  persist();
+}
+
+document.querySelectorAll('.stepper .s').forEach(s=>s.addEventListener('click',()=>goStep(+s.dataset.step)));
+
+/* ---------------- UI helpers ---------------- */
+function el(tag, cls){ const e=document.createElement(tag); if(cls) e.className=cls; return e; }
+function showBanner(msg,type){
+  const b=document.getElementById('banner');
+  b.textContent=msg;
+  b.className='banner show '+(type||'');
+  setTimeout(()=>b.classList.remove('show'),5000);
+}
+function clearInvalid(){ document.querySelectorAll('.invalid').forEach(e=>e.classList.remove('invalid')); }
+
+function vById(id){
+  const e=document.getElementById(id);
+  if(!e) return null;
+  if(e.type==='checkbox') return e.checked;
+  if(e.type==='number') return e.value===''?null:Number(e.value);
+  return e.value===''?null:e.value;
+}
+function svById(id,val){
+  const e=document.getElementById(id);
+  if(!e) return;
+  if(e.type==='checkbox') e.checked=!!val;
+  else e.value=(val===null||val===undefined)?'':val;
+}
+
+/* ---------------- Dynamic scalar list ---------------- */
+function addScalarListItem(listEl, defVal, isInt=false){
+  const div=el('div','dyn-item');
+  const inp=el('input');
+  inp.type='number';
+  inp.step=isInt?'1':'any';
+  inp.value=(defVal===null||defVal===undefined)?'':defVal;
+  div.appendChild(inp);
+  const rm=el('button','btn-rm');
+  rm.type='button';
+  rm.textContent='X';
+  rm.onclick=()=>{div.remove(); persist();};
+  div.appendChild(rm);
+  listEl.appendChild(div);
+}
+function getScalarList(listEl, isInt=false){
+  const vals=[];
+  listEl.querySelectorAll('input[type=number]').forEach(i=>{
+    if(i.value==='') return;
+    const n=isInt?parseInt(i.value,10):parseFloat(i.value);
+    if(!Number.isNaN(n)) vals.push(n);
+  });
+  return vals;
+}
+function setScalarList(listEl, vals, isInt=false){
+  listEl.innerHTML='';
+  (vals||[]).forEach(v=>addScalarListItem(listEl,v,isInt));
+}
+
+/* ---------------- Card field helpers ---------------- */
+function qf(card,key){ return card.querySelector('[data-f="'+key+'"]'); }
+function s(card,key){ const e=qf(card,key); return e && e.value!=='' ? e.value : null; }
+function n(card,key){ const e=qf(card,key); if(!e||e.value==='') return null; const x=parseFloat(e.value); return Number.isNaN(x)?null:x; }
+function i(card,key){ const e=qf(card,key); if(!e||e.value==='') return null; const x=parseInt(e.value,10); return Number.isNaN(x)?null:x; }
+function chk(card,key){ const e=qf(card,key); if(!e) return null; return !!e.checked; }
+function setField(card,key,val){ const e=qf(card,key); if(!e) return; if(e.type==='checkbox') e.checked=!!val; else e.value=(val===null||val===undefined)?'':val; }
+
+/* ---------------- Templates: Generation (PV) ---------------- */
+function genTemplate(idx){
+  const card=el('div','card');
+  card.dataset.kind='gen';
+  card.dataset.index=idx;
+  card.innerHTML=
+    '<div class="item-head">'
+    +'  <div class="left"><span class="badge">pv</span><div><div style="font-weight:700;color:var(--c4)">PV-Anlage #'+(idx+1)+'</div><div class="hint">portfolio.generation['+idx+']</div></div></div>'
+    +'  <div class="card-actions"><button class="btn btn-danger btn-sm" type="button" onclick="removeItem(\'gen\','+idx+')">Entfernen</button></div>'
+    +'</div>'
+
+    +'<div class="g g3">'
+    +'  <div><label class="req">Name</label><input data-f="name" type="text" placeholder="PV_01"/></div>'
+    +'  <div><label class="req">Peak Power (kWp)</label><input data-f="peak_power_kwp" type="number" min="0.0001" step="any" value="5000"/></div>'
+    +'  <div><label>Start-Jahr (Index)</label><input data-f="start_year" type="number" min="1" step="1" placeholder="1"/></div>'
+    +'</div>'
+
+    +'<hr class="sep"/>'
+    +'<div class="sub-title">Location</div>'
+    +'<div class="g g3">'
+    +'  <div><label class="req">Latitude</label><input data-f="lat" type="number" min="-90" max="90" step="any" value="53.85"/></div>'
+    +'  <div><label class="req">Longitude</label><input data-f="lon" type="number" min="-180" max="180" step="any" value="10.67"/></div>'
+    +'  <div><label>PVGIS Database</label><input data-f="pvgis" type="text" placeholder="PVGIS-SARAH3"/></div>'
+    +'</div>'
+
+    +'<hr class="sep"/>'
+    +'<div class="sub-title">Optional</div>'
+    +'<div class="g g4">'
+    +'  <div><label>Degradation (%/a)</label><input data-f="degradation" type="number" min="0" max="100" step="0.1"/></div>'
+    +'  <div><label>System loss (%)</label><input data-f="system_loss" type="number" min="0" max="100" step="0.1"/></div>'
+    +'  <div><label>Mounting type</label><select data-f="mounting"><option value="">(leer)</option><option value="free">free</option><option value="building">building</option></select></div>'
+    +'  <div><label>Azimuth (deg)</label><input data-f="azimuth" type="number" min="-180" max="180" step="any"/></div>'
+    +'  <div><label>Tilt (deg)</label><input data-f="tilt" type="number" min="0" max="90" step="any"/></div>'
+    +'</div>';
+  return card;
+}
+function addGeneration(prefill){
+  const list=document.getElementById('gen_list');
+  const idx=list.querySelectorAll('[data-kind=gen]').length;
+  const card=genTemplate(idx);
+  list.appendChild(card);
+  if(prefill) fillGeneration(card,prefill);
+  persist();
+}
+function fillGeneration(card,obj){
+  setField(card,'name',obj.name);
+  setField(card,'peak_power_kwp',obj.peak_power_kwp);
+  setField(card,'start_year',obj.start_year);
+  const loc=obj.location||{};
+  setField(card,'lat',loc.latitude);
+  setField(card,'lon',loc.longitude);
+  setField(card,'pvgis',loc.pvgis_database);
+  setField(card,'degradation',obj.degradation_rate_pct_per_year);
+  setField(card,'system_loss',obj.system_loss_pct);
+  setField(card,'mounting',obj.mounting_type);
+  setField(card,'azimuth',obj.azimuth_deg);
+  setField(card,'tilt',obj.tilt_deg);
+}
+function readGeneration(card){
+  const loc={latitude:n(card,'lat'),longitude:n(card,'lon')};
+  const pvgis=s(card,'pvgis'); if(pvgis) loc.pvgis_database=pvgis;
+  const o={type:'pv',name:s(card,'name'),peak_power_kwp:n(card,'peak_power_kwp'),location:loc};
+  const st=i(card,'start_year'); if(st!==null) o.start_year=st;
+  const deg=n(card,'degradation'); if(deg!==null) o.degradation_rate_pct_per_year=deg;
+  const sl=n(card,'system_loss'); if(sl!==null) o.system_loss_pct=sl;
+  const mt=s(card,'mounting'); if(mt) o.mounting_type=mt;
+  const az=n(card,'azimuth'); if(az!==null) o.azimuth_deg=az;
+  const tl=n(card,'tilt'); if(tl!==null) o.tilt_deg=tl;
+  return o;
+}
+
+/* ---------------- Templates: Load (SLP) ---------------- */
+function loadTemplate(idx){
+  const card=el('div','card');
+  card.dataset.kind='load';
+  card.dataset.index=idx;
+  card.innerHTML=
+    '<div class="item-head">'
+    +'  <div class="left"><span class="badge">slp</span><div><div style="font-weight:700;color:var(--c4)">SLP-Last #'+(idx+1)+'</div><div class="hint">portfolio.load['+idx+']</div></div></div>'
+    +'  <div class="card-actions"><button class="btn btn-danger btn-sm" type="button" onclick="removeItem(\'load\','+idx+')">Entfernen</button></div>'
+    +'</div>'
+
+    +'<div class="g g3">'
+    +'  <div><label class="req">Name</label><input data-f="name" type="text" placeholder="Haushalt"/></div>'
+    +'  <div><label class="req">SLP Type</label>'
+    +'     <select data-f="slp_type"><option value="H25">H25</option><option value="G25">G25</option><option value="L25">L25</option><option value="P25">P25</option><option value="S25">S25</option></select>'
+    +'  </div>'
+    +'  <div><label class="req">Customer count</label><input data-f="customer_count" type="number" min="1" step="1" value="1000"/></div>'
+    +'  <div><label class="req">Annual consumption (kWh/customer)</label><input data-f="annual_kwh" type="number" min="0.0001" step="any" value="3500"/></div>'
+    +'  <div><label>Annual growth factor</label><input data-f="growth" type="number" min="0.0000001" step="any" placeholder="1.0"/></div>'
+    +'</div>';
+  return card;
+}
+function addLoad(prefill){
+  const list=document.getElementById('load_list');
+  const idx=list.querySelectorAll('[data-kind=load]').length;
+  const card=loadTemplate(idx);
+  list.appendChild(card);
+  if(prefill) fillLoad(card,prefill);
+  persist();
+}
+function fillLoad(card,obj){
+  setField(card,'name',obj.name);
+  setField(card,'slp_type',obj.slp_type);
+  setField(card,'customer_count',obj.customer_count);
+  setField(card,'annual_kwh',obj.annual_consumption_kwh_per_customer);
+  setField(card,'growth',obj.annual_growth_factor);
+}
+function readLoad(card){
+  const o={type:'slp',name:s(card,'name'),slp_type:card.querySelector('[data-f="slp_type"]').value,customer_count:i(card,'customer_count'),annual_consumption_kwh_per_customer:n(card,'annual_kwh')};
+  const gf=n(card,'growth'); if(gf!==null) o.annual_growth_factor=gf;
+  return o;
+}
+
+/* ---------------- Templates: Flexibilities (oneOf) ---------------- */
+function flexTemplate(idx, type){
+  const card=el('div','card');
+  card.dataset.kind='flex';
+  card.dataset.index=idx;
+  card.dataset.type=type;
+  const title=(type==='bess')?'BESS':(type==='heat_pump'?'Wärmepumpe':'EV Charging');
+
+  let body='';
+  if(type==='bess'){
+    body=
+      '<div class="sub-title">Zubau (Arrays)</div>'
+      +'<div class="g g2">'
+      +'  <div><label class="req">annual_addition_kw[]</label><div class="dyn-list" data-list="annual_addition_kw"></div><button class="btn btn-ghost btn-sm" type="button" onclick="addFlexScalar(this,\'annual_addition_kw\',0,false)">+ Wert</button></div>'
+      +'  <div><label class="req">e_to_p_ratio_hours[]</label><div class="dyn-list" data-list="e_to_p_ratio_hours"></div><button class="btn btn-ghost btn-sm" type="button" onclick="addFlexScalar(this,\'e_to_p_ratio_hours\',2,false)">+ Wert</button></div>'
+      +'</div>'
+      +'<hr class="sep"/>'
+      +'<div class="sub-title">Optional</div>'
+      +'<div class="g g3">'
+      +'  <div><label>round_trip_efficiency_pct</label><input data-f="round_trip_efficiency_pct" type="number" min="0" max="100" step="0.1"/></div>'
+      +'  <div><label>min_soc_pct</label><input data-f="min_soc_pct" type="number" min="0" max="100" step="0.1"/></div>'
+      +'  <div><label>max_soc_pct</label><input data-f="max_soc_pct" type="number" min="0" max="100" step="0.1"/></div>'
+      +'  <div><label>degradation_rate_pct_per_year</label><input data-f="degradation_rate_pct_per_year" type="number" min="0" max="100" step="0.1"/></div>'
+      +'  <div><label>start_year</label><input data-f="start_year" type="number" min="1" step="1"/></div>'
+      +'</div>';
+  } else if(type==='heat_pump'){
+    body=
+      '<div class="sub-title">Zubau</div>'
+      +'<div class="g g2">'
+      +'  <div><label class="req">annual_addition_kw[]</label><div class="dyn-list" data-list="annual_addition_kw"></div><button class="btn btn-ghost btn-sm" type="button" onclick="addFlexScalar(this,\'annual_addition_kw\',0,false)">+ Wert</button></div>'
+      +'  <div><label class="req">cop_nominal</label><input data-f="cop_nominal" type="number" min="0.0000001" step="any" value="3.2"/></div>'
+      +'</div>'
+      +'<div class="g g3" style="margin-top:8px">'
+      +'  <div><label>cop_reference_temp_c</label><input data-f="cop_reference_temp_c" type="number" step="any"/></div>'
+      +'  <div><label class="req">annual_thermal_demand_mwh</label><input data-f="annual_thermal_demand_mwh" type="number" min="0.0000001" step="any" value="1200"/></div>'
+      +'  <div><label class="req">thermal_storage_kwh</label><input data-f="thermal_storage_kwh" type="number" min="0" step="any" value="0"/></div>'
+      +'  <div><label>start_year</label><input data-f="start_year" type="number" min="1" step="1"/></div>'
+      +'</div>';
+  } else {
+    body=
+      '<div class="sub-title">Einheiten / Demand</div>'
+      +'<div class="g g3">'
+      +'  <div><label class="req">mean_kw_per_unit</label><input data-f="mean_kw_per_unit" type="number" min="0.0000001" step="any" value="11"/></div>'
+      +'  <div><label class="req">annual_additional_units[] (int)</label><div class="dyn-list" data-list="annual_additional_units"></div><button class="btn btn-ghost btn-sm" type="button" onclick="addFlexScalar(this,\'annual_additional_units\',0,true)">+ Wert</button></div>'
+      +'  <div><label class="req">daily_energy_demand_kwh_per_unit</label><input data-f="daily_energy_demand_kwh_per_unit" type="number" min="0.0000001" step="any" value="8"/></div>'
+      +'</div>'
+      +'<hr class="sep"/>'
+      +'<div class="sub-title">time_window</div>'
+      +'<div class="g g3">'
+      +'  <div><label class="req">arrival_hour (0..23)</label><input data-f="arrival_hour" type="number" min="0" max="23" step="1" value="17"/></div>'
+      +'  <div><label class="req">departure_hour (0..23)</label><input data-f="departure_hour" type="number" min="0" max="23" step="1" value="7"/></div>'
+      +'</div>'
+      +'<hr class="sep"/>'
+      +'<div class="sub-title">Optional (V2G)</div>'
+      +'<div class="g g3">'
+      +'  <div style="display:flex;align-items:end"><label class="sw"><input data-f="v2g_enabled" type="checkbox"/> v2g_enabled</label></div>'
+      +'  <div><label>v2g_rte_pct</label><input data-f="v2g_rte_pct" type="number" min="0" max="100" step="0.1"/></div>'
+      +'  <div><label>min_departure_soc_pct</label><input data-f="min_departure_soc_pct" type="number" min="0" max="100" step="0.1"/></div>'
+      +'</div>'
+      +'<div class="g g3" style="margin-top:8px">'
+      +'  <div><label class="req">usable_battery_kwh_per_unit</label><input data-f="usable_battery_kwh_per_unit" type="number" min="0.0000001" step="any" value="45"/></div>'
+      +'  <div><label>start_year</label><input data-f="start_year" type="number" min="1" step="1"/></div>'
+      +'</div>';
+  }
+
+  card.innerHTML=
+    '<div class="item-head">'
+    +'  <div class="left"><span class="badge">'+type+'</span><div><div style="font-weight:700;color:var(--c4)">'+title+' #'+(idx+1)+'</div><div class="hint">flexibilities['+idx+']</div></div></div>'
+    +'  <div class="card-actions"><button class="btn btn-danger btn-sm" type="button" onclick="removeItem(\'flex\','+idx+')">Entfernen</button></div>'
+    +'</div>'
+
+    +'<div class="g g3"><div><label class="req">Name</label><input data-f="name" type="text" placeholder="'+title+'_1"/></div></div>'
+    +body;
+
+  // init required scalar lists
+  if(type==='bess'){
+    setScalarList(card.querySelector('[data-list="annual_addition_kw"]'), [0]);
+    setScalarList(card.querySelector('[data-list="e_to_p_ratio_hours"]'), [2]);
+  }
+  if(type==='heat_pump'){
+    setScalarList(card.querySelector('[data-list="annual_addition_kw"]'), [0]);
+  }
+  if(type==='ev_charging'){
+    setScalarList(card.querySelector('[data-list="annual_additional_units"]'), [0], true);
+  }
+
+  return card;
+}
+function addFlex(type, prefill){
+  const list=document.getElementById('flex_list');
+  const idx=list.querySelectorAll('[data-kind=flex]').length;
+  const card=flexTemplate(idx, type);
+  list.appendChild(card);
+  if(prefill) fillFlex(card, prefill);
+  persist();
+}
+function addFlexScalar(btn, listName, defVal, isInt){
+  const card=btn.closest('[data-kind=flex]');
+  const listEl=card.querySelector('[data-list="'+listName+'"]');
+  addScalarListItem(listEl, defVal, isInt);
+  persist();
+}
+function fillFlex(card,obj){
+  setField(card,'name',obj.name);
+  const type=obj.type;
+  if(type==='bess'){
+    setScalarList(card.querySelector('[data-list="annual_addition_kw"]'), obj.annual_addition_kw||[0]);
+    setScalarList(card.querySelector('[data-list="e_to_p_ratio_hours"]'), obj.e_to_p_ratio_hours||[2]);
+    setField(card,'round_trip_efficiency_pct',obj.round_trip_efficiency_pct);
+    setField(card,'min_soc_pct',obj.min_soc_pct);
+    setField(card,'max_soc_pct',obj.max_soc_pct);
+    setField(card,'degradation_rate_pct_per_year',obj.degradation_rate_pct_per_year);
+    setField(card,'start_year',obj.start_year);
+  }
+  if(type==='heat_pump'){
+    setScalarList(card.querySelector('[data-list="annual_addition_kw"]'), obj.annual_addition_kw||[0]);
+    setField(card,'cop_nominal',obj.cop_nominal);
+    setField(card,'cop_reference_temp_c',obj.cop_reference_temp_c);
+    setField(card,'annual_thermal_demand_mwh',obj.annual_thermal_demand_mwh);
+    setField(card,'thermal_storage_kwh',obj.thermal_storage_kwh);
+    setField(card,'start_year',obj.start_year);
+  }
+  if(type==='ev_charging'){
+    setField(card,'mean_kw_per_unit',obj.mean_kw_per_unit);
+    setScalarList(card.querySelector('[data-list="annual_additional_units"]'), obj.annual_additional_units||[0], true);
+    setField(card,'daily_energy_demand_kwh_per_unit',obj.daily_energy_demand_kwh_per_unit);
+    const tw=obj.time_window||{};
+    setField(card,'arrival_hour',tw.arrival_hour);
+    setField(card,'departure_hour',tw.departure_hour);
+    setField(card,'v2g_enabled',obj.v2g_enabled);
+    setField(card,'v2g_rte_pct',obj.v2g_rte_pct);
+    setField(card,'min_departure_soc_pct',obj.min_departure_soc_pct);
+    setField(card,'usable_battery_kwh_per_unit',obj.usable_battery_kwh_per_unit);
+    setField(card,'start_year',obj.start_year);
+  }
+}
+function readFlex(card){
+  const type=card.dataset.type;
+  const base={type:type,name:s(card,'name')};
+  if(type==='bess'){
+    base.annual_addition_kw=getScalarList(card.querySelector('[data-list="annual_addition_kw"]'));
+    base.e_to_p_ratio_hours=getScalarList(card.querySelector('[data-list="e_to_p_ratio_hours"]'));
+    const rte=n(card,'round_trip_efficiency_pct'); if(rte!==null) base.round_trip_efficiency_pct=rte;
+    const mins=n(card,'min_soc_pct'); if(mins!==null) base.min_soc_pct=mins;
+    const maxs=n(card,'max_soc_pct'); if(maxs!==null) base.max_soc_pct=maxs;
+    const d=n(card,'degradation_rate_pct_per_year'); if(d!==null) base.degradation_rate_pct_per_year=d;
+    const st=i(card,'start_year'); if(st!==null) base.start_year=st;
+  }
+  if(type==='heat_pump'){
+    base.annual_addition_kw=getScalarList(card.querySelector('[data-list="annual_addition_kw"]'));
+    base.cop_nominal=n(card,'cop_nominal');
+    const crt=n(card,'cop_reference_temp_c'); if(crt!==null) base.cop_reference_temp_c=crt;
+    base.annual_thermal_demand_mwh=n(card,'annual_thermal_demand_mwh');
+    base.thermal_storage_kwh=n(card,'thermal_storage_kwh');
+    const st=i(card,'start_year'); if(st!==null) base.start_year=st;
+  }
+  if(type==='ev_charging'){
+    base.mean_kw_per_unit=n(card,'mean_kw_per_unit');
+    base.annual_additional_units=getScalarList(card.querySelector('[data-list="annual_additional_units"]'), true);
+    base.daily_energy_demand_kwh_per_unit=n(card,'daily_energy_demand_kwh_per_unit');
+    base.time_window={arrival_hour:i(card,'arrival_hour'),departure_hour:i(card,'departure_hour')};
+    const v2=chk(card,'v2g_enabled'); if(v2!==null) base.v2g_enabled=v2;
+    const vr=n(card,'v2g_rte_pct'); if(vr!==null) base.v2g_rte_pct=vr;
+    const md=n(card,'min_departure_soc_pct'); if(md!==null) base.min_departure_soc_pct=md;
+    base.usable_battery_kwh_per_unit=n(card,'usable_battery_kwh_per_unit');
+    const st=i(card,'start_year'); if(st!==null) base.start_year=st;
+  }
+  return base;
+}
+
+/* ---------------- Templates: Price scenario ---------------- */
+function priceTemplate(idx){
+  const card=el('div','card');
+  card.dataset.kind='price';
+  card.dataset.index=idx;
+  card.innerHTML=
+    '<div class="item-head">'
+    +'  <div class="left"><span class="badge">scenario</span><div><div style="font-weight:700;color:var(--c4)">Preis-Szenario #'+(idx+1)+'</div><div class="hint">price_inputs.scenarios['+idx+']</div></div></div>'
+    +'  <div class="card-actions"><button class="btn btn-danger btn-sm" type="button" onclick="removeItem(\'price\','+idx+')">Entfernen</button></div>'
+    +'</div>'
+
+    +'<div class="g g3">'
+    +'  <div><label class="req">name</label><input data-f="name" type="text" placeholder="Central"/></div>'
+    +'  <div><label>label</label><input data-f="label" type="text" placeholder="Zentralszenario"/></div>'
+    +'  <div><label class="req">csv_column</label><input data-f="csv_column" type="text" placeholder="price_central"/></div>'
+    +'  <div><label class="req">weather_year</label><input data-f="weather_year" type="number" min="1900" step="1" value="2018"/></div>'
+    +'  <div><label class="req">weight (0..1)</label><input data-f="weight" type="number" min="0" max="1" step="0.01" value="0.6"/></div>'
+    +'  <div style="display:flex;align-items:end"><label class="sw"><input data-f="is_central" type="checkbox"/> is_central</label></div>'
+    +'</div>'
+
+    +'<hr class="sep"/>'
+    +'<div class="sub-title">CSV</div>'
+    +'<div class="g g3">'
+    +'  <div><label class="req">price_csv</label><input data-f="price_csv" type="text" value="./inputs/day_ahead_prices.csv"/></div>'
+    +'  <div style="display:flex;align-items:end"><label class="sw"><input data-f="inflation_on_input_data" type="checkbox"/> inflation_on_input_data</label></div>'
+    +'  <div><label class="req">csv_separator</label><input data-f="csv_separator" type="text" value=";"/></div>'
+    +'  <div><label class="req">csv_decimal</label><input data-f="csv_decimal" type="text" value=","/></div>'
+    +'  <div><label class="req">csv_timestamp_column</label><input data-f="csv_timestamp_column" type="text" value="timestamp"/></div>'
+    +'  <div><label class="req">csv_timestamp_format</label><input data-f="csv_timestamp_format" type="text" value="%Y-%m-%dT%H:%M:%S"/></div>'
+    +'</div>';
+  return card;
+}
+function addPriceScenario(prefill){
+  const list=document.getElementById('price_list');
+  const idx=list.querySelectorAll('[data-kind=price]').length;
+  const card=priceTemplate(idx);
+  list.appendChild(card);
+  if(prefill) fillPrice(card,prefill);
+  persist();
+}
+function fillPrice(card,obj){
+  setField(card,'name',obj.name);
+  setField(card,'label',obj.label);
+  setField(card,'csv_column',obj.csv_column);
+  setField(card,'weather_year',obj.weather_year);
+  setField(card,'weight',obj.weight);
+  setField(card,'is_central',obj.is_central);
+  setField(card,'price_csv',obj.price_csv);
+  setField(card,'inflation_on_input_data',obj.inflation_on_input_data);
+  setField(card,'csv_separator',obj.csv_separator);
+  setField(card,'csv_decimal',obj.csv_decimal);
+  setField(card,'csv_timestamp_column',obj.csv_timestamp_column);
+  setField(card,'csv_timestamp_format',obj.csv_timestamp_format);
+}
+function readPrice(card){
+  const o={
+    name:s(card,'name'),
+    csv_column:s(card,'csv_column'),
+    weather_year:i(card,'weather_year'),
+    weight:n(card,'weight'),
+    price_csv:s(card,'price_csv'),
+    csv_separator:s(card,'csv_separator'),
+    csv_decimal:s(card,'csv_decimal'),
+    csv_timestamp_column:s(card,'csv_timestamp_column'),
+    csv_timestamp_format:s(card,'csv_timestamp_format')
+  };
+  const label=s(card,'label'); if(label) o.label=label;
+  const ic=chk(card,'is_central'); if(ic!==null) o.is_central=ic;
+  const infl=chk(card,'inflation_on_input_data'); if(infl!==null) o.inflation_on_input_data=infl;
+  return o;
+}
+
+/* ---------------- Remove + reindex ---------------- */
+function removeItem(kind, idx){
+  const map={gen:'gen_list', load:'load_list', flex:'flex_list', price:'price_list'};
+  const list=document.getElementById(map[kind]);
+  const cards=Array.from(list.querySelectorAll('[data-kind]'));
+  const card=cards.find(c=>+c.dataset.index===idx);
+  if(card) card.remove();
+  reindex(list,kind);
+  persist();
+}
+function reindex(list,kind){
+  Array.from(list.querySelectorAll('[data-kind]')).forEach((c,i)=>{
+    c.dataset.index=i;
+    const hint=c.querySelector('.hint');
+    const title=c.querySelector('.left div div');
+    const btn=c.querySelector('button.btn-danger');
+    if(kind==='gen'){ hint.textContent='portfolio.generation['+i+']'; title.textContent='PV-Anlage #'+(i+1); btn.setAttribute('onclick','removeItem(\'gen\','+i+')'); }
+    if(kind==='load'){ hint.textContent='portfolio.load['+i+']'; title.textContent='SLP-Last #'+(i+1); btn.setAttribute('onclick','removeItem(\'load\','+i+')'); }
+    if(kind==='flex'){
+      hint.textContent='flexibilities['+i+']';
+      const t=(c.dataset.type==='bess')?'BESS':(c.dataset.type==='heat_pump'?'Wärmepumpe':'EV Charging');
+      title.textContent=t+' #'+(i+1);
+      btn.setAttribute('onclick','removeItem(\'flex\','+i+')');
+    }
+    if(kind==='price'){ hint.textContent='price_inputs.scenarios['+i+']'; title.textContent='Preis-Szenario #'+(i+1); btn.setAttribute('onclick','removeItem(\'price\','+i+')'); }
+  });
+}
+
+/* ---------------- Build JSON (strict allowed props) ---------------- */
+function buildJSON(){
+  const meta_model={
+    name: vById('mm_name')||'Unnamed',
+    baseline_year: vById('mm_baseline_year'),
+    project_lifetime_years: vById('mm_lifetime'),
+    output: { directory: vById('out_dir')||'.data/output/' }
+  };
+  const pfd=vById('mm_pfd'); if(pfd!==null) meta_model.perfect_foresight_discount=pfd;
+  const bl=vById('mm_bundesland'); if(bl) meta_model.bundesland=String(bl).toUpperCase();
+
+  const exp=vById('out_export_dispatch'); if(exp!==null) meta_model.output.export_dispatch_sample=exp;
+  const sep=vById('out_csv_sep'); if(sep) meta_model.output.csv_separator=sep;
+  const dec=vById('out_csv_dec'); if(dec) meta_model.output.csv_decimal=dec;
+
+  const generation=Array.from(document.querySelectorAll('#gen_list [data-kind=gen]')).map(readGeneration);
+  const load=Array.from(document.querySelectorAll('#load_list [data-kind=load]')).map(readLoad);
+  const flexibilities=Array.from(document.querySelectorAll('#flex_list [data-kind=flex]')).map(readFlex);
+  const scenarios=Array.from(document.querySelectorAll('#price_list [data-kind=price]')).map(readPrice);
+
+  function clean(o){
+    if(Array.isArray(o)) return o.map(clean);
+    if(o && typeof o==='object'){
+      const r={};
+      for(const [k,v] of Object.entries(o)){
+        const c=clean(v);
+        if(c===null || c===undefined) continue;
+        if(typeof c==='string' && c==='') continue;
+        r[k]=c;
+      }
+      return r;
+    }
+    return o;
+  }
+
+  return clean({meta_model, portfolio:{generation, load}, flexibilities, price_inputs:{scenarios}});
+}
+
+/* ---------------- Schema validation (draft-07 subset + oneOf) ---------------- */
+function validateAgainstSchema(schema, data, path='$', outErrors=[]){
+  const add=(msg)=>outErrors.push({path, msg});
+  if(schema==null) return outErrors;
+
+  if(schema.oneOf){
+    const results=schema.oneOf.map((s,i)=>{
+      const errs=[];
+      validateAgainstSchema(s, data, path, errs);
+      return {i, ok: errs.length===0, errs};
+    });
+    const ok=results.filter(r=>r.ok);
+    if(ok.length!==1){
+      add('oneOf verletzt: erwartet genau 1 passende Variante (aktuell '+ok.length+')');
+      const best=results.sort((a,b)=>a.errs.length-b.errs.length)[0];
+      best.errs.forEach(e=>outErrors.push(e));
+    }
+    return outErrors;
+  }
+
+  const t=schema.type;
+  if(t){
+    const isArr=Array.isArray(data);
+    const isObj=!!data && typeof data==='object' && !isArr;
+    const isNum=typeof data==='number' && Number.isFinite(data);
+    const isStr=typeof data==='string';
+    const isBool=typeof data==='boolean';
+    const isInt=isNum && Number.isInteger(data);
+
+    if(t==='object' && !isObj) add('Typfehler: object erwartet');
+    if(t==='array' && !isArr) add('Typfehler: array erwartet');
+    if(t==='number' && !isNum) add('Typfehler: number erwartet');
+    if(t==='integer' && !isInt) add('Typfehler: integer erwartet');
+    if(t==='string' && !isStr) add('Typfehler: string erwartet');
+    if(t==='boolean' && !isBool) add('Typfehler: boolean erwartet');
+    if(outErrors.some(e=>e.path===path && e.msg.startsWith('Typfehler'))) return outErrors;
+  }
+
+  if(schema.enum){
+    if(!schema.enum.includes(data)) add('enum verletzt: '+data+' nicht in ['+schema.enum.join(', ')+']');
+  }
+
+  if(typeof data==='string'){
+    if(schema.minLength!=null && data.length<schema.minLength) add('minLength verletzt');
+    if(schema.maxLength!=null && data.length>schema.maxLength) add('maxLength verletzt');
+  }
+
+  if(typeof data==='number'){
+    if(schema.minimum!=null && data<schema.minimum) add('minimum verletzt (>= '+schema.minimum+')');
+    if(schema.maximum!=null && data>schema.maximum) add('maximum verletzt (<= '+schema.maximum+')');
+    if(schema.exclusiveMinimum!=null && !(data>schema.exclusiveMinimum)) add('exclusiveMinimum verletzt (> '+schema.exclusiveMinimum+')');
+    if(schema.exclusiveMaximum!=null && !(data<schema.exclusiveMaximum)) add('exclusiveMaximum verletzt (< '+schema.exclusiveMaximum+')');
+  }
+
+  if(Array.isArray(data)){
+    if(schema.minItems!=null && data.length<schema.minItems) add('minItems verletzt (>= '+schema.minItems+')');
+    if(schema.items){
+      data.forEach((it,idx)=>validateAgainstSchema(schema.items, it, path+'['+idx+']', outErrors));
+    }
+    return outErrors;
+  }
+
+  if(data && typeof data==='object'){
+    const req=schema.required||[];
+    req.forEach(k=>{ if(!(k in data)) outErrors.push({path:path+'.'+k, msg:'required fehlt'}); });
+
+    const props=schema.properties||{};
+    for(const k in props){
+      if(k in data) validateAgainstSchema(props[k], data[k], path+'.'+k, outErrors);
+    }
+
+    if(schema.additionalProperties===false){
+      for(const k in data){
+        if(!(k in props)) outErrors.push({path:path+'.'+k, msg:'additionalProperties=false: unerlaubtes Feld'});
+      }
+    }
+  }
+
+  return outErrors;
+}
+
+/* ---------------- UI validation linking ---------------- */
+function validateAndMark(){
+  clearInvalid();
+  const j=buildJSON();
+  const errs=validateAgainstSchema(PORTFOLIO_SCHEMA, j, '$', []);
+
+  const idMap={
+    '$.meta_model.name':'mm_name',
+    '$.meta_model.baseline_year':'mm_baseline_year',
+    '$.meta_model.project_lifetime_years':'mm_lifetime',
+    '$.meta_model.perfect_foresight_discount':'mm_pfd',
+    '$.meta_model.bundesland':'mm_bundesland',
+    '$.meta_model.output.directory':'out_dir',
+    '$.meta_model.output.csv_separator':'out_csv_sep',
+    '$.meta_model.output.csv_decimal':'out_csv_dec'
+  };
+  errs.forEach(e=>{
+    const id=idMap[e.path];
+    if(id){
+      const ee=document.getElementById(id);
+      if(ee) ee.classList.add('invalid');
+    }
+  });
+
+  return {j, errs};
+}
+
+/* ---------------- Review ---------------- */
+function buildReview(){
+  const {j, errs}=validateAndMark();
+
+  document.getElementById('jsonPreview').value = JSON.stringify(j,null,2);
+
+  const kpi=document.getElementById('kpi');
+  kpi.innerHTML='';
+  const pills=[
+    ['Generation', (j.portfolio && j.portfolio.generation || []).length],
+    ['Load', (j.portfolio && j.portfolio.load || []).length],
+    ['Flex', (j.flexibilities || []).length],
+    ['Price scenarios', (j.price_inputs && j.price_inputs.scenarios || []).length],
+    ['Errors', errs.length]
+  ];
+  pills.forEach(p=>{ const d=el('div','pill'); d.textContent=p[0]+': '+p[1]; kpi.appendChild(d); });
+
+  const rows=[
+    ['meta_model.name', j.meta_model && j.meta_model.name],
+    ['baseline_year', j.meta_model && j.meta_model.baseline_year],
+    ['project_lifetime_years', j.meta_model && j.meta_model.project_lifetime_years],
+    ['output.directory', j.meta_model && j.meta_model.output && j.meta_model.output.directory]
+  ];
+  let h='<table class="rv-table"><thead><tr><th>Parameter</th><th>Wert</th></tr></thead><tbody>';
+  rows.forEach(r=>h+='<tr><td>'+r[0]+'</td><td>'+(r[1]===undefined || r[1]===null ? '-' : r[1])+'</td></tr>');
+  h+='</tbody></table>';
+
+  if(errs.length){
+    h+='<hr class="sep"/><div class="sub-title" style="color:var(--error)">Schema-Validierungsfehler</div>';
+    h+='<ul style="margin-left:18px">'+errs.slice(0,200).map(e=>'<li><span class="mono">'+e.path+'</span>: '+e.msg+'</li>').join('')+'</ul>';
+    if(errs.length>200) h+='<div class="hint">(gekürzt, '+errs.length+' Fehler insgesamt)</div>';
+    showBanner('Validierung fehlgeschlagen: '+errs.length+' Fehler. Bitte korrigieren.','err');
+  } else {
+    showBanner('Validierung OK – JSON entspricht dem Schema.','ok');
+  }
+
+  document.getElementById('reviewArea').innerHTML=h;
+}
+
+/* ---------------- Export / Import ---------------- */
+function doExport(){
+  const {j, errs}=validateAndMark();
+  if(errs.length){
+    showBanner('Export blockiert: Schema-Fehler beheben (Step 6).','err');
+    goStep(6);
+    return;
+  }
+  const name=(j.meta_model && j.meta_model.name ? j.meta_model.name : 'portfolio').replace(/[^a-zA-Z0-9_-]/g,'_');
+  const blob=new Blob([JSON.stringify(j,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name+'.json'; a.click();
+  showBanner('JSON-Datei "'+name+'.json" wurde heruntergeladen.','ok');
+}
+function copyJSON(){
+  try{ navigator.clipboard.writeText(document.getElementById('jsonPreview').value || JSON.stringify(buildJSON(),null,2)); showBanner('JSON kopiert.','ok'); }
+  catch(e){ showBanner('Konnte nicht kopieren (Berechtigung).','err'); }
+}
+function resetAll(){ localStorage.removeItem(LS_KEY); location.reload(); }
+
+// Import handler
+
+document.getElementById('fileImport').addEventListener('change', function(e){
+  const f=e.target.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    try{ loadFromJSON(JSON.parse(ev.target.result)); showBanner('JSON erfolgreich importiert.','ok'); }
+    catch(ex){ showBanner('Fehler beim Import: '+ex.message,'err'); }
+  };
+  reader.readAsText(f); e.target.value='';
+});
+
+function loadFromJSON(j){
+  const mm=j.meta_model||{};
+  svById('mm_name',mm.name);
+  svById('mm_baseline_year',mm.baseline_year);
+  svById('mm_lifetime',mm.project_lifetime_years);
+  svById('mm_pfd',mm.perfect_foresight_discount);
+  svById('mm_bundesland',mm.bundesland);
+  const out=mm.output||{};
+  svById('out_dir',out.directory);
+  svById('out_export_dispatch',out.export_dispatch_sample);
+  svById('out_csv_sep',out.csv_separator);
+  svById('out_csv_dec',out.csv_decimal);
+
+  document.getElementById('gen_list').innerHTML='';
+  ((j.portfolio||{}).generation||[]).forEach(x=>addGeneration(x));
+  document.getElementById('load_list').innerHTML='';
+  ((j.portfolio||{}).load||[]).forEach(x=>addLoad(x));
+  document.getElementById('flex_list').innerHTML='';
+  (j.flexibilities||[]).forEach(x=>addFlex(x.type,x));
+  document.getElementById('price_list').innerHTML='';
+  ((j.price_inputs||{}).scenarios||[]).forEach(x=>addPriceScenario(x));
+
+  persist(false);
+  goStep(1);
+}
+
+/* ---------------- Persistence ---------------- */
+function persist(write=true){
+  if(write===false) return;
+  try{ const j=buildJSON(); j._step=curStep; localStorage.setItem(LS_KEY, JSON.stringify(j)); }catch(e){}
+}
+function restore(){
+  try{
+    const raw=localStorage.getItem(LS_KEY);
+    if(!raw) return false;
+    const j=JSON.parse(raw);
+    loadFromJSON(j);
+    if(j._step) goStep(j._step);
+    return true;
+  }catch(e){ return false; }
+}
+
+document.addEventListener('input', (e)=>{ if(e.target.closest('.wrap')) persist(); });
+document.addEventListener('change', (e)=>{ if(e.target.closest('.wrap')) persist(); });
+
+/* ---------------- Init defaults (ensure minItems) ---------------- */
+function initDefaults(){
+  if(document.querySelectorAll('#gen_list [data-kind=gen]').length===0) addGeneration({type:'pv',name:'PV_1',peak_power_kwp:5000,location:{latitude:53.85,longitude:10.67,pvgis_database:'PVGIS-SARAH3'}});
+  if(document.querySelectorAll('#load_list [data-kind=load]').length===0) addLoad({type:'slp',name:'SLP_1',slp_type:'H25',customer_count:1000,annual_consumption_kwh_per_customer:3500,annual_growth_factor:1.0});
+  if(document.querySelectorAll('#flex_list [data-kind=flex]').length===0) addFlex('bess',{type:'bess',name:'BESS_1',annual_addition_kw:[0],e_to_p_ratio_hours:[2],round_trip_efficiency_pct:88,min_soc_pct:10,max_soc_pct:90});
+  if(document.querySelectorAll('#price_list [data-kind=price]').length===0) addPriceScenario({name:'Central',label:'Zentralszenario',csv_column:'price_central',weather_year:2018,weight:0.6,is_central:true,price_csv:'./inputs/day_ahead_prices.csv',inflation_on_input_data:false,csv_separator:';',csv_decimal:',',csv_timestamp_column:'timestamp',csv_timestamp_format:'%Y-%m-%dT%H:%M:%S'});
+  if(!vById('mm_name')) svById('mm_name','Portfolio_Systemwert_2026');
+  if(vById('out_export_dispatch')===null) svById('out_export_dispatch',true);
+}
+
+// Boot
+goStep(1);
+const restored=restore();
+if(!restored) initDefaults();
+
+</script>
+
+</body>
+</html>
