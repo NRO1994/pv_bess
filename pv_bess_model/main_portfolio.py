@@ -341,6 +341,7 @@ def main(argv: list[str] | None = None) -> int:
         flexibilities=config.flexibilities,
         pv_degradation_rate=pv_degradation_rate,
         load_growth_factor=load_growth_factor,
+        temperature_hourly=temperature_hourly,
     )
 
     # --- Step 8: Marginal value curves ------------------------------------

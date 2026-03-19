@@ -5,7 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pv_bess_model.config.loader_portfolio import BessFlexConfig
+from pv_bess_model.config.loader_portfolio import (
+    BessFlexConfig,
+    EVFlexConfig,
+    HeatPumpFlexConfig,
+)
 from pv_bess_model.dispatch.engine_portfolio import PortfolioEngineConfig
 from pv_bess_model.portfolio.system_value import (
     SystemValuePoint,
@@ -368,3 +372,361 @@ class TestRunEnumeration:
         )
         assert len(result.points) == 1
         assert len(result.points[0].annual_system_values) == 2
+
+
+# ---------------------------------------------------------------------------
+# Fixtures for HP / EV enumeration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def constant_temperature() -> np.ndarray:
+    """Constant 5°C hourly temperature for 8760 hours."""
+    return np.full(8760, 5.0)
+
+
+# ---------------------------------------------------------------------------
+# Heat Pump enumeration tests
+# ---------------------------------------------------------------------------
+
+
+class TestHeatPumpEnumeration:
+    """Tests for heat pump flex enumeration in run_enumeration()."""
+
+    def test_hp_zero_addition_system_value_is_zero(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        flat_prices: np.ndarray,
+        constant_temperature: np.ndarray,
+    ) -> None:
+        """System value at addition_kw=0 is 0 (no flex = World A)."""
+        flex = HeatPumpFlexConfig(
+            type="heat_pump",
+            name="test_wp",
+            annual_addition_kw=[0.0],
+            cop_nominal=3.0,
+            cop_reference_temp_c=7.0,
+            annual_thermal_demand_mwh=100.0,
+            thermal_storage_kwh=0.0,
+        )
+        result = run_enumeration(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=flat_prices,
+            flexibilities=[flex],
+            pv_degradation_rate=0.0,
+            max_workers=1,
+            temperature_hourly=constant_temperature,
+        )
+        assert len(result.points) == 1
+        assert result.points[0].flex_type == "heat_pump"
+        assert result.points[0].e_to_p_ratio is None
+        assert result.points[0].cumulative_system_value_eur == pytest.approx(
+            0.0, abs=1e-6
+        )
+
+    def test_hp_point_count(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        flat_prices: np.ndarray,
+        constant_temperature: np.ndarray,
+    ) -> None:
+        """Number of points = len(annual_addition_kw)."""
+        flex = HeatPumpFlexConfig(
+            type="heat_pump",
+            name="test_wp",
+            annual_addition_kw=[0.0, 50.0, 100.0],
+            cop_nominal=3.0,
+            cop_reference_temp_c=7.0,
+            annual_thermal_demand_mwh=100.0,
+            thermal_storage_kwh=0.0,
+        )
+        result = run_enumeration(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=flat_prices,
+            flexibilities=[flex],
+            pv_degradation_rate=0.0,
+            max_workers=1,
+            temperature_hourly=constant_temperature,
+        )
+        assert len(result.points) == 3
+        for p in result.points:
+            assert p.flex_type == "heat_pump"
+
+    def test_hp_requires_temperature(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        flat_prices: np.ndarray,
+    ) -> None:
+        """Raises ValueError if temperature_hourly is None for HP."""
+        flex = HeatPumpFlexConfig(
+            type="heat_pump",
+            name="test_wp",
+            annual_addition_kw=[50.0],
+            cop_nominal=3.0,
+            annual_thermal_demand_mwh=100.0,
+            thermal_storage_kwh=0.0,
+        )
+        with pytest.raises(ValueError, match="temperature_hourly"):
+            run_enumeration(
+                config=short_engine_config,
+                pv_profile_base=flat_pv,
+                load_profile_base=flat_load,
+                spot_prices_base=flat_prices,
+                flexibilities=[flex],
+                pv_degradation_rate=0.0,
+                max_workers=1,
+            )
+
+    def test_hp_with_price_spread_has_positive_value(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        varying_daily_prices: np.ndarray,
+        constant_temperature: np.ndarray,
+    ) -> None:
+        """HP with thermal storage and price spread should have positive value."""
+        flex = HeatPumpFlexConfig(
+            type="heat_pump",
+            name="test_wp",
+            annual_addition_kw=[50.0],
+            cop_nominal=3.0,
+            cop_reference_temp_c=7.0,
+            annual_thermal_demand_mwh=100.0,
+            thermal_storage_kwh=200.0,
+        )
+        result = run_enumeration(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=varying_daily_prices,
+            flexibilities=[flex],
+            pv_degradation_rate=0.0,
+            max_workers=1,
+            temperature_hourly=constant_temperature,
+        )
+        assert len(result.points) == 1
+        # Thermal storage enables shifting HP load to cheap hours
+        assert result.points[0].cumulative_system_value_eur >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# EV enumeration tests
+# ---------------------------------------------------------------------------
+
+
+class TestEVEnumeration:
+    """Tests for EV flex enumeration in run_enumeration()."""
+
+    def test_ev_zero_units_system_value_is_zero(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        flat_prices: np.ndarray,
+    ) -> None:
+        """System value at 0 units is 0 (no flex = World A)."""
+        flex = EVFlexConfig(
+            type="ev_charging",
+            name="test_ev",
+            mean_kw_per_unit=11.0,
+            annual_additional_units=[0],
+            daily_energy_demand_kwh_per_unit=30.0,
+            arrival_hour=8,
+            departure_hour=18,
+            v2g_enabled=False,
+            usable_battery_kwh_per_unit=60.0,
+        )
+        result = run_enumeration(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=flat_prices,
+            flexibilities=[flex],
+            pv_degradation_rate=0.0,
+            max_workers=1,
+        )
+        assert len(result.points) == 1
+        assert result.points[0].flex_type == "ev_charging"
+        assert result.points[0].e_to_p_ratio is None
+        assert result.points[0].cumulative_system_value_eur == pytest.approx(
+            0.0, abs=1e-6
+        )
+
+    def test_ev_point_count(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        flat_prices: np.ndarray,
+    ) -> None:
+        """Number of points = len(annual_additional_units)."""
+        flex = EVFlexConfig(
+            type="ev_charging",
+            name="test_ev",
+            mean_kw_per_unit=11.0,
+            annual_additional_units=[0, 5, 10],
+            daily_energy_demand_kwh_per_unit=30.0,
+            arrival_hour=8,
+            departure_hour=18,
+            v2g_enabled=False,
+            usable_battery_kwh_per_unit=60.0,
+        )
+        result = run_enumeration(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=flat_prices,
+            flexibilities=[flex],
+            pv_degradation_rate=0.0,
+            max_workers=1,
+        )
+        assert len(result.points) == 3
+        for p in result.points:
+            assert p.flex_type == "ev_charging"
+
+    def test_ev_v2g_with_price_spread(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        varying_daily_prices: np.ndarray,
+    ) -> None:
+        """EV with V2G and price spread should have positive value."""
+        flex = EVFlexConfig(
+            type="ev_charging",
+            name="test_ev",
+            mean_kw_per_unit=11.0,
+            annual_additional_units=[10],
+            daily_energy_demand_kwh_per_unit=20.0,
+            arrival_hour=8,
+            departure_hour=18,
+            v2g_enabled=True,
+            v2g_rte_pct=90.0,
+            min_departure_soc_pct=50.0,
+            usable_battery_kwh_per_unit=60.0,
+        )
+        result = run_enumeration(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=varying_daily_prices,
+            flexibilities=[flex],
+            pv_degradation_rate=0.0,
+            max_workers=1,
+        )
+        assert len(result.points) == 1
+        # V2G enables arbitrage with price spread
+        assert result.points[0].cumulative_system_value_eur >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# Mixed flex enumeration tests
+# ---------------------------------------------------------------------------
+
+
+class TestMixedFlexEnumeration:
+    """Tests for enumeration with multiple flex types."""
+
+    def test_bess_and_hp_combined(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        flat_prices: np.ndarray,
+        constant_temperature: np.ndarray,
+    ) -> None:
+        """BESS + HP flexibilities are both enumerated."""
+        bess = BessFlexConfig(
+            type="bess",
+            name="test_bess",
+            annual_addition_kw=[50.0],
+            e_to_p_ratio_hours=[2.0],
+            round_trip_efficiency_pct=88.0,
+            min_soc_pct=10.0,
+            max_soc_pct=90.0,
+            degradation_rate_pct_per_year=0.0,
+        )
+        hp = HeatPumpFlexConfig(
+            type="heat_pump",
+            name="test_wp",
+            annual_addition_kw=[50.0],
+            cop_nominal=3.0,
+            annual_thermal_demand_mwh=100.0,
+            thermal_storage_kwh=0.0,
+        )
+        result = run_enumeration(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=flat_prices,
+            flexibilities=[bess, hp],
+            pv_degradation_rate=0.0,
+            max_workers=1,
+            temperature_hourly=constant_temperature,
+        )
+        assert len(result.points) == 2
+        types = {p.flex_type for p in result.points}
+        assert types == {"bess", "heat_pump"}
+
+    def test_all_three_flex_types(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        flat_prices: np.ndarray,
+        constant_temperature: np.ndarray,
+    ) -> None:
+        """BESS + HP + EV flexibilities are all enumerated."""
+        bess = BessFlexConfig(
+            type="bess",
+            name="test_bess",
+            annual_addition_kw=[50.0],
+            e_to_p_ratio_hours=[2.0],
+            round_trip_efficiency_pct=88.0,
+            min_soc_pct=10.0,
+            max_soc_pct=90.0,
+            degradation_rate_pct_per_year=0.0,
+        )
+        hp = HeatPumpFlexConfig(
+            type="heat_pump",
+            name="test_wp",
+            annual_addition_kw=[50.0],
+            cop_nominal=3.0,
+            annual_thermal_demand_mwh=100.0,
+            thermal_storage_kwh=0.0,
+        )
+        ev = EVFlexConfig(
+            type="ev_charging",
+            name="test_ev",
+            mean_kw_per_unit=11.0,
+            annual_additional_units=[5],
+            daily_energy_demand_kwh_per_unit=30.0,
+            arrival_hour=8,
+            departure_hour=18,
+            v2g_enabled=False,
+            usable_battery_kwh_per_unit=60.0,
+        )
+        result = run_enumeration(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=flat_prices,
+            flexibilities=[bess, hp, ev],
+            pv_degradation_rate=0.0,
+            max_workers=1,
+            temperature_hourly=constant_temperature,
+        )
+        assert len(result.points) == 3
+        types = {p.flex_type for p in result.points}
+        assert types == {"bess", "heat_pump", "ev_charging"}

@@ -31,10 +31,20 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from pv_bess_model.config.loader_portfolio import BessFlexConfig, FlexConfig
+from pv_bess_model.config.loader_portfolio import (
+    BessFlexConfig,
+    EVFlexConfig,
+    FlexConfig,
+    HeatPumpFlexConfig,
+)
 from pv_bess_model.dispatch.engine_portfolio import (
     PortfolioEngineConfig,
     run_portfolio_simulation,
+)
+from pv_bess_model.portfolio.heat_demand import (
+    compute_cop,
+    compute_daily_heat_demand,
+    compute_heat_demand,
 )
 
 logger = logging.getLogger(__name__)
@@ -309,6 +319,136 @@ def _evaluate_bess_point(
     )
 
 
+def _evaluate_hp_point(
+    config: PortfolioEngineConfig,
+    pv_profile_base: np.ndarray,
+    load_profile_base: np.ndarray,
+    spot_prices_base: np.ndarray,
+    world_a_costs: list[float],
+    flex_name: str,
+    annual_addition_kw: float,
+    wp_cop_profile_base: np.ndarray,
+    wp_heat_demand_profile_base: np.ndarray,
+    wp_daily_heat_demand_base: np.ndarray,
+    wp_thermal_storage_kwh: float,
+    wp_base_power_kw: float,
+    pv_degradation_rate: float,
+    load_growth_factor: float,
+    start_year: int,
+) -> SystemValuePoint:
+    """Evaluate a single heat pump enumeration point.
+
+    Runs the full multi-year simulation with the given WP capacity addition
+    rate (no BESS) and computes system value as delta to World A.
+    """
+    results = run_portfolio_simulation(
+        config=config,
+        pv_profile_base=pv_profile_base,
+        load_profile_base=load_profile_base,
+        spot_prices_base=spot_prices_base,
+        # No BESS
+        annual_addition_kw=0.0,
+        e_to_p_ratio=1.0,
+        bess_rte=1.0,
+        bess_min_soc_pct=0.0,
+        bess_max_soc_pct=100.0,
+        bess_degradation_rate=0.0,
+        pv_degradation_rate=pv_degradation_rate,
+        load_growth_factor=load_growth_factor,
+        # HP params
+        wp_annual_addition_kw=annual_addition_kw,
+        wp_cop_profile_base=wp_cop_profile_base,
+        wp_heat_demand_profile_base=wp_heat_demand_profile_base,
+        wp_daily_heat_demand_base=wp_daily_heat_demand_base,
+        wp_thermal_storage_kwh=wp_thermal_storage_kwh,
+        wp_start_year=start_year,
+        wp_base_power_kw=wp_base_power_kw,
+    )
+
+    annual_system_values = [
+        world_a_costs[i] - results[i].system_cost
+        for i in range(len(results))
+    ]
+    cumulative = sum(annual_system_values)
+
+    return SystemValuePoint(
+        flex_name=flex_name,
+        flex_type="heat_pump",
+        annual_addition_kw=annual_addition_kw,
+        e_to_p_ratio=None,
+        cumulative_system_value_eur=cumulative,
+        annual_system_values=annual_system_values,
+    )
+
+
+def _evaluate_ev_point(
+    config: PortfolioEngineConfig,
+    pv_profile_base: np.ndarray,
+    load_profile_base: np.ndarray,
+    spot_prices_base: np.ndarray,
+    world_a_costs: list[float],
+    flex_name: str,
+    annual_addition_kw: float,
+    ev_daily_energy_demand_kwh_base: float,
+    ev_usable_battery_kwh_per_kw: float,
+    ev_arrival_interval: int,
+    ev_departure_interval: int,
+    ev_v2g_enabled: bool,
+    ev_v2g_rte: float,
+    ev_min_departure_soc_pct: float,
+    ev_base_power_kw: float,
+    pv_degradation_rate: float,
+    load_growth_factor: float,
+    start_year: int,
+) -> SystemValuePoint:
+    """Evaluate a single EV enumeration point.
+
+    Runs the full multi-year simulation with the given EV capacity addition
+    rate (no BESS, no HP) and computes system value as delta to World A.
+    """
+    results = run_portfolio_simulation(
+        config=config,
+        pv_profile_base=pv_profile_base,
+        load_profile_base=load_profile_base,
+        spot_prices_base=spot_prices_base,
+        # No BESS
+        annual_addition_kw=0.0,
+        e_to_p_ratio=1.0,
+        bess_rte=1.0,
+        bess_min_soc_pct=0.0,
+        bess_max_soc_pct=100.0,
+        bess_degradation_rate=0.0,
+        pv_degradation_rate=pv_degradation_rate,
+        load_growth_factor=load_growth_factor,
+        # EV params
+        ev_annual_addition_kw=annual_addition_kw,
+        ev_daily_energy_demand_kwh_base=ev_daily_energy_demand_kwh_base,
+        ev_usable_battery_kwh_per_kw=ev_usable_battery_kwh_per_kw,
+        ev_arrival_interval=ev_arrival_interval,
+        ev_departure_interval=ev_departure_interval,
+        ev_v2g_enabled=ev_v2g_enabled,
+        ev_v2g_rte=ev_v2g_rte,
+        ev_min_departure_soc_pct=ev_min_departure_soc_pct,
+        ev_start_year=start_year,
+        ev_base_power_kw=ev_base_power_kw,
+    )
+
+    annual_system_values = [
+        world_a_costs[i] - results[i].system_cost
+        for i in range(len(results))
+    ]
+    cumulative = sum(annual_system_values)
+
+    return SystemValuePoint(
+        flex_name=flex_name,
+        flex_type="ev_charging",
+        annual_addition_kw=annual_addition_kw,
+        e_to_p_ratio=None,
+        cumulative_system_value_eur=cumulative,
+        annual_system_values=annual_system_values,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Enumeration
 # ---------------------------------------------------------------------------
@@ -323,6 +463,7 @@ def run_enumeration(
     pv_degradation_rate: float,
     load_growth_factor: float = 1.0,
     max_workers: int | None = None,
+    temperature_hourly: np.ndarray | None = None,
 ) -> SystemValueResult:
     """Run enumeration over all flex x addition_rate x e_to_p_ratio combinations.
 
@@ -347,6 +488,9 @@ def run_enumeration(
         Multiplicative annual load growth factor.
     max_workers:
         Maximum parallel workers.  ``None`` = CPU count.
+    temperature_hourly:
+        Hourly outdoor temperature array (8,760 values, °C).
+        Required when *flexibilities* contains a ``HeatPumpFlexConfig``.
 
     Returns
     -------
@@ -386,6 +530,38 @@ def run_enumeration(
                 max_workers=max_workers,
             )
             points.extend(bess_points)
+        elif isinstance(flex, HeatPumpFlexConfig):
+            if temperature_hourly is None:
+                raise ValueError(
+                    f"HeatPumpFlexConfig '{flex.name}' requires "
+                    f"temperature_hourly to be provided."
+                )
+            hp_points = _enumerate_heat_pump(
+                config=config,
+                pv_profile_base=pv_profile_base,
+                load_profile_base=load_profile_base,
+                spot_prices_base=spot_prices_base,
+                world_a_costs=world_a_costs,
+                flex=flex,
+                temperature_hourly=temperature_hourly,
+                pv_degradation_rate=pv_degradation_rate,
+                load_growth_factor=load_growth_factor,
+                max_workers=max_workers,
+            )
+            points.extend(hp_points)
+        elif isinstance(flex, EVFlexConfig):
+            ev_points = _enumerate_ev(
+                config=config,
+                pv_profile_base=pv_profile_base,
+                load_profile_base=load_profile_base,
+                spot_prices_base=spot_prices_base,
+                world_a_costs=world_a_costs,
+                flex=flex,
+                pv_degradation_rate=pv_degradation_rate,
+                load_growth_factor=load_growth_factor,
+                max_workers=max_workers,
+            )
+            points.extend(ev_points)
         else:
             logger.warning(
                 "Flex type '%s' (%s) not yet supported in enumeration, skipping.",
@@ -507,4 +683,235 @@ def _enumerate_bess(
     # Sort by (e_to_p_ratio, annual_addition_kw) for consistent output
     results.sort(key=lambda p: (p.e_to_p_ratio or 0, p.annual_addition_kw))
 
+    return results
+
+
+def _enumerate_heat_pump(
+    config: PortfolioEngineConfig,
+    pv_profile_base: np.ndarray,
+    load_profile_base: np.ndarray,
+    spot_prices_base: np.ndarray,
+    world_a_costs: list[float],
+    flex: HeatPumpFlexConfig,
+    temperature_hourly: np.ndarray,
+    pv_degradation_rate: float,
+    load_growth_factor: float,
+    max_workers: int | None,
+) -> list[SystemValuePoint]:
+    """Enumerate all addition_rate combinations for one heat pump.
+
+    Runs evaluations in parallel using ``ProcessPoolExecutor``.
+    """
+    # Pre-compute COP and heat demand profiles from temperature data
+    cop_profile_qh = compute_cop(
+        temperature_hourly,
+        cop_nominal=flex.cop_nominal,
+        cop_reference_temp_c=flex.cop_reference_temp_c,
+    )
+    heat_demand_qh = compute_heat_demand(
+        temperature_hourly,
+        annual_thermal_demand_mwh=flex.annual_thermal_demand_mwh,
+    )
+    daily_heat_demand = compute_daily_heat_demand(heat_demand_qh)
+
+    # Base power = first non-zero addition rate (for scaling reference)
+    base_power_kw = next(
+        (r for r in flex.annual_addition_kw if r > 0.0),
+        flex.annual_addition_kw[0] if flex.annual_addition_kw else 1.0,
+    )
+
+    rates = flex.annual_addition_kw
+    n_tasks = len(rates)
+    logger.info(
+        "WP '%s': enumerating %d points ...",
+        flex.name,
+        n_tasks,
+    )
+
+    results: list[SystemValuePoint] = []
+
+    if n_tasks <= 2:
+        for rate in rates:
+            point = _evaluate_hp_point(
+                config=config,
+                pv_profile_base=pv_profile_base,
+                load_profile_base=load_profile_base,
+                spot_prices_base=spot_prices_base,
+                world_a_costs=world_a_costs,
+                flex_name=flex.name,
+                annual_addition_kw=rate,
+                wp_cop_profile_base=cop_profile_qh,
+                wp_heat_demand_profile_base=heat_demand_qh,
+                wp_daily_heat_demand_base=daily_heat_demand,
+                wp_thermal_storage_kwh=flex.thermal_storage_kwh,
+                wp_base_power_kw=base_power_kw,
+                pv_degradation_rate=pv_degradation_rate,
+                load_growth_factor=load_growth_factor,
+                start_year=flex.start_year,
+            )
+            results.append(point)
+            logger.info(
+                "  WP '%s' rate=%.0f kW/a: system_value=%.0f EUR",
+                flex.name,
+                rate,
+                point.cumulative_system_value_eur,
+            )
+    else:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {}
+            for rate in rates:
+                future = executor.submit(
+                    _evaluate_hp_point,
+                    config=config,
+                    pv_profile_base=pv_profile_base,
+                    load_profile_base=load_profile_base,
+                    spot_prices_base=spot_prices_base,
+                    world_a_costs=world_a_costs,
+                    flex_name=flex.name,
+                    annual_addition_kw=rate,
+                    wp_cop_profile_base=cop_profile_qh,
+                    wp_heat_demand_profile_base=heat_demand_qh,
+                    wp_daily_heat_demand_base=daily_heat_demand,
+                    wp_thermal_storage_kwh=flex.thermal_storage_kwh,
+                    wp_base_power_kw=base_power_kw,
+                    pv_degradation_rate=pv_degradation_rate,
+                    load_growth_factor=load_growth_factor,
+                    start_year=flex.start_year,
+                )
+                future_map[future] = rate
+
+            for future in as_completed(future_map):
+                rate = future_map[future]
+                point = future.result()
+                results.append(point)
+                logger.info(
+                    "  WP '%s' rate=%.0f kW/a: system_value=%.0f EUR",
+                    flex.name,
+                    rate,
+                    point.cumulative_system_value_eur,
+                )
+
+    results.sort(key=lambda p: p.annual_addition_kw)
+    return results
+
+
+def _enumerate_ev(
+    config: PortfolioEngineConfig,
+    pv_profile_base: np.ndarray,
+    load_profile_base: np.ndarray,
+    spot_prices_base: np.ndarray,
+    world_a_costs: list[float],
+    flex: EVFlexConfig,
+    pv_degradation_rate: float,
+    load_growth_factor: float,
+    max_workers: int | None,
+) -> list[SystemValuePoint]:
+    """Enumerate all addition_rate combinations for one EV fleet.
+
+    Runs evaluations in parallel using ``ProcessPoolExecutor``.
+    """
+    v2g_rte = flex.v2g_rte_pct / 100.0
+
+    # Convert arrival/departure hours to intervals
+    intervals_per_hour = config.intervals_per_day // 24
+    arrival_interval = flex.arrival_hour * intervals_per_hour
+    departure_interval = flex.departure_hour * intervals_per_hour
+
+    # Derive addition rates in kW from unit counts
+    rates_kw = [
+        units * flex.mean_kw_per_unit for units in flex.annual_additional_units
+    ]
+
+    # Base power = first non-zero rate (for scaling reference)
+    base_power_kw = next(
+        (r for r in rates_kw if r > 0.0),
+        rates_kw[0] if rates_kw else 1.0,
+    )
+
+    # Base-level daily energy demand and battery capacity (at base_power_kw)
+    base_units = base_power_kw / flex.mean_kw_per_unit if flex.mean_kw_per_unit > 0 else 1.0
+    daily_energy_demand_base = flex.daily_energy_demand_kwh_per_unit * base_units
+    usable_battery_per_kw = (
+        flex.usable_battery_kwh_per_unit / flex.mean_kw_per_unit
+        if flex.mean_kw_per_unit > 0
+        else 0.0
+    )
+
+    n_tasks = len(rates_kw)
+    logger.info(
+        "EV '%s': enumerating %d points ...",
+        flex.name,
+        n_tasks,
+    )
+
+    results: list[SystemValuePoint] = []
+
+    if n_tasks <= 2:
+        for rate_kw in rates_kw:
+            point = _evaluate_ev_point(
+                config=config,
+                pv_profile_base=pv_profile_base,
+                load_profile_base=load_profile_base,
+                spot_prices_base=spot_prices_base,
+                world_a_costs=world_a_costs,
+                flex_name=flex.name,
+                annual_addition_kw=rate_kw,
+                ev_daily_energy_demand_kwh_base=daily_energy_demand_base,
+                ev_usable_battery_kwh_per_kw=usable_battery_per_kw,
+                ev_arrival_interval=arrival_interval,
+                ev_departure_interval=departure_interval,
+                ev_v2g_enabled=flex.v2g_enabled,
+                ev_v2g_rte=v2g_rte,
+                ev_min_departure_soc_pct=flex.min_departure_soc_pct,
+                ev_base_power_kw=base_power_kw,
+                pv_degradation_rate=pv_degradation_rate,
+                load_growth_factor=load_growth_factor,
+                start_year=flex.start_year,
+            )
+            results.append(point)
+            logger.info(
+                "  EV '%s' rate=%.0f kW/a: system_value=%.0f EUR",
+                flex.name,
+                rate_kw,
+                point.cumulative_system_value_eur,
+            )
+    else:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {}
+            for rate_kw in rates_kw:
+                future = executor.submit(
+                    _evaluate_ev_point,
+                    config=config,
+                    pv_profile_base=pv_profile_base,
+                    load_profile_base=load_profile_base,
+                    spot_prices_base=spot_prices_base,
+                    world_a_costs=world_a_costs,
+                    flex_name=flex.name,
+                    annual_addition_kw=rate_kw,
+                    ev_daily_energy_demand_kwh_base=daily_energy_demand_base,
+                    ev_usable_battery_kwh_per_kw=usable_battery_per_kw,
+                    ev_arrival_interval=arrival_interval,
+                    ev_departure_interval=departure_interval,
+                    ev_v2g_enabled=flex.v2g_enabled,
+                    ev_v2g_rte=v2g_rte,
+                    ev_min_departure_soc_pct=flex.min_departure_soc_pct,
+                    ev_base_power_kw=base_power_kw,
+                    pv_degradation_rate=pv_degradation_rate,
+                    load_growth_factor=load_growth_factor,
+                    start_year=flex.start_year,
+                )
+                future_map[future] = rate_kw
+
+            for future in as_completed(future_map):
+                rate_kw = future_map[future]
+                point = future.result()
+                results.append(point)
+                logger.info(
+                    "  EV '%s' rate=%.0f kW/a: system_value=%.0f EUR",
+                    flex.name,
+                    rate_kw,
+                    point.cumulative_system_value_eur,
+                )
+
+    results.sort(key=lambda p: p.annual_addition_kw)
     return results
