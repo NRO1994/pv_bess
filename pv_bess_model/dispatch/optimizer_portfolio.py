@@ -12,30 +12,25 @@ Unlike the PV+BESS optimizer (``optimizer.py``), this LP:
 - Uses a ``perfect_foresight_discount`` on sell revenues
 - Models a bidirectional net grid position (buy AND sell possible)
 
-The LP supports optional BESS and/or heat pump (WP) flexibility.
-EV/V2G flex variables will be added in Phase 6.
+The LP supports optional BESS, heat pump (WP), and/or EV/V2G flexibility.
+All flex blocks are conditionally included in the LP.
 
 Variable layout (full flex, T = intervals_per_day)
 --------------------------------------------------
-===========  =====  ==========================================
-Slice        Len    Variable
-===========  =====  ==========================================
-0   .. T-1   T      grid_sell[t]      – net grid export (kWh)
-T   .. 2T-1  T      grid_buy[t]       – net grid import (kWh)
-2T  .. 3T-1  T      bess_charge[t]    – BESS charging (kWh)
-3T  .. 4T-1  T      bess_discharge[t] – BESS discharging (kWh)
-4T  .. 5T    T+1    soc[t]            – SoC (kWh), t=0..T
-5T+1..6T     T      wp_load[t]        – WP electrical intake (kWh)
-6T+1..7T+1   T+1    thermal_soc[t]    – thermal storage (kWh_th)
-===========  =====  ==========================================
+Base variables (always present):
+  grid_sell[t]      – T values
+  grid_buy[t]       – T values
 
-BESS and WP blocks are conditionally included.
+Conditional blocks (appended in order if present):
+  BESS:  charge(T), discharge(T), soc(T+1)
+  HP:    wp_load(T), thermal_soc(T+1)
+  EV:    ev_charge(T), ev_discharge(T), ev_soc(T+1)
 
 Typical usage::
 
     from pv_bess_model.dispatch.optimizer_portfolio import (
         optimize_portfolio_day, PortfolioLPConfig, BessFlexParams,
-        HeatPumpFlexParams,
+        HeatPumpFlexParams, EVFlexParams,
     )
 
     result = optimize_portfolio_day(
@@ -45,6 +40,7 @@ Typical usage::
         bess_params=bess,
         config=config,
         hp_params=hp,
+        ev_params=ev,
     )
 """
 
@@ -148,6 +144,45 @@ class HeatPumpFlexParams:
     start_thermal_soc_kwh: float = 0.0
 
 
+@dataclass(frozen=True)
+class EVFlexParams:
+    """EV/Wallbox parameters for the portfolio LP.
+
+    Attributes
+    ----------
+    power_kw : float
+        Charging (and V2G discharging) power of the fleet (kW).
+    daily_energy_demand_kwh : float
+        Daily energy demand of the EV fleet (kWh).
+    usable_battery_kwh : float
+        Usable battery capacity of the EV fleet (kWh).
+    arrival_interval : int
+        Interval index when EVs arrive (0-based, 0..T-1).
+    departure_interval : int
+        Interval index when EVs depart (0-based, 0..T-1).
+        Must be > arrival_interval.
+    v2g_enabled : bool
+        Whether vehicle-to-grid discharge is allowed.
+    v2g_rte : float
+        V2G round-trip efficiency as a fraction (0, 1].
+        Only relevant when *v2g_enabled* is True.
+    min_departure_soc_pct : float
+        Minimum SoC at departure as percent of usable capacity.
+    start_soc_kwh : float
+        EV fleet SoC at arrival in kWh.
+    """
+
+    power_kw: float
+    daily_energy_demand_kwh: float
+    usable_battery_kwh: float
+    arrival_interval: int
+    departure_interval: int
+    v2g_enabled: bool
+    v2g_rte: float
+    min_departure_soc_pct: float
+    start_soc_kwh: float = 0.0
+
+
 # ---------------------------------------------------------------------------
 # Result container
 # ---------------------------------------------------------------------------
@@ -190,6 +225,10 @@ class PortfolioDailyResult:
     wp_load: np.ndarray | None = None
     thermal_soc: np.ndarray | None = None
     end_thermal_soc_kwh: float = 0.0
+    ev_charge: np.ndarray | None = None
+    ev_discharge: np.ndarray | None = None
+    ev_soc: np.ndarray | None = None
+    end_ev_soc_kwh: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -204,15 +243,16 @@ def optimize_portfolio_day(
     bess_params: BessFlexParams | None,
     config: PortfolioLPConfig,
     hp_params: HeatPumpFlexParams | None = None,
+    ev_params: EVFlexParams | None = None,
 ) -> PortfolioDailyResult:
     """Solve the daily portfolio dispatch LP.
 
     Minimizes daily system cost (grid buy minus discounted grid sell)
     subject to energy balance, BESS SoC, power, and optional heat pump
-    constraints.
+    and EV/V2G constraints.
 
-    When neither *bess_params* nor *hp_params* is given, no LP is needed
-    and the result equals World A for that day.
+    When no flex is given, no LP is needed and the result equals World A
+    for that day.
 
     Parameters
     ----------
@@ -228,17 +268,20 @@ def optimize_portfolio_day(
         LP configuration (timestep, discount).
     hp_params:
         Heat pump configuration, or ``None`` for no heat pump.
+    ev_params:
+        EV/V2G configuration, or ``None`` for no EV.
 
     Returns
     -------
     PortfolioDailyResult
         Optimal dispatch arrays and daily system cost.
     """
-    if bess_params is None and hp_params is None:
+    if bess_params is None and hp_params is None and ev_params is None:
         return _solve_no_flex(pv_production, load_demand, spot_prices, config)
 
     return _solve_lp(
-        pv_production, load_demand, spot_prices, bess_params, config, hp_params
+        pv_production, load_demand, spot_prices, bess_params, config,
+        hp_params, ev_params,
     )
 
 
@@ -288,28 +331,31 @@ def _solve_lp(
     bess: BessFlexParams | None,
     config: PortfolioLPConfig,
     hp: HeatPumpFlexParams | None = None,
+    ev: EVFlexParams | None = None,
 ) -> PortfolioDailyResult:
-    """Solve the daily LP with BESS and/or heat pump flexibility.
+    """Solve the daily LP with BESS, heat pump, and/or EV flexibility.
 
     Variable layout (conditionally built):
         Base: [grid_sell(T), grid_buy(T)]
         + BESS: [charge(T), discharge(T), soc(T+1)]
         + HP:   [wp_load(T), thermal_soc(T+1)]
+        + EV:   [ev_charge(T), ev_discharge(T), ev_soc(T+1)]
 
     Objective (minimize):
         min Σ [ grid_buy[t] × price[t] − grid_sell[t] × price[t] × discount ]
 
-    Constraints (BESS):
-        1. Energy balance: sell[t] - buy[t] + charge[t] - discharge[t]*RTE
-                           (+ wp_load[t] if HP) = netto[t]
-        2. SoC linking: soc[t+1] = soc[t] + charge[t] - discharge[t]
-        3. SoC initial: soc[0] = start_soc
+    Energy balance (all flex combined):
+        sell[t] - buy[t] + charge[t] - discharge[t]*RTE
+                         + wp_load[t]
+                         + ev_charge[t] - ev_discharge[t]*v2g_rte
+                         = netto[t]
 
-    Constraints (HP):
-        4. Daily energy balance: Σ wp_load[t] × COP[t] = daily_heat_demand
-        5. Thermal SoC linking:
-           thermal_soc[t+1] = thermal_soc[t] + wp_load[t]*COP[t] - heat_demand[t]
-        6. Thermal SoC initial: thermal_soc[0] = start_thermal_soc
+    EV constraints:
+        - ev_charge[t] = 0, ev_discharge[t] = 0 outside [arrival, departure)
+        - ev_soc linking: ev_soc[t+1] = ev_soc[t] + ev_charge[t] - ev_discharge[t]
+        - ev_soc initial: ev_soc[arrival] = start_soc
+        - ev_soc departure >= min_departure_soc
+        - If v2g_enabled=False: ev_discharge[t] = 0 for all t
     """
     T = config.intervals_per_day
     dt = config.timestep_hours
@@ -318,6 +364,7 @@ def _solve_lp(
 
     has_bess = bess is not None
     has_hp = hp is not None
+    has_ev = ev is not None
 
     # --- Variable layout ---
     i_sell = 0         # grid_sell: 0..T-1
@@ -339,6 +386,14 @@ def _solve_lp(
         i_tsoc = next_idx + T        # thermal_soc:   next+T..next+2T (T+1 vars)
         next_idx += 2 * T + 1
 
+    # EV variables (conditional)
+    i_ev_chg = i_ev_dis = i_ev_soc = -1
+    if has_ev:
+        i_ev_chg = next_idx          # ev_charge:     next..next+T-1
+        i_ev_dis = next_idx + T      # ev_discharge:  next+T..next+2T-1
+        i_ev_soc = next_idx + 2 * T  # ev_soc:        next+2T..next+3T (T+1 vars)
+        next_idx += 3 * T + 1
+
     n_vars = next_idx
 
     # --- BESS derived values ---
@@ -352,6 +407,16 @@ def _solve_lp(
     wp_max_energy = 0.0
     if has_hp:
         wp_max_energy = hp.power_kw * dt
+
+    # --- EV derived values ---
+    ev_max_charge = ev_max_discharge = 0.0
+    ev_soc_min = ev_soc_max = ev_min_dep_soc = 0.0
+    if has_ev:
+        ev_max_charge = ev.power_kw * dt
+        ev_max_discharge = ev.power_kw * dt
+        ev_soc_min = 0.0
+        ev_soc_max = ev.usable_battery_kwh
+        ev_min_dep_soc = ev.usable_battery_kwh * ev.min_departure_soc_pct / 100.0
 
     # --- Objective ---
     c = np.zeros(n_vars)
@@ -380,11 +445,27 @@ def _solve_lp(
         # thermal_soc: [0, thermal_storage_kwh]
         bounds.extend((0.0, hp.thermal_storage_kwh) for _ in range(T + 1))
 
+    if has_ev:
+        # ev_charge: [0, ev_max_charge] within window, fixed to 0 outside
+        for t in range(T):
+            if ev.arrival_interval <= t < ev.departure_interval:
+                bounds.append((0.0, ev_max_charge))
+            else:
+                bounds.append((0.0, 0.0))
+        # ev_discharge: [0, ev_max_discharge] within window if v2g, else 0
+        for t in range(T):
+            if ev.v2g_enabled and ev.arrival_interval <= t < ev.departure_interval:
+                bounds.append((0.0, ev_max_discharge))
+            else:
+                bounds.append((0.0, 0.0))
+        # ev_soc: [0, usable_battery_kwh]
+        for t in range(T + 1):
+            bounds.append((ev_soc_min, ev_soc_max))
+
     # --- Equality constraints ---
     eq_rows: list[tuple[dict[int, float], float]] = []
 
     # 1. Energy balance (T rows)
-    #    sell[t] - buy[t] + charge[t] - discharge[t]*RTE + wp_load[t] = netto[t]
     for t in range(T):
         row: dict[int, float] = {
             i_sell + t: 1.0,
@@ -395,6 +476,9 @@ def _solve_lp(
             row[i_dis + t] = -bess.rte
         if has_hp:
             row[i_wp + t] = 1.0
+        if has_ev:
+            row[i_ev_chg + t] = 1.0
+            row[i_ev_dis + t] = -ev.v2g_rte
         eq_rows.append((row, netto[t]))
 
     # 2. BESS SoC linking (T rows)
@@ -415,7 +499,6 @@ def _solve_lp(
         eq_rows.append(({i_soc: 1.0}, bess.start_soc_kwh))
 
     # 4. HP daily energy balance (1 row)
-    #    Σ wp_load[t] × COP[t] = daily_heat_demand
     if has_hp:
         row_hp: dict[int, float] = {}
         for t in range(T):
@@ -423,7 +506,6 @@ def _solve_lp(
         eq_rows.append((row_hp, hp.daily_heat_demand_kwh))
 
     # 5. Thermal SoC linking (T rows)
-    #    thermal_soc[t+1] = thermal_soc[t] + wp_load[t]*COP[t] - heat_demand[t]
     if has_hp:
         for t in range(T):
             eq_rows.append((
@@ -439,6 +521,34 @@ def _solve_lp(
     if has_hp:
         eq_rows.append(({i_tsoc: 1.0}, hp.start_thermal_soc_kwh))
 
+    # 7. EV SoC linking (T rows)
+    #    ev_soc[t+1] = ev_soc[t] + ev_charge[t] - ev_discharge[t]
+    if has_ev:
+        for t in range(T):
+            eq_rows.append((
+                {
+                    i_ev_soc + t + 1: 1.0,
+                    i_ev_soc + t: -1.0,
+                    i_ev_chg + t: -1.0,
+                    i_ev_dis + t: 1.0,
+                },
+                0.0,
+            ))
+
+    # 8. EV SoC initial (1 row): ev_soc[0] = start_soc
+    if has_ev:
+        eq_rows.append(({i_ev_soc: 1.0}, ev.start_soc_kwh))
+
+    # --- Inequality constraints ---
+    # EV departure SoC constraint: ev_soc[departure] >= min_departure_soc
+    # Expressed as: -ev_soc[departure] <= -min_departure_soc
+    ineq_rows: list[tuple[dict[int, float], float]] = []
+    if has_ev:
+        ineq_rows.append((
+            {i_ev_soc + ev.departure_interval: -1.0},
+            -ev_min_dep_soc,
+        ))
+
     # Build dense A_eq, b_eq
     n_eq = len(eq_rows)
     A_eq = np.zeros((n_eq, n_vars))
@@ -448,9 +558,23 @@ def _solve_lp(
             A_eq[r, col] = val
         b_eq[r] = rhs
 
+    # Build dense A_ub, b_ub (inequality constraints)
+    A_ub = None
+    b_ub = None
+    if ineq_rows:
+        n_ineq = len(ineq_rows)
+        A_ub = np.zeros((n_ineq, n_vars))
+        b_ub = np.zeros(n_ineq)
+        for r, (coeffs, rhs) in enumerate(ineq_rows):
+            for col, val in coeffs.items():
+                A_ub[r, col] = val
+            b_ub[r] = rhs
+
     # --- Solve ---
     result = linprog(
         c=c,
+        A_ub=A_ub,
+        b_ub=b_ub,
         A_eq=A_eq,
         b_eq=b_eq,
         bounds=bounds,
@@ -470,6 +594,8 @@ def _solve_lp(
             fallback.bess_soc = np.full(T + 1, bess.start_soc_kwh)
         if has_hp:
             fallback.end_thermal_soc_kwh = hp.start_thermal_soc_kwh
+        if has_ev:
+            fallback.end_ev_soc_kwh = ev.start_soc_kwh
         fallback.solver_status = f"infeasible:{result.message}"
         return fallback
 
@@ -497,6 +623,16 @@ def _solve_lp(
         thermal_soc_out = x[i_tsoc: i_tsoc + T + 1]
         end_thermal_soc = float(thermal_soc_out[-1])
 
+    ev_charge_out: np.ndarray | None = None
+    ev_discharge_out: np.ndarray | None = None
+    ev_soc_out: np.ndarray | None = None
+    end_ev_soc = 0.0
+    if has_ev:
+        ev_charge_out = x[i_ev_chg: i_ev_chg + T]
+        ev_discharge_out = x[i_ev_dis: i_ev_dis + T]
+        ev_soc_out = x[i_ev_soc: i_ev_soc + T + 1]
+        end_ev_soc = float(ev_soc_out[-1])
+
     sell_revenue = float(np.sum(grid_sell * prices * discount))
     buy_cost = float(np.sum(grid_buy * prices))
     system_cost = buy_cost - sell_revenue
@@ -513,4 +649,8 @@ def _solve_lp(
         wp_load=wp_load_out,
         thermal_soc=thermal_soc_out,
         end_thermal_soc_kwh=end_thermal_soc,
+        ev_charge=ev_charge_out,
+        ev_discharge=ev_discharge_out,
+        ev_soc=ev_soc_out,
+        end_ev_soc_kwh=end_ev_soc,
     )

@@ -10,6 +10,7 @@ from pv_bess_model.dispatch.engine_portfolio import (
     PortfolioAnnualResult,
     PortfolioEngineConfig,
     compute_bess_tranche_capacity,
+    compute_ev_capacity,
     compute_wp_capacity,
     run_portfolio_simulation,
 )
@@ -624,3 +625,157 @@ class TestPortfolioSimulationWithWP:
         for r in results:
             assert r.wp_power_kw == 0.0
             assert r.total_wp_electrical_kwh == 0.0
+
+
+# ---------------------------------------------------------------------------
+# compute_ev_capacity tests
+# ---------------------------------------------------------------------------
+
+
+class TestEvCapacity:
+    """Tests for the EV capacity model."""
+
+    def test_zero_addition(self) -> None:
+        """Zero addition produces zero capacity."""
+        assert compute_ev_capacity(0.0, 5) == 0.0
+
+    def test_linear_growth(self) -> None:
+        """EV capacity grows linearly (no degradation)."""
+        for year in range(1, 6):
+            assert compute_ev_capacity(100.0, year) == pytest.approx(100.0 * year)
+
+    def test_start_year_delay(self) -> None:
+        """EV capacity is zero before start_year."""
+        assert compute_ev_capacity(100.0, 2, start_year=3) == 0.0
+        assert compute_ev_capacity(100.0, 3, start_year=3) == pytest.approx(100.0)
+        assert compute_ev_capacity(100.0, 5, start_year=3) == pytest.approx(300.0)
+
+
+# ---------------------------------------------------------------------------
+# Portfolio simulation with EV tests
+# ---------------------------------------------------------------------------
+
+
+class TestPortfolioSimulationWithEV:
+    """Tests for portfolio simulation with EV flexibility."""
+
+    def _base_ev_kwargs(self) -> dict:
+        """Common EV simulation kwargs."""
+        return dict(
+            ev_annual_addition_kw=50.0,
+            ev_daily_energy_demand_kwh_base=20.0,
+            ev_usable_battery_kwh_per_kw=2.0,  # 2 kWh per kW
+            ev_arrival_interval=8,
+            ev_departure_interval=18,
+            ev_v2g_enabled=False,
+            ev_v2g_rte=0.9,
+            ev_min_departure_soc_pct=50.0,
+            ev_start_year=1,
+            ev_base_power_kw=50.0,
+        )
+
+    def test_ev_power_grows_over_years(
+        self,
+        engine_config_short: PortfolioEngineConfig,
+        flat_pv_profile: np.ndarray,
+        flat_load_profile: np.ndarray,
+        flat_prices: np.ndarray,
+    ) -> None:
+        """EV power should grow linearly each year."""
+        results = run_portfolio_simulation(
+            config=engine_config_short,
+            pv_profile_base=flat_pv_profile,
+            load_profile_base=flat_load_profile,
+            spot_prices_base=flat_prices,
+            annual_addition_kw=0.0,
+            e_to_p_ratio=2.0,
+            bess_rte=0.88,
+            bess_min_soc_pct=10.0,
+            bess_max_soc_pct=90.0,
+            bess_degradation_rate=0.0,
+            pv_degradation_rate=0.0,
+            **self._base_ev_kwargs(),
+        )
+        for r in results:
+            assert r.ev_power_kw == pytest.approx(50.0 * r.year)
+
+    def test_ev_charge_grows_with_capacity(
+        self,
+        engine_config_short: PortfolioEngineConfig,
+        flat_pv_profile: np.ndarray,
+        flat_load_profile: np.ndarray,
+        flat_prices: np.ndarray,
+    ) -> None:
+        """EV charging should increase as fleet grows."""
+        results = run_portfolio_simulation(
+            config=engine_config_short,
+            pv_profile_base=flat_pv_profile,
+            load_profile_base=flat_load_profile,
+            spot_prices_base=flat_prices,
+            annual_addition_kw=0.0,
+            e_to_p_ratio=2.0,
+            bess_rte=0.88,
+            bess_min_soc_pct=10.0,
+            bess_max_soc_pct=90.0,
+            bess_degradation_rate=0.0,
+            pv_degradation_rate=0.0,
+            **self._base_ev_kwargs(),
+        )
+        for i in range(1, len(results)):
+            assert results[i].total_ev_charge_kwh > results[i - 1].total_ev_charge_kwh
+
+    def test_ev_start_year_delays(
+        self,
+        engine_config_short: PortfolioEngineConfig,
+        flat_pv_profile: np.ndarray,
+        flat_load_profile: np.ndarray,
+        flat_prices: np.ndarray,
+    ) -> None:
+        """EV start_year=3 means no EV in years 1-2."""
+        kwargs = self._base_ev_kwargs()
+        kwargs["ev_start_year"] = 3
+        results = run_portfolio_simulation(
+            config=engine_config_short,
+            pv_profile_base=flat_pv_profile,
+            load_profile_base=flat_load_profile,
+            spot_prices_base=flat_prices,
+            annual_addition_kw=0.0,
+            e_to_p_ratio=2.0,
+            bess_rte=0.88,
+            bess_min_soc_pct=10.0,
+            bess_max_soc_pct=90.0,
+            bess_degradation_rate=0.0,
+            pv_degradation_rate=0.0,
+            **kwargs,
+        )
+        assert results[0].ev_power_kw == 0.0
+        assert results[0].total_ev_charge_kwh == 0.0
+        assert results[1].ev_power_kw == 0.0
+        assert results[2].ev_power_kw == pytest.approx(50.0)
+        assert results[2].total_ev_charge_kwh > 0.0
+
+    def test_no_ev_params_backward_compat(
+        self,
+        engine_config_short: PortfolioEngineConfig,
+        flat_pv_profile: np.ndarray,
+        flat_load_profile: np.ndarray,
+        flat_prices: np.ndarray,
+    ) -> None:
+        """Without EV params, simulation should work as before."""
+        results = run_portfolio_simulation(
+            config=engine_config_short,
+            pv_profile_base=flat_pv_profile,
+            load_profile_base=flat_load_profile,
+            spot_prices_base=flat_prices,
+            annual_addition_kw=0.0,
+            e_to_p_ratio=2.0,
+            bess_rte=0.88,
+            bess_min_soc_pct=10.0,
+            bess_max_soc_pct=90.0,
+            bess_degradation_rate=0.0,
+            pv_degradation_rate=0.0,
+        )
+        for r in results:
+            assert r.ev_power_kw == 0.0
+            assert r.total_ev_charge_kwh == 0.0
+            assert r.total_ev_discharge_kwh == 0.0

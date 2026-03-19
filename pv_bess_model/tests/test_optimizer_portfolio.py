@@ -7,6 +7,7 @@ import pytest
 
 from pv_bess_model.dispatch.optimizer_portfolio import (
     BessFlexParams,
+    EVFlexParams,
     HeatPumpFlexParams,
     PortfolioDailyResult,
     PortfolioLPConfig,
@@ -837,3 +838,307 @@ class TestBessAndHeatPump:
         np.testing.assert_array_equal(result.bess_discharge, 0.0)
         assert result.wp_load is not None
         assert result.solver_status == "optimal"
+
+
+# ---------------------------------------------------------------------------
+# EV fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def ev_no_v2g() -> EVFlexParams:
+    """EV fleet: charge-only (no V2G), 24 intervals, arrives at 8, departs at 18."""
+    return EVFlexParams(
+        power_kw=50.0,
+        daily_energy_demand_kwh=100.0,
+        usable_battery_kwh=200.0,
+        arrival_interval=8,
+        departure_interval=18,
+        v2g_enabled=False,
+        v2g_rte=0.9,
+        min_departure_soc_pct=80.0,
+        start_soc_kwh=60.0,  # arrive with 60 kWh
+    )
+
+
+@pytest.fixture
+def ev_with_v2g() -> EVFlexParams:
+    """EV fleet: V2G enabled, 24 intervals, arrives at 8, departs at 20."""
+    return EVFlexParams(
+        power_kw=50.0,
+        daily_energy_demand_kwh=50.0,
+        usable_battery_kwh=200.0,
+        arrival_interval=8,
+        departure_interval=20,
+        v2g_enabled=True,
+        v2g_rte=0.9,
+        min_departure_soc_pct=50.0,
+        start_soc_kwh=100.0,  # arrive half-full
+    )
+
+
+# ---------------------------------------------------------------------------
+# EV charge-only tests (no V2G)
+# ---------------------------------------------------------------------------
+
+
+class TestEVChargeOnly:
+    """Tests for LP with EV charge-only (no V2G)."""
+
+    def test_no_discharge_without_v2g(
+        self, config_24: PortfolioLPConfig, ev_no_v2g: EVFlexParams
+    ) -> None:
+        """Without V2G, ev_discharge must be zero everywhere."""
+        pv = np.full(24, 10.0)
+        load = np.full(24, 5.0)
+        prices = np.full(24, 0.05)
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config_24, ev_params=ev_no_v2g
+        )
+
+        assert result.ev_discharge is not None
+        assert np.all(result.ev_discharge <= 1e-10)
+
+    def test_charge_only_in_window(
+        self, config_24: PortfolioLPConfig, ev_no_v2g: EVFlexParams
+    ) -> None:
+        """ev_charge must be zero outside [arrival, departure)."""
+        pv = np.full(24, 10.0)
+        load = np.full(24, 5.0)
+        prices = np.full(24, 0.05)
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config_24, ev_params=ev_no_v2g
+        )
+
+        # Outside window: intervals 0-7 and 18-23
+        assert np.all(result.ev_charge[:ev_no_v2g.arrival_interval] <= 1e-10)
+        assert np.all(result.ev_charge[ev_no_v2g.departure_interval:] <= 1e-10)
+
+    def test_min_departure_soc(
+        self, config_24: PortfolioLPConfig, ev_no_v2g: EVFlexParams
+    ) -> None:
+        """EV SoC at departure must be >= min_departure_soc."""
+        pv = np.full(24, 10.0)
+        load = np.full(24, 5.0)
+        prices = np.full(24, 0.05)
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config_24, ev_params=ev_no_v2g
+        )
+
+        min_soc = ev_no_v2g.usable_battery_kwh * ev_no_v2g.min_departure_soc_pct / 100.0
+        dep_soc = result.ev_soc[ev_no_v2g.departure_interval]
+        assert dep_soc >= min_soc - 1e-6
+
+    def test_ev_soc_within_bounds(
+        self, config_24: PortfolioLPConfig, ev_no_v2g: EVFlexParams
+    ) -> None:
+        """EV SoC must stay within [0, usable_battery_kwh]."""
+        pv = np.full(24, 10.0)
+        load = np.full(24, 5.0)
+        prices = np.full(24, 0.05)
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config_24, ev_params=ev_no_v2g
+        )
+
+        assert np.all(result.ev_soc >= -1e-6)
+        assert np.all(result.ev_soc <= ev_no_v2g.usable_battery_kwh + 1e-6)
+
+    def test_ev_soc_linking(
+        self, config_24: PortfolioLPConfig, ev_no_v2g: EVFlexParams
+    ) -> None:
+        """EV SoC linking: soc[t+1] = soc[t] + charge[t] - discharge[t]."""
+        pv = np.full(24, 10.0)
+        load = np.full(24, 5.0)
+        prices = np.full(24, 0.05)
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config_24, ev_params=ev_no_v2g
+        )
+
+        for t in range(24):
+            expected = (
+                result.ev_soc[t] + result.ev_charge[t] - result.ev_discharge[t]
+            )
+            assert result.ev_soc[t + 1] == pytest.approx(expected, abs=1e-6)
+
+    def test_ev_charge_power_limit(
+        self, config_24: PortfolioLPConfig, ev_no_v2g: EVFlexParams
+    ) -> None:
+        """ev_charge per interval must not exceed P × timestep_hours."""
+        pv = np.full(24, 100.0)  # lots of PV surplus
+        load = np.zeros(24)
+        prices = np.full(24, 0.05)
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config_24, ev_params=ev_no_v2g
+        )
+
+        max_energy = ev_no_v2g.power_kw * config_24.timestep_hours
+        assert np.all(result.ev_charge <= max_energy + 1e-6)
+
+    def test_ev_energy_balance(
+        self, config_24: PortfolioLPConfig, ev_no_v2g: EVFlexParams
+    ) -> None:
+        """Energy balance with EV: sell - buy + ev_charge - ev_dis*rte = netto."""
+        pv = np.full(24, 10.0)
+        load = np.full(24, 5.0)
+        prices = np.full(24, 0.05)
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config_24, ev_params=ev_no_v2g
+        )
+
+        netto = pv - load
+        balance = (
+            result.grid_sell
+            - result.grid_buy
+            + result.ev_charge
+            - result.ev_discharge * ev_no_v2g.v2g_rte
+        )
+        np.testing.assert_allclose(balance, netto, atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# EV with V2G tests
+# ---------------------------------------------------------------------------
+
+
+class TestEVWithV2G:
+    """Tests for LP with EV V2G enabled."""
+
+    def test_v2g_discharge_in_window(
+        self, config_24: PortfolioLPConfig, ev_with_v2g: EVFlexParams
+    ) -> None:
+        """V2G discharge must be zero outside [arrival, departure)."""
+        pv = np.zeros(24)
+        load = np.zeros(24)
+        prices = np.zeros(24)
+        prices[16:20] = 0.20  # high prices during presence window
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config_24, ev_params=ev_with_v2g
+        )
+
+        assert np.all(result.ev_discharge[:ev_with_v2g.arrival_interval] <= 1e-10)
+        assert np.all(result.ev_discharge[ev_with_v2g.departure_interval:] <= 1e-10)
+
+    def test_v2g_arbitrage(
+        self, config_24: PortfolioLPConfig
+    ) -> None:
+        """V2G should charge at low prices and discharge at high prices."""
+        ev = EVFlexParams(
+            power_kw=50.0,
+            daily_energy_demand_kwh=0.0,  # no driving demand
+            usable_battery_kwh=200.0,
+            arrival_interval=0,
+            departure_interval=24,  # full day window
+            v2g_enabled=True,
+            v2g_rte=1.0,  # perfect RTE for easier validation
+            min_departure_soc_pct=0.0,
+            start_soc_kwh=0.0,
+        )
+
+        pv = np.zeros(24)
+        load = np.zeros(24)
+        prices = np.zeros(24)
+        prices[:6] = 0.02   # cheap
+        prices[18:] = 0.15  # expensive
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config_24, ev_params=ev
+        )
+
+        # Should charge during cheap hours and discharge during expensive
+        assert np.sum(result.ev_charge[:6]) > 1.0
+        assert np.sum(result.ev_discharge[18:]) > 1.0
+
+    def test_v2g_min_departure_soc(
+        self, config_24: PortfolioLPConfig, ev_with_v2g: EVFlexParams
+    ) -> None:
+        """Even with V2G, departure SoC must be >= min."""
+        pv = np.zeros(24)
+        load = np.zeros(24)
+        prices = np.full(24, 0.10)  # high prices incentivize max discharge
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config_24, ev_params=ev_with_v2g
+        )
+
+        min_soc = (
+            ev_with_v2g.usable_battery_kwh * ev_with_v2g.min_departure_soc_pct / 100.0
+        )
+        dep_soc = result.ev_soc[ev_with_v2g.departure_interval]
+        assert dep_soc >= min_soc - 1e-6
+
+    def test_v2g_energy_balance(
+        self, config_24: PortfolioLPConfig, ev_with_v2g: EVFlexParams
+    ) -> None:
+        """Energy balance with V2G EV."""
+        rng = np.random.RandomState(42)
+        pv = rng.uniform(0, 20, 24)
+        load = rng.uniform(0, 15, 24)
+        prices = rng.uniform(0.02, 0.10, 24)
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config_24, ev_params=ev_with_v2g
+        )
+
+        netto = pv - load
+        balance = (
+            result.grid_sell
+            - result.grid_buy
+            + result.ev_charge
+            - result.ev_discharge * ev_with_v2g.v2g_rte
+        )
+        np.testing.assert_allclose(balance, netto, atol=1e-5)
+
+    def test_ev_initial_soc(
+        self, config_24: PortfolioLPConfig, ev_with_v2g: EVFlexParams
+    ) -> None:
+        """ev_soc[0] should equal start_soc_kwh."""
+        pv = np.full(24, 10.0)
+        load = np.full(24, 5.0)
+        prices = np.full(24, 0.05)
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config_24, ev_params=ev_with_v2g
+        )
+
+        assert result.ev_soc[0] == pytest.approx(ev_with_v2g.start_soc_kwh)
+
+    def test_end_ev_soc(
+        self, config_24: PortfolioLPConfig, ev_with_v2g: EVFlexParams
+    ) -> None:
+        """end_ev_soc_kwh should match the last ev_soc value."""
+        pv = np.full(24, 10.0)
+        load = np.full(24, 5.0)
+        prices = np.full(24, 0.05)
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config_24, ev_params=ev_with_v2g
+        )
+
+        assert result.end_ev_soc_kwh == pytest.approx(result.ev_soc[-1], abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# No EV test
+# ---------------------------------------------------------------------------
+
+
+class TestNoEV:
+    """Tests verifying ev_params=None produces no EV arrays."""
+
+    def test_no_ev_none_arrays(self, config_24: PortfolioLPConfig) -> None:
+        """Without EV, EV result arrays should be None."""
+        result = optimize_portfolio_day(
+            np.full(24, 10.0), np.full(24, 5.0), np.full(24, 0.05),
+            None, config_24,
+        )
+        assert result.ev_charge is None
+        assert result.ev_discharge is None
+        assert result.ev_soc is None

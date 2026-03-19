@@ -33,6 +33,7 @@ from pv_bess_model.config.defaults import (
 )
 from pv_bess_model.dispatch.optimizer_portfolio import (
     BessFlexParams,
+    EVFlexParams,
     HeatPumpFlexParams,
     PortfolioDailyResult,
     PortfolioLPConfig,
@@ -117,6 +118,9 @@ class PortfolioAnnualResult:
     bess_power_kw: float
     wp_power_kw: float = 0.0
     total_wp_electrical_kwh: float = 0.0
+    ev_power_kw: float = 0.0
+    total_ev_charge_kwh: float = 0.0
+    total_ev_discharge_kwh: float = 0.0
 
 
 @dataclass
@@ -134,6 +138,7 @@ class FlexCapacityYear:
     bess_capacity_kwh: float
     bess_power_kw: float
     wp_power_kw: float = 0.0
+    ev_power_kw: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +243,40 @@ def compute_wp_capacity(
 
 
 # ---------------------------------------------------------------------------
+# EV capacity model
+# ---------------------------------------------------------------------------
+
+
+def compute_ev_capacity(
+    annual_addition_kw: float,
+    project_year: int,
+    start_year: int = 1,
+) -> float:
+    """Compute cumulative EV fleet charging power for a project year.
+
+    EV capacity has no degradation — power grows linearly.
+
+    Parameters
+    ----------
+    annual_addition_kw:
+        kW of EV charging power added each year.
+    project_year:
+        Current project year (1-indexed).
+    start_year:
+        First project year in which additions begin (1-indexed, default 1).
+
+    Returns
+    -------
+    float
+        Total installed EV charging power in kW.
+    """
+    if project_year < start_year or annual_addition_kw <= 0.0:
+        return 0.0
+    n_years = project_year - start_year + 1
+    return annual_addition_kw * n_years
+
+
+# ---------------------------------------------------------------------------
 # Multi-year simulation
 # ---------------------------------------------------------------------------
 
@@ -263,6 +302,16 @@ def run_portfolio_simulation(
     wp_thermal_storage_kwh: float = 0.0,
     wp_start_year: int = 1,
     wp_base_power_kw: float = 0.0,
+    ev_annual_addition_kw: float = 0.0,
+    ev_daily_energy_demand_kwh_base: float = 0.0,
+    ev_usable_battery_kwh_per_kw: float = 0.0,
+    ev_arrival_interval: int = 0,
+    ev_departure_interval: int = 0,
+    ev_v2g_enabled: bool = False,
+    ev_v2g_rte: float = 0.9,
+    ev_min_departure_soc_pct: float = 80.0,
+    ev_start_year: int = 1,
+    ev_base_power_kw: float = 0.0,
 ) -> list[PortfolioAnnualResult]:
     """Run a multi-year portfolio simulation with annual flex build-out.
 
@@ -271,23 +320,20 @@ def run_portfolio_simulation(
       2. Apply load growth to the base load profile.
       3. Compute BESS capacity via tranche model (with degradation).
       4. Compute WP capacity (linear, no degradation).
-      5. Run 365 daily LP optimizations.
-      6. Aggregate daily results into annual totals.
-
-    Spot prices are *not* inflated here -- the caller should provide
-    already-inflated prices if needed (same base array reused each year
-    in the MVP, consistent with the portfolio approach).
+      5. Compute EV capacity (linear, no degradation).
+      6. Run 365 daily LP optimizations.
+      7. Aggregate daily results into annual totals.
 
     Parameters
     ----------
     config:
         Engine configuration (lifetime, timestep, etc.).
     pv_profile_base:
-        Base PV production profile (35,040 kWh values for one year).
+        Base PV production profile (kWh values for one year).
     load_profile_base:
-        Base load profile (35,040 kWh values for one year).
+        Base load profile (kWh values for one year).
     spot_prices_base:
-        Spot prices (35,040 EUR/kWh values for one year).
+        Spot prices (EUR/kWh values for one year).
     annual_addition_kw:
         BESS power added each year (kW). 0 for World A.
     e_to_p_ratio:
@@ -311,7 +357,7 @@ def run_portfolio_simulation(
     wp_cop_profile_base:
         Base COP profile per interval (length = intervals_per_year).
     wp_heat_demand_profile_base:
-        Base heat demand profile per interval (kWh_th, length = intervals_per_year).
+        Base heat demand profile per interval (kWh_th).
     wp_daily_heat_demand_base:
         Daily heat demand array (kWh_th, length = 365).
     wp_thermal_storage_kwh:
@@ -320,6 +366,26 @@ def run_portfolio_simulation(
         First project year when WP additions begin (1-indexed).
     wp_base_power_kw:
         Reference WP power for scaling heat demand and thermal storage.
+    ev_annual_addition_kw:
+        EV charging power added each year (kW). 0 for no EV.
+    ev_daily_energy_demand_kwh_base:
+        Daily energy demand at base power level (kWh).
+    ev_usable_battery_kwh_per_kw:
+        Usable battery capacity per kW of charging power (kWh/kW).
+    ev_arrival_interval:
+        Interval index when EVs arrive (0-based).
+    ev_departure_interval:
+        Interval index when EVs depart (0-based).
+    ev_v2g_enabled:
+        Whether V2G discharge is allowed.
+    ev_v2g_rte:
+        V2G round-trip efficiency as a fraction.
+    ev_min_departure_soc_pct:
+        Minimum SoC at departure as percent of usable capacity.
+    ev_start_year:
+        First project year when EV additions begin (1-indexed).
+    ev_base_power_kw:
+        Reference EV power for scaling demand and battery capacity.
 
     Returns
     -------
@@ -342,11 +408,19 @@ def run_portfolio_simulation(
         and wp_base_power_kw > 0.0
     )
 
+    # Check if EV is active
+    has_ev = (
+        ev_annual_addition_kw > 0.0
+        and ev_base_power_kw > 0.0
+        and ev_departure_interval > ev_arrival_interval
+    )
+
     annual_results: list[PortfolioAnnualResult] = []
 
     # SoC carried across years
     carry_soc_kwh = 0.0
     carry_thermal_soc_kwh = 0.0
+    carry_ev_soc_kwh = 0.0
 
     for year in range(1, config.lifetime_years + 1):
         # 1. PV degradation
@@ -396,7 +470,19 @@ def run_portfolio_simulation(
             if wp_power > 0.0:
                 wp_scale = wp_power / wp_base_power_kw
 
-        # 5. Run 365 daily LP optimizations
+        # 5. EV capacity (linear, no degradation)
+        ev_power = 0.0
+        ev_scale = 0.0
+        if has_ev:
+            ev_power = compute_ev_capacity(
+                annual_addition_kw=ev_annual_addition_kw,
+                project_year=year,
+                start_year=ev_start_year,
+            )
+            if ev_power > 0.0:
+                ev_scale = ev_power / ev_base_power_kw
+
+        # 6. Run 365 daily LP optimizations
         year_system_cost = 0.0
         year_grid_sell_kwh = 0.0
         year_grid_buy_kwh = 0.0
@@ -404,6 +490,8 @@ def run_portfolio_simulation(
         year_grid_buy_eur = 0.0
         year_bess_throughput = 0.0
         year_wp_electrical_kwh = 0.0
+        year_ev_charge_kwh = 0.0
+        year_ev_discharge_kwh = 0.0
 
         for day in range(DAYS_PER_YEAR):
             day_start = day * T
@@ -446,6 +534,29 @@ def run_portfolio_simulation(
                     start_thermal_soc_kwh=start_tsoc,
                 )
 
+            # Build EV params for this day (or None)
+            ev_day_params: EVFlexParams | None = None
+            if has_ev and ev_power > 0.0:
+                ev_demand = ev_daily_energy_demand_kwh_base * ev_scale
+                ev_battery = ev_usable_battery_kwh_per_kw * ev_power
+
+                # EV arrival SoC: carry-over minus driving consumption
+                # (EVs departed, drove, consumed energy, arrived back)
+                arrival_soc = max(0.0, carry_ev_soc_kwh - ev_demand)
+                arrival_soc = min(arrival_soc, ev_battery)
+
+                ev_day_params = EVFlexParams(
+                    power_kw=ev_power,
+                    daily_energy_demand_kwh=ev_demand,
+                    usable_battery_kwh=ev_battery,
+                    arrival_interval=ev_arrival_interval,
+                    departure_interval=ev_departure_interval,
+                    v2g_enabled=ev_v2g_enabled,
+                    v2g_rte=ev_v2g_rte,
+                    min_departure_soc_pct=ev_min_departure_soc_pct,
+                    start_soc_kwh=arrival_soc,
+                )
+
             result: PortfolioDailyResult = optimize_portfolio_day(
                 pv_production=pv_day,
                 load_demand=load_day,
@@ -453,6 +564,7 @@ def run_portfolio_simulation(
                 bess_params=bess_params,
                 config=lp_config,
                 hp_params=hp_params,
+                ev_params=ev_day_params,
             )
 
             year_system_cost += result.system_cost
@@ -470,10 +582,16 @@ def run_portfolio_simulation(
             if result.wp_load is not None:
                 year_wp_electrical_kwh += float(np.sum(result.wp_load))
 
+            if result.ev_charge is not None:
+                year_ev_charge_kwh += float(np.sum(result.ev_charge))
+            if result.ev_discharge is not None:
+                year_ev_discharge_kwh += float(np.sum(result.ev_discharge))
+
             carry_soc_kwh = result.end_soc_kwh
             carry_thermal_soc_kwh = result.end_thermal_soc_kwh
+            carry_ev_soc_kwh = result.end_ev_soc_kwh
 
-        # 6. Record annual result
+        # 7. Record annual result
         annual_results.append(
             PortfolioAnnualResult(
                 year=year,
@@ -487,17 +605,21 @@ def run_portfolio_simulation(
                 bess_power_kw=bess_power,
                 wp_power_kw=wp_power,
                 total_wp_electrical_kwh=year_wp_electrical_kwh,
+                ev_power_kw=ev_power,
+                total_ev_charge_kwh=year_ev_charge_kwh,
+                total_ev_discharge_kwh=year_ev_discharge_kwh,
             )
         )
 
         logger.debug(
             "Year %d: system_cost=%.0f EUR, bess=%.0f kW / %.0f kWh, "
-            "wp=%.0f kW, sell=%.0f MWh, buy=%.0f MWh",
+            "wp=%.0f kW, ev=%.0f kW, sell=%.0f MWh, buy=%.0f MWh",
             year,
             year_system_cost,
             bess_power,
             bess_capacity,
             wp_power,
+            ev_power,
             year_grid_sell_kwh / 1000.0,
             year_grid_buy_kwh / 1000.0,
         )
