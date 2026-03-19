@@ -425,11 +425,27 @@ def _solve_lp(
         c[i_buy + t] = prices[t]
 
     # --- Bounds ---
-    bounds: list[tuple[float, float | None]] = []
-    # grid_sell: [0, inf)
-    bounds.extend((0.0, None) for _ in range(T))
-    # grid_buy: [0, inf)
-    bounds.extend((0.0, None) for _ in range(T))
+    bounds: list[tuple[float, float]] = []
+    # grid_sell: [0, sell_bound_t] per interval
+    # Upper bound = max possible local generation (PV + BESS discharge + EV V2G)
+    for t in range(T):
+        ub_sell = float(pv[t])
+        if has_bess:
+            ub_sell += max_energy * bess.rte
+        if has_ev and ev.v2g_enabled and ev.arrival_interval <= t < ev.departure_interval:
+            ub_sell += ev_max_discharge * ev.v2g_rte
+        bounds.append((0.0, max(ub_sell, 0.0)))
+    # grid_buy: [0, buy_bound_t] per interval
+    # Upper bound = max possible local consumption (load + BESS charge + HP + EV charge)
+    for t in range(T):
+        ub_buy = float(load[t])
+        if has_bess:
+            ub_buy += max_energy
+        if has_hp:
+            ub_buy += wp_max_energy
+        if has_ev and ev.arrival_interval <= t < ev.departure_interval:
+            ub_buy += ev_max_charge
+        bounds.append((0.0, max(ub_buy, 0.0)))
 
     if has_bess:
         # charge: [0, max_energy]

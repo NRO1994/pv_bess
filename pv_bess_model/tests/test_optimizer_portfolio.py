@@ -1142,3 +1142,184 @@ class TestNoEV:
         assert result.ev_charge is None
         assert result.ev_discharge is None
         assert result.ev_soc is None
+
+
+# ---------------------------------------------------------------------------
+# Negative price tests (unbounded LP regression)
+# ---------------------------------------------------------------------------
+
+
+class TestNegativePrices:
+    """Tests verifying the LP remains bounded with negative electricity prices.
+
+    Regression tests for the unbounded-LP bug where simultaneous grid_sell and
+    grid_buy could grow infinitely when prices are negative and
+    perfect_foresight_discount < 1.0.
+    """
+
+    def test_bess_only_negative_prices_optimal(self) -> None:
+        """BESS-only (pv=0, load=0) with negative prices must return optimal."""
+        config = PortfolioLPConfig(
+            timestep_hours=1.0,
+            intervals_per_day=24,
+            perfect_foresight_discount=0.8,
+        )
+        bess = BessFlexParams(
+            capacity_kwh=200.0,
+            power_kw=100.0,
+            rte=0.88,
+            min_soc_pct=10.0,
+            max_soc_pct=90.0,
+            start_soc_kwh=100.0,
+        )
+        pv = np.zeros(24)
+        load = np.zeros(24)
+        prices = np.full(24, -0.03)  # negative prices
+
+        result = optimize_portfolio_day(pv, load, prices, bess, config)
+
+        assert result.solver_status == "optimal"
+        # Grid flows must be bounded (the key regression check)
+        dt = config.timestep_hours
+        max_energy = bess.power_kw * dt
+        assert np.all(result.grid_sell <= max_energy * bess.rte + 1e-6)
+        assert np.all(result.grid_buy <= max_energy + 1e-6)
+
+    def test_mixed_prices_bess_arbitrage(self) -> None:
+        """Mixed negative/positive prices with BESS: LP is bounded, arbitrage works."""
+        config = PortfolioLPConfig(
+            timestep_hours=1.0,
+            intervals_per_day=24,
+            perfect_foresight_discount=0.8,
+        )
+        bess = BessFlexParams(
+            capacity_kwh=200.0,
+            power_kw=100.0,
+            rte=0.88,
+            min_soc_pct=10.0,
+            max_soc_pct=90.0,
+            start_soc_kwh=100.0,
+        )
+        pv = np.zeros(24)
+        load = np.zeros(24)
+        # Negative prices first 12h, positive last 12h
+        prices = np.array([-0.05] * 12 + [0.10] * 12)
+
+        result = optimize_portfolio_day(pv, load, prices, bess, config)
+
+        assert result.solver_status == "optimal"
+        # BESS should charge during negative prices, discharge during positive
+        assert np.sum(result.bess_charge[:12]) > 0
+        assert np.sum(result.bess_discharge[12:]) > 0
+
+    def test_negative_prices_with_hp(self, config_24: PortfolioLPConfig) -> None:
+        """Negative prices with heat pump: LP stays bounded."""
+        hp = HeatPumpFlexParams(
+            power_kw=50.0,
+            cop_profile=np.full(24, 3.0),
+            daily_heat_demand_kwh=120.0,
+            thermal_storage_kwh=0.0,
+            heat_demand_profile=np.full(24, 5.0),
+            start_thermal_soc_kwh=0.0,
+        )
+        pv = np.full(24, 10.0)
+        load = np.full(24, 5.0)
+        prices = np.full(24, -0.04)
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config_24, hp_params=hp
+        )
+
+        assert result.solver_status == "optimal"
+
+    def test_negative_prices_with_ev_v2g(self) -> None:
+        """Negative prices with EV V2G: LP stays bounded."""
+        config = PortfolioLPConfig(
+            timestep_hours=1.0,
+            intervals_per_day=24,
+            perfect_foresight_discount=0.8,
+        )
+        ev = EVFlexParams(
+            power_kw=50.0,
+            daily_energy_demand_kwh=50.0,
+            usable_battery_kwh=200.0,
+            arrival_interval=8,
+            departure_interval=20,
+            v2g_enabled=True,
+            v2g_rte=0.9,
+            min_departure_soc_pct=50.0,
+            start_soc_kwh=100.0,
+        )
+        pv = np.full(24, 10.0)
+        load = np.full(24, 5.0)
+        prices = np.full(24, -0.05)
+
+        result = optimize_portfolio_day(
+            pv, load, prices, None, config, ev_params=ev
+        )
+
+        assert result.solver_status == "optimal"
+
+    def test_grid_flows_within_bounds(self) -> None:
+        """Grid sell/buy must stay within physically-motivated bounds."""
+        config = PortfolioLPConfig(
+            timestep_hours=1.0,
+            intervals_per_day=24,
+            perfect_foresight_discount=0.8,
+        )
+        bess = BessFlexParams(
+            capacity_kwh=200.0,
+            power_kw=100.0,
+            rte=0.88,
+            min_soc_pct=10.0,
+            max_soc_pct=90.0,
+            start_soc_kwh=100.0,
+        )
+        pv = np.array([50.0] * 12 + [0.0] * 12)
+        load = np.array([0.0] * 12 + [30.0] * 12)
+        prices = np.array([-0.05] * 6 + [0.10] * 6 + [-0.03] * 6 + [0.08] * 6)
+
+        result = optimize_portfolio_day(pv, load, prices, bess, config)
+
+        assert result.solver_status == "optimal"
+        dt = config.timestep_hours
+        max_energy = bess.power_kw * dt
+        for t in range(24):
+            sell_ub = pv[t] + max_energy * bess.rte
+            buy_ub = load[t] + max_energy
+            assert result.grid_sell[t] <= sell_ub + 1e-6, (
+                f"grid_sell[{t}]={result.grid_sell[t]} > bound {sell_ub}"
+            )
+            assert result.grid_buy[t] <= buy_ub + 1e-6, (
+                f"grid_buy[{t}]={result.grid_buy[t]} > bound {buy_ub}"
+            )
+
+    def test_energy_balance_with_negative_prices(self) -> None:
+        """Energy balance must hold under negative prices."""
+        config = PortfolioLPConfig(
+            timestep_hours=1.0,
+            intervals_per_day=24,
+            perfect_foresight_discount=0.8,
+        )
+        bess = BessFlexParams(
+            capacity_kwh=200.0,
+            power_kw=100.0,
+            rte=0.88,
+            min_soc_pct=10.0,
+            max_soc_pct=90.0,
+            start_soc_kwh=100.0,
+        )
+        pv = np.array([40.0] * 8 + [0.0] * 16)
+        load = np.full(24, 10.0)
+        prices = np.array([-0.04] * 12 + [0.06] * 12)
+
+        result = optimize_portfolio_day(pv, load, prices, bess, config)
+
+        assert result.solver_status == "optimal"
+        # Energy balance: pv + grid_buy + bess_discharge*rte = load + grid_sell + bess_charge
+        for t in range(24):
+            supply = pv[t] - load[t] + result.grid_buy[t] - result.grid_sell[t]
+            bess_net = result.bess_charge[t] - result.bess_discharge[t] * bess.rte
+            assert supply == pytest.approx(bess_net, abs=1e-4), (
+                f"Energy balance violated at t={t}"
+            )

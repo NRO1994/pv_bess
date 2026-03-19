@@ -57,7 +57,6 @@ from pv_bess_model.output.report.html_builder import build_portfolio_html_report
 from pv_bess_model.portfolio.generation import build_aggregated_pv_profile
 from pv_bess_model.portfolio.heat_demand import (
     compute_cop,
-    compute_daily_heat_demand,
     compute_heat_demand,
 )
 from pv_bess_model.portfolio.load_profiles import generate_slp, scale_slp
@@ -277,7 +276,6 @@ def main(argv: list[str] | None = None) -> int:
                     cop_nominal=flex.cop_nominal,
                     cop_reference_temp_c=flex.cop_reference_temp_c,
                 )
-                daily_heat = compute_daily_heat_demand(heat_demand_qh)
                 logger.info(
                     "  WP '%s': thermal demand %.0f MWh/a, mean COP %.1f",
                     flex.name,
