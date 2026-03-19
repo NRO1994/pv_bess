@@ -345,3 +345,43 @@ REPORT_MODEL_VERSION: str = "1.0"
 
 PRICE_DATA_ORIGIN: str = "Prognos 2026"
 """Source attribution for the price input data."""
+
+# ---------------------------------------------------------------------------
+# Portfolio / Systemwert defaults
+# ---------------------------------------------------------------------------
+
+DEFAULT_PERFECT_FORESIGHT_DISCOUNT: float = 0.8
+"""Discount factor applied to grid-sell revenues in the portfolio LP to
+account for the over-estimation caused by perfect day-ahead price foresight.
+A value of 0.8 means 80 % of the theoretical arbitrage revenue is retained."""
+
+DEFAULT_PORTFOLIO_LIFETIME_YEARS: int = 25
+"""Default project lifetime for portfolio/Systemwert simulations (years)."""
+
+DEFAULT_SLP_CACHE_DIR: str = ".data/slp_cache"
+"""Local directory for caching generated SLP timeseries (numpy arrays)."""
+
+DEFAULT_HEAT_DEMAND_HEIZGRENZE_C: float = 15.0
+"""Heating threshold temperature (°C) for degree-day heat demand calculation.
+No heating demand is assumed when outdoor temperature exceeds this value."""
+
+DEFAULT_COP_TEMP_COEFFICIENT: float = 0.025
+"""Linear temperature coefficient for heat-pump COP calculation.
+COP(T) = COP_nominal × (1 + coefficient × (T_outdoor − T_reference))."""
+
+SLP_NORMIERUNG_KWH: float = 1_000_000.0
+"""Annual energy normalization base for BDEW standard load profiles (kWh).
+Raw SLP values are normalized to this annual consumption level."""
+
+DEFAULT_BUNDESLAND: str = "SH"
+"""Default German federal state for public holiday calendar (Schleswig-Holstein).
+Used in SLP day-type assignment (Werktag/Samstag/Sonn- und Feiertag)."""
+
+DEFAULT_FLEX_START_YEAR: int = 1
+"""Default simulation year (1-indexed) at which flex capacity additions begin."""
+
+DEFAULT_EV_V2G_RTE_PCT: float = 90.0
+"""Default round-trip efficiency for vehicle-to-grid (V2G) operation in percent."""
+
+DEFAULT_EV_MIN_DEPARTURE_SOC_PCT: float = 80.0
+"""Default minimum EV battery SoC at departure time (percent of usable capacity)."""
