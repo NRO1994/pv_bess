@@ -1,11 +1,20 @@
-"""Tests for portfolio.system_value – World A calculation."""
+"""Tests for portfolio.system_value – World A, enumeration, system value."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from pv_bess_model.portfolio.system_value import WorldAResult, compute_world_a
+from pv_bess_model.config.loader_portfolio import BessFlexConfig
+from pv_bess_model.dispatch.engine_portfolio import PortfolioEngineConfig
+from pv_bess_model.portfolio.system_value import (
+    SystemValuePoint,
+    SystemValueResult,
+    WorldAResult,
+    compute_world_a,
+    compute_world_a_multiyear,
+    run_enumeration,
+)
 
 
 class TestComputeWorldA:
@@ -105,3 +114,257 @@ class TestComputeWorldA:
         """Return type should be WorldAResult."""
         result = compute_world_a(np.zeros(4), np.zeros(4), np.zeros(4))
         assert isinstance(result, WorldAResult)
+
+
+# ---------------------------------------------------------------------------
+# Fixtures for multi-year / enumeration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def short_engine_config() -> PortfolioEngineConfig:
+    """Short-lifetime engine config (2 years, hourly)."""
+    return PortfolioEngineConfig(
+        lifetime_years=2,
+        baseline_year=2027,
+        timestep_hours=1.0,
+        intervals_per_day=24,
+        intervals_per_year=365 * 24,
+        perfect_foresight_discount=1.0,
+    )
+
+
+@pytest.fixture
+def flat_pv() -> np.ndarray:
+    """Constant PV: 10 kWh/h over 8760 hours."""
+    return np.full(365 * 24, 10.0)
+
+
+@pytest.fixture
+def flat_load() -> np.ndarray:
+    """Constant load: 8 kWh/h over 8760 hours."""
+    return np.full(365 * 24, 8.0)
+
+
+@pytest.fixture
+def flat_prices() -> np.ndarray:
+    """Constant price: 0.05 EUR/kWh over 8760 hours."""
+    return np.full(365 * 24, 0.05)
+
+
+@pytest.fixture
+def varying_daily_prices() -> np.ndarray:
+    """Daily pattern with price spread for BESS arbitrage."""
+    daily = np.concatenate([
+        np.full(12, 0.02),  # night: cheap
+        np.full(12, 0.10),  # day: expensive
+    ])
+    return np.tile(daily, 365)
+
+
+# ---------------------------------------------------------------------------
+# World A multi-year tests
+# ---------------------------------------------------------------------------
+
+
+class TestComputeWorldAMultiyear:
+    """Tests for compute_world_a_multiyear()."""
+
+    def test_result_length(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        flat_prices: np.ndarray,
+    ) -> None:
+        """Returns one cost per year."""
+        costs = compute_world_a_multiyear(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=flat_prices,
+            pv_degradation_rate=0.0,
+        )
+        assert len(costs) == 2
+
+    def test_constant_inputs_constant_cost(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        flat_prices: np.ndarray,
+    ) -> None:
+        """Without degradation/growth, annual cost is constant."""
+        costs = compute_world_a_multiyear(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=flat_prices,
+            pv_degradation_rate=0.0,
+        )
+        assert costs[0] == pytest.approx(costs[1], abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Enumeration tests
+# ---------------------------------------------------------------------------
+
+
+class TestRunEnumeration:
+    """Tests for the enumeration / system value calculation."""
+
+    def test_zero_addition_system_value_is_zero(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        flat_prices: np.ndarray,
+    ) -> None:
+        """System value at addition_kw=0 is 0 (no flex = World A)."""
+        flex = BessFlexConfig(
+            type="bess",
+            name="test_bess",
+            annual_addition_kw=[0.0],
+            e_to_p_ratio_hours=[2.0],
+            round_trip_efficiency_pct=88.0,
+            min_soc_pct=10.0,
+            max_soc_pct=90.0,
+            degradation_rate_pct_per_year=0.0,
+        )
+        result = run_enumeration(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=flat_prices,
+            flexibilities=[flex],
+            pv_degradation_rate=0.0,
+            max_workers=1,
+        )
+        assert len(result.points) == 1
+        assert result.points[0].cumulative_system_value_eur == pytest.approx(0.0, abs=1e-6)
+
+    def test_system_value_monotonic_with_arbitrage(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        varying_daily_prices: np.ndarray,
+    ) -> None:
+        """System value increases monotonically with BESS addition rate."""
+        flex = BessFlexConfig(
+            type="bess",
+            name="test_bess",
+            annual_addition_kw=[0.0, 50.0, 100.0],
+            e_to_p_ratio_hours=[2.0],
+            round_trip_efficiency_pct=100.0,
+            min_soc_pct=0.0,
+            max_soc_pct=100.0,
+            degradation_rate_pct_per_year=0.0,
+        )
+        result = run_enumeration(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=varying_daily_prices,
+            flexibilities=[flex],
+            pv_degradation_rate=0.0,
+            max_workers=1,
+        )
+        points = sorted(result.points, key=lambda p: p.annual_addition_kw)
+        assert len(points) == 3
+
+        values = [p.cumulative_system_value_eur for p in points]
+        # Monotonically non-decreasing
+        for i in range(1, len(values)):
+            assert values[i] >= values[i - 1] - 1e-6
+
+    def test_enumeration_point_count(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        flat_prices: np.ndarray,
+    ) -> None:
+        """Number of points = len(rates) × len(e_to_p_ratios)."""
+        flex = BessFlexConfig(
+            type="bess",
+            name="test_bess",
+            annual_addition_kw=[0.0, 50.0, 100.0],
+            e_to_p_ratio_hours=[1.0, 2.0],
+            round_trip_efficiency_pct=88.0,
+            min_soc_pct=10.0,
+            max_soc_pct=90.0,
+            degradation_rate_pct_per_year=0.0,
+        )
+        result = run_enumeration(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=flat_prices,
+            flexibilities=[flex],
+            pv_degradation_rate=0.0,
+            max_workers=1,
+        )
+        assert len(result.points) == 6  # 3 rates × 2 E/P
+
+    def test_world_a_costs_populated(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        flat_prices: np.ndarray,
+    ) -> None:
+        """World A costs should be populated in the result."""
+        flex = BessFlexConfig(
+            type="bess",
+            name="test_bess",
+            annual_addition_kw=[0.0],
+            e_to_p_ratio_hours=[2.0],
+            round_trip_efficiency_pct=88.0,
+            min_soc_pct=10.0,
+            max_soc_pct=90.0,
+            degradation_rate_pct_per_year=0.0,
+        )
+        result = run_enumeration(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=flat_prices,
+            flexibilities=[flex],
+            pv_degradation_rate=0.0,
+            max_workers=1,
+        )
+        assert len(result.world_a_annual_costs) == 2
+        # With constant surplus (pv=10 > load=8), cost should be negative
+        for cost in result.world_a_annual_costs:
+            assert cost < 0  # net revenue
+
+    def test_annual_system_values_length(
+        self,
+        short_engine_config: PortfolioEngineConfig,
+        flat_pv: np.ndarray,
+        flat_load: np.ndarray,
+        flat_prices: np.ndarray,
+    ) -> None:
+        """Each point has annual_system_values with length = lifetime."""
+        flex = BessFlexConfig(
+            type="bess",
+            name="test_bess",
+            annual_addition_kw=[50.0],
+            e_to_p_ratio_hours=[2.0],
+            round_trip_efficiency_pct=88.0,
+            min_soc_pct=10.0,
+            max_soc_pct=90.0,
+            degradation_rate_pct_per_year=0.0,
+        )
+        result = run_enumeration(
+            config=short_engine_config,
+            pv_profile_base=flat_pv,
+            load_profile_base=flat_load,
+            spot_prices_base=flat_prices,
+            flexibilities=[flex],
+            pv_degradation_rate=0.0,
+            max_workers=1,
+        )
+        assert len(result.points) == 1
+        assert len(result.points[0].annual_system_values) == 2
