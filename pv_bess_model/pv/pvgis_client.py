@@ -20,7 +20,7 @@ Typical usage::
         latitude=53.55, longitude=9.99,
         peak_power_kwp=5000, system_loss_pct=14.0,
         mounting_type="free", azimuth_deg=0, tilt_deg=30,
-        pvgis_database="PVGIS-SARAH2",
+        pvgis_database="PVGIS-SARAH3",
     )
     # yearly: {2005: np.ndarray(8760,), 2006: np.ndarray(8760,), ...}
 """
@@ -115,7 +115,7 @@ class PVGISClient:
         mounting_type: str,
         azimuth_deg: float,
         tilt_deg: float,
-        pvgis_database: str = "PVGIS-SARAH2",
+        pvgis_database: str = "PVGIS-SARAH3",
     ) -> dict[int, np.ndarray]:
         """Fetch hourly PV production for all available historical years.
 
@@ -136,7 +136,7 @@ class PVGISClient:
         tilt_deg:
             Panel tilt angle from horizontal in degrees.
         pvgis_database:
-            PVGIS radiation database (e.g. ``"PVGIS-SARAH2"``).
+            PVGIS radiation database (e.g. ``"PVGIS-SARAH3"``).
 
         Returns
         -------
@@ -164,7 +164,7 @@ class PVGISClient:
             pvgis_database=pvgis_database,
         )
         raw = self._get_with_cache(params)
-        return self._parse_response(raw)
+        return self._parse_response(raw)["production"]
 
     def fetch_single_year(
         self,
@@ -175,8 +175,9 @@ class PVGISClient:
         mounting_type: str,
         azimuth_deg: float,
         tilt_deg: float,
-        pvgis_database: str = "PVGIS-SARAH2",
-    ) -> np.ndarray:
+        pvgis_database: str = "PVGIS-SARAH3",
+        include_temperature: bool = False,
+    ) -> np.ndarray | dict[str, np.ndarray]:
         """Fetch hourly PV production for a single historical year.
 
         Uses ``startyear`` and ``endyear`` PVGIS parameters to request
@@ -203,11 +204,16 @@ class PVGISClient:
             Panel tilt from horizontal in degrees.
         pvgis_database:
             PVGIS radiation database.
+        include_temperature:
+            If ``True``, return a dict with ``"production"`` and
+            ``"temperature"`` arrays instead of just the production array.
 
         Returns
         -------
-        numpy.ndarray
-            Hourly production array of exactly 8 760 elements (kWh).
+        numpy.ndarray | dict[str, numpy.ndarray]
+            If *include_temperature* is ``False`` (default): hourly
+            production array of exactly 8 760 elements (kWh).
+            If ``True``: ``{"production": array_8760, "temperature": array_8760}``.
 
         Raises
         ------
@@ -230,10 +236,10 @@ class PVGISClient:
         params["endyear"] = year
 
         raw = self._get_with_cache(params)
-        yearly = self._parse_response(raw)
+        parsed = self._parse_response(raw)
 
-        if year not in yearly:
-            available = sorted(yearly.keys())
+        if year not in parsed["production"]:
+            available = sorted(parsed["production"].keys())
             raise PVGISError(
                 f"PVGIS response did not contain data for year {year}. "
                 f"Available years: {available}."
@@ -242,9 +248,15 @@ class PVGISClient:
         logger.info(
             "Fetched single-year PVGIS data for %d: %.0f kWh total.",
             year,
-            float(np.sum(yearly[year])),
+            float(np.sum(parsed["production"][year])),
         )
-        return yearly[year]
+
+        if include_temperature:
+            return {
+                "production": parsed["production"][year],
+                "temperature": parsed["temperature"][year],
+            }
+        return parsed["production"][year]
 
     # ------------------------------------------------------------------
     # Parameter construction
@@ -398,16 +410,18 @@ class PVGISClient:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _parse_response(raw: dict) -> dict[int, np.ndarray]:
+    def _parse_response(
+        raw: dict,
+    ) -> dict[str, dict[int, np.ndarray]]:
         """Parse the PVGIS JSON response into per-year hourly arrays.
 
         The ``seriescalc`` response contains ``outputs.hourly``, a list of
         records of the form::
 
-            {"time": "20050101:0010", "P": 0.0, "Gb(i)": ..., ...}
+            {"time": "20050101:0010", "P": 0.0, "T2m": 5.13, ...}
 
         ``"P"`` is AC power in **W**; dividing by 1 000 gives **kWh** for a
-        1-hour timestep.
+        1-hour timestep.  ``"T2m"`` is the 2 m outdoor temperature in °C.
 
         Parameters
         ----------
@@ -416,8 +430,10 @@ class PVGISClient:
 
         Returns
         -------
-        dict[int, numpy.ndarray]
-            ``{year: array_of_8760_kwh}``
+        dict[str, dict[int, numpy.ndarray]]
+            ``{"production": {year: array_8760}, "temperature": {year: array_8760}}``
+            Production in kWh, temperature in °C.  Each array has exactly
+            8 760 elements (leap-day hours stripped).
 
         Raises
         ------
@@ -428,27 +444,40 @@ class PVGISClient:
             hourly_records: list[dict] = raw["outputs"]["hourly"]
         except (KeyError, TypeError) as exc:
             raise PVGISError(
-                "Unexpected PVGIS response structure: " "missing 'outputs.hourly' key."
+                "Unexpected PVGIS response structure: "
+                "missing 'outputs.hourly' key."
             ) from exc
 
-        # Group records by year
-        yearly_lists: dict[int, list[float]] = {}
+        prod_lists: dict[int, list[float]] = {}
+        temp_lists: dict[int, list[float]] = {}
+
         for record in hourly_records:
             time_str: str = record["time"]  # e.g. "20050101:0010"
             year = int(time_str[:4])
             power_w: float = float(record.get("P", 0.0))
-            yearly_lists.setdefault(year, []).append(power_w / 1000.0)
+            temp_c: float = float(record.get("T2m", 0.0))
+            prod_lists.setdefault(year, []).append(power_w / 1000.0)
+            temp_lists.setdefault(year, []).append(temp_c)
 
-        if not yearly_lists:
+        if not prod_lists:
             raise PVGISError("PVGIS response contained no hourly records.")
 
-        result: dict[int, np.ndarray] = {}
-        for year, values in sorted(yearly_lists.items()):
-            arr = _strip_leap_day(np.array(values, dtype=float), year)
-            result[year] = arr
-            logger.debug("Parsed PVGIS year %d → %d hourly values", year, len(arr))
+        production: dict[int, np.ndarray] = {}
+        temperature: dict[int, np.ndarray] = {}
+        for year in sorted(prod_lists):
+            production[year] = _strip_leap_day(
+                np.array(prod_lists[year], dtype=float), year
+            )
+            temperature[year] = _strip_leap_day(
+                np.array(temp_lists[year], dtype=float), year
+            )
+            logger.debug(
+                "Parsed PVGIS year %d → %d hourly values",
+                year,
+                len(production[year]),
+            )
 
-        return result
+        return {"production": production, "temperature": temperature}
 
 
 # ---------------------------------------------------------------------------

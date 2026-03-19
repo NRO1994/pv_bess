@@ -311,31 +311,33 @@ class TestParseResponse:
     def test_single_non_leap_year(self, client_no_cache):
         data = _pvgis_response({2019: HOURS_PER_YEAR}, power_w=2000.0)
         result = client_no_cache._parse_response(data)
-        assert 2019 in result
-        assert len(result[2019]) == HOURS_PER_YEAR
-        assert np.all(result[2019] == pytest.approx(2.0))
+        prod = result["production"]
+        assert 2019 in prod
+        assert len(prod[2019]) == HOURS_PER_YEAR
+        assert np.all(prod[2019] == pytest.approx(2.0))
 
     def test_multiple_years(self, client_no_cache):
         data = _pvgis_response({2005: HOURS_PER_YEAR, 2006: HOURS_PER_YEAR})
         result = client_no_cache._parse_response(data)
-        assert set(result.keys()) == {2005, 2006}
-        for arr in result.values():
+        prod = result["production"]
+        assert set(prod.keys()) == {2005, 2006}
+        for arr in prod.values():
             assert len(arr) == HOURS_PER_YEAR
 
     def test_leap_year_stripped(self, client_no_cache):
         data = _pvgis_response({2020: 8784})
         result = client_no_cache._parse_response(data)
-        assert len(result[2020]) == HOURS_PER_YEAR
+        assert len(result["production"][2020]) == HOURS_PER_YEAR
 
     def test_w_to_kwh_conversion(self, client_no_cache):
         data = _pvgis_response({2010: HOURS_PER_YEAR}, power_w=1000.0)
         result = client_no_cache._parse_response(data)
-        assert result[2010][0] == pytest.approx(1.0)
+        assert result["production"][2010][0] == pytest.approx(1.0)
 
     def test_zero_power(self, client_no_cache):
         data = _pvgis_response({2010: HOURS_PER_YEAR}, power_w=0.0)
         result = client_no_cache._parse_response(data)
-        assert np.all(result[2010] == 0.0)
+        assert np.all(result["production"][2010] == 0.0)
 
     def test_missing_outputs_raises(self, client_no_cache):
         with pytest.raises(PVGISError, match="outputs"):
@@ -348,14 +350,21 @@ class TestParseResponse:
     def test_missing_p_key_defaults_zero(self, client_no_cache):
         records = [{"time": f"20100101:{i:02d}10"} for i in range(HOURS_PER_YEAR)]
         result = client_no_cache._parse_response({"outputs": {"hourly": records}})
-        assert np.all(result[2010] == 0.0)
+        assert np.all(result["production"][2010] == 0.0)
 
     def test_years_sorted(self, client_no_cache):
         data = _pvgis_response(
             {2010: HOURS_PER_YEAR, 2005: HOURS_PER_YEAR, 2008: HOURS_PER_YEAR}
         )
         result = client_no_cache._parse_response(data)
-        assert list(result.keys()) == [2005, 2008, 2010]
+        assert list(result["production"].keys()) == [2005, 2008, 2010]
+
+    def test_temperature_extracted(self, client_no_cache):
+        data = _pvgis_response({2019: HOURS_PER_YEAR})
+        result = client_no_cache._parse_response(data)
+        assert "temperature" in result
+        assert 2019 in result["temperature"]
+        assert len(result["temperature"][2019]) == HOURS_PER_YEAR
 
 
 # ---------------------------------------------------------------------------
