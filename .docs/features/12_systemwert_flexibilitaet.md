@@ -19,12 +19,17 @@ Hinzufügen von Flexibilitäten erzeugt wird.
 - **Suchmethode**: Vollständige Enumeration aller Punkte (kein Optimierungs-Grid-Search)
 - **Flex-Typen**: Spezifische Technologien (BESS, WP, Wallbox/V2G). Mehrere Instanzen desselben Typs mit
   unterschiedlichen Parametern erlaubt.
-- **Last**: Als Liste von Lastgruppen (MVP: nur Haushaltskunden SLP H0). Erweiterbar um Gewerbe etc.
+- **Last**: Als Liste von Lastgruppen (MVP: nur Haushaltskunden SLP H25). Erweiterbar um Gewerbe etc.
 - **Erzeugung**: Als Liste von Erzeugern (MVP: eine aggregierte PV-Anlage). Erweiterbar um Wind etc.
-- **Flex-Wachstum**: Jährlicher Zubau von x kW innerhalb der 25-Jahres-Simulation
+- **Flex-Wachstum**: Jährlicher Zubau von x kW (BESS/WP) bzw. x Einheiten (EV) innerhalb der 25-Jahres-Simulation.
+  Zubau kann ab beliebigem Simulationsjahr starten (`start_year`).
+- **EV-Flottendefinition**: Über `mean_kw_per_unit` + `annual_additional_units` (nicht kW-basiert)
 - **Lastwachstum**: Prozentualer jährlicher Faktor pro Lastgruppe
-- **SLP-Aufbereitung**: Interne Methode aus BDEW-Excel, jahresabhängig generiert und gecacht
+- **SLP-Aufbereitung**: Interne Methode aus BDEW-JSON (`.data/bdew_profile_2025.json`), pro Wetterjahr generiert und gecacht
+- **SLP-Dynamisierung**: Polynom 4. Grades (nur H25/P25/S25), tagesbasiert, keine Temperaturabhängigkeit
+- **Feiertage**: Konfigurierbar via `bundesland` (Default: SH), ermittelt über Python `holidays`-Bibliothek
 - **Preis-Inputs**: Identische Struktur wie bestehendes Modell (`price_inputs.scenarios[]`)
+- **Inflation**: Wird im MVP vernachlässigt (Systemwert ist inflationsunabhängig)
 - **Monte Carlo**: Nicht im MVP
 - **Output**: CSV + HTML-Dashboard (wie bestehendes Modell). HTML-Input-Formular basierend auf JSON-Schema.
 - **WP-Modellierung**: Alle WP-Typen (Luft-Wasser, Wasser-Wasser) nutzen identische LP-Constraints;
@@ -43,12 +48,11 @@ Hinzufügen von Flexibilitäten erzeugt wird.
 | `dispatch/optimizer.py` (Daily LP)       | Strukturvorlage für den neuen Portfolio-Optimizer           |
 | `dispatch/engine.py` (Multi-Year Loop)   | Vorlage für 25-Jahres-Simulation                            |
 | `market/price_loader.py`                 | Spotpreis-Zeitreihen laden und auf Projektlaufzeit strecken |
-| `pv/pvgis_client.py`, `pv/timeseries.py` | PV-Erzeugungsprofile (P50/P90) + Temperaturdaten            |
-| `finance/inflation.py`                   | Inflation auf Preise                                        |
+| `pv/pvgis_client.py`, `pv/timeseries.py` | PV-Erzeugungsprofile (P50/P90) + Temperaturdaten (Gradtagszahl WP) |
 
 ### Was neu gebaut werden muss
 
-- `portfolio/load_profiles.py` – BDEW-SLP aus Excel laden, jahresabhängig aufbereiten, cachen
+- `portfolio/load_profiles.py` – BDEW-SLP aus JSON laden, jahresabhängig aufbereiten (Dynamisierung), cachen
 - `portfolio/heat_demand.py` – Wärmelastprofil aus PVGIS-Temperaturdaten (Gradtagszahl)
 - `dispatch/optimizer_portfolio.py` – Neuer LP mit Netto-Position, Load, Flex-Variablen (15min)
 - `dispatch/engine_portfolio.py` – Multi-Year-Loop mit zeitvariierender Flex-Kapazität (jährl. Zubau)
@@ -158,6 +162,16 @@ Speichergrößen verglichen werden sollen, können mehrere WP-Instanzen mit unte
 
 **Wallbox/E-Mobilität + V2G**:
 
+Flottengröße wird über Einheiten definiert: `n_units(year) = Σ annual_additional_units` (ab `start_year`).
+Aggregierte Parameter skalieren mit der Flottenanzahl:
+
+```
+P_charge_max     = n_units × mean_kw_per_unit
+ev_soc_max       = n_units × usable_battery_kwh_per_unit
+daily_demand     = n_units × daily_energy_demand_kwh_per_unit
+E_min_departure  = ev_soc_max × min_departure_soc_pct / 100
+```
+
 ```
 LP-Variablen:
   ev_charge[t]        – Laden (Grid → EV), kWh/15min
@@ -166,13 +180,16 @@ LP-Variablen:
 
 Constraints:
   ev_soc[t+1] = ev_soc[t] + ev_charge[t] - ev_discharge[t]
-  ev_soc_min ≤ ev_soc[t] ≤ ev_soc_max
+  0 ≤ ev_soc[t] ≤ ev_soc_max
   ev_charge[t] ≤ P_charge_max / 4
-  ev_discharge[t] ≤ P_discharge_max / 4 × RTE_v2g
+  ev_discharge[t] ≤ P_charge_max / 4 × RTE_v2g   [P_discharge_max = P_charge_max]
 
   // Verfügbarkeitsfenster
   ev_charge[t] = 0       für t ∉ [arrival, departure]
   ev_discharge[t] = 0    für t ∉ [arrival, departure]
+
+  // Tages-Energiebilanz: Flotte muss netto daily_demand laden
+  Σ (ev_charge[t] - ev_discharge[t]) ≥ daily_demand
 
   // Mindest-SoC bei Abfahrt
   ev_soc[t_departure] ≥ E_min_departure
@@ -206,7 +223,7 @@ Alle definierten Zubau-Raten werden vollständig berechnet. Es gibt keine Optimi
 ```
 BESS:     zubau_kw_pa = [0, 20, 50, 100, 200, 500] × e_to_p = [1, 2, 4]  → 18 Punkte
 WP:       zubau_kw_pa = [0, 50, 100, 250, 500]                            → 5 Punkte
-Wallbox:  zubau_kw_pa = [0, 20, 50, 100, 200]                             → 5 Punkte
+Wallbox:  zubau_units_pa = [0, 2, 5, 10, 20]                              → 5 Punkte
 ```
 
 Gesamt: 28 Punkte (bei je einer Instanz pro Typ).
@@ -234,44 +251,108 @@ Alle Tranchen werden im LP als ein aggregierter BESS modelliert. Die Gesamtkapaz
 
 ## 6. SLP-Aufbereitung (Interne Methode)
 
---> Anpassungen: Die SLP Daten liegen in .data/bdew_profile_2025.json. Die Profile müssen nicht mehr jährlich gebildet
-werden, sondern nur einmalig, basierend auf dem Wetterjahr des Preisszenarios. Cache das Ergebnis in.data/bdew_cache um
-die Berechnungen für neue Szenarien zu beschleunigen. Der Cache muss nur erneuert werden, wenn das Änderungsdatum der
-bdew_profile_2025.json aktueller ist, als das des caches.
-Die Vorgehensweise zur Dynamisierung und Anwendung ist in
-.docs/2025-03-17_AWH_Aktuallisierte_SLP_Strom_2025_Veröffentlichung.pdf zu entnehmen.
+### Datenquelle
+
+Die BDEW-SLP-Profildaten liegen als JSON in `.data/bdew_profile_2025.json`. Struktur:
+
+```json
+{
+  "H25": {
+    "Jan": {
+      "SA": [
+        96
+        Werte
+      ],
+      "FT": [
+        96
+        Werte
+      ],
+      "WT": [
+        96
+        Werte
+      ]
+    },
+    "Feb": {
+      ...
+    },
+    ...
+    "Dez": {
+      ...
+    }
+  },
+  "G25": {
+    ...
+  },
+  "L25": {
+    ...
+  },
+  "P25": {
+    ...
+  },
+  "S25": {
+    ...
+  }
+}
+```
+
+Verfügbare Profiltypen: H25 (Haushalt), G25 (Gewerbe), L25 (Landwirtschaft), P25 (PV-Kombi), S25 (PV-Speicher-Kombi).
+Jeder Tagestyp enthält 96 Viertelstundenwerte. Die Profile sind auf **1 Mio. kWh** Jahresverbrauch normiert.
 
 ### Anforderung
 
-Die BDEW-SLP-Daten müssen **jahresabhängig** aufbereitet werden, da Tagestypen (Werktag/Samstag/Sonntag/
-Feiertag) vom konkreten Kalenderjahr abhängen. Das SLP für 2027 hat andere Werktags-Verteilungen als 2028.
+Das SLP muss **einmalig pro Wetterjahr des Preisszenarios** aufbereitet werden (nicht jährlich neu).
+Tagestypen (Werktag/Samstag/Feiertag) hängen vom konkreten Kalenderjahr ab – das SLP für 2027 hat andere
+Werktags-Verteilungen als 2028.
 
-Die Aufbereitung muss an das Jahr des jeweiligen Preisszenarios gekoppelt sein (analog zur bestehenden
-PVGIS-Zeitreihen-Zuordnung über `weather_year`).
+Die Aufbereitung ist an das `weather_year` des Preisszenarios gekoppelt (analog zur PVGIS-Zeitreihen-Zuordnung).
 
 ### Vorgehen
 
+Referenz: `.docs/2025-03-17_AWH_Aktualisierte_SLP_Strom_2025_Veröffentlichung.pdf`
+
 ```
-Input:  BDEW-SLP Excel-Datei (unveränderlich, im Projekt-Repository)
-        + Kalenderjahr (aus Preisszenario-Definition)
+Input:  .data/bdew_profile_2025.json
+        + Kalenderjahr (aus weather_year des Preisszenarios)
 
 Schritte:
-  1. Lese BDEW-Koeffizienten aus Excel (Tagestypen × Jahreszeiten × 96 Viertelstunden)
-  2. Generiere Kalender für das Zieljahr (Werktag/Sa/So, Feiertage → So)
-  3. Wende Dynamisierungsfunktion an (Polynomkoeffizienten × Temperatur aus PVGIS)
-  4. Erzeuge 35.040 normierte Viertelstundenwerte (auf 1.000 kWh/a)
-  5. Cache das Ergebnis: .data/slp_cache/h0_{year}.npy
+  1. Lese BDEW-Koeffizienten aus JSON (Profiltyp → Monat → Tagestyp → 96 Werte)
+  2. Generiere Kalender für das Zieljahr (Werktag WT / Samstag SA / Sonn- und Feiertag FT)
+     Feiertage werden als FT behandelt (bundeslandspezifisch nach BDEW-Definition)
+  3. Für jeden Tag des Jahres: ordne Monat + Tagestyp zu, lese 96 Profilwerte
+  4. Für H25 (und P25, S25): wende Dynamisierungsfunktion an (siehe unten)
+     G25 und L25 werden NICHT dynamisiert (laut BDEW-Spezifikation)
+  5. Erzeuge 35.040 normierte Viertelstundenwerte
+  6. Cache das Ergebnis: .data/bdew_cache/{slp_type}_{year}.npy
 
-Output: numpy-Array mit 35.040 normierten kWh-Werten
+Output: numpy-Array mit 35.040 normierten kWh-Werten (normiert auf 1 Mio. kWh/a)
 
 Skalierung im Modell:
-  last[t] = slp_normiert[t] × (jahresverbrauch_kwh / 1000) × kundenanzahl
+  last[t] = slp_normiert[t] × (jahresverbrauch_kwh / 1_000_000) × kundenanzahl
 ```
+
+### Dynamisierungsfunktion (nur H25, P25, S25)
+
+Laut BDEW-Anwendungshilfe (März 2025) ist für H25 die folgende Dynamisierungsfunktion anzuwenden:
+
+```
+x = x₀ × (-3,92E-10 × t⁴ + 3,20E-7 × t³ - 7,02E-5 × t² + 2,10E-3 × t + 1,24)
+
+Dabei ist:
+  x   = der resultierende Viertelstundenwert
+  x₀  = der in der Tabelle angegebene Viertelstundenwert des Profils
+  t   = der Tag des jeweiligen Jahres (1 = 1. Januar, 365/366 = 31. Dezember)
+```
+
+Rundung der Dynamisierungsfaktoren auf vier Nachkommastellen. Ergebnis auf drei Nachkommastellen gerundet.
+
+Zeitzone: **UTC** (konsistent mit Day-Ahead Spotmarktpreisen).
 
 ### Caching
 
+- Cache-Verzeichnis: `.data/bdew_cache/`
 - Cache-Key: `{slp_type}_{year}` (z.B. `h0_2027`)
-- Invalidierung: Nur nötig wenn die BDEW-Excel-Datei sich ändert (sehr selten)
+- Invalidierung: Cache wird erneuert, wenn das Änderungsdatum von `.data/bdew_profile_2025.json`
+  neuer ist als das des Cache-Eintrags
 - Analoges Vorgehen zum bestehenden PVGIS-Cache in `.data/pvgis_cache/`
 
 ---
@@ -349,7 +430,7 @@ pv_bess_model/
 ├── ...bestehende Module (unverändert)...
 ├── portfolio/                           # NEU
 │   ├── __init__.py
-│   ├── load_profiles.py                 # BDEW-SLP aus Excel, jahresabhängig, gecacht
+│   ├── load_profiles.py                 # BDEW-SLP aus JSON, jahresabhängig, dynamisiert, gecacht
 │   ├── heat_demand.py                   # Wärmelast aus PVGIS-Temperatur (Gradtagszahl)
 │   ├── system_value.py                  # Welt-A/Welt-B Vergleich, Delta-Berechnung
 │   └── marginal_value.py               # Grenznutzen-Kurven
@@ -384,6 +465,7 @@ bestehenden Modell.
     "baseline_year": 2027,
     "project_lifetime_years": 25,
     "perfect_foresight_discount": 0.8,
+    "bundesland": "SH",
     "output": {
       "directory": "./outputs/systemwert_flex_2027",
       "export_dispatch_sample": true,
@@ -405,15 +487,15 @@ bestehenden Modell.
         "system_loss_pct": 14.0,
         "mounting_type": "free",
         "azimuth_deg": 0,
-        "tilt_deg": 30
+        "tilt_deg": 30,
+        "start_year": 1
       }
     ],
     "load": [
       {
         "type": "slp",
         "name": "Haushaltskunden",
-        "slp_type": "H0",
-        "bdew_excel": "data/bdew_slp_2024.xlsx",
+        "slp_type": "H25",
         "customer_count": 8500,
         "annual_consumption_kwh_per_customer": 3200,
         "annual_growth_factor": 1.01
@@ -440,7 +522,8 @@ bestehenden Modell.
       "round_trip_efficiency_pct": 88.0,
       "min_soc_pct": 10.0,
       "max_soc_pct": 90.0,
-      "degradation_rate_pct_per_year": 2.0
+      "degradation_rate_pct_per_year": 2.0,
+      "start_year": 1
     },
     {
       "type": "heat_pump",
@@ -455,7 +538,8 @@ bestehenden Modell.
       "cop_nominal": 3.5,
       "cop_reference_temp_c": 7.0,
       "annual_thermal_demand_mwh": 15000,
-      "thermal_storage_kwh": 10000
+      "thermal_storage_kwh": 10000,
+      "start_year": 1
     },
     {
       "type": "heat_pump",
@@ -469,19 +553,21 @@ bestehenden Modell.
       "cop_nominal": 4.0,
       "cop_reference_temp_c": 7.0,
       "annual_thermal_demand_mwh": 5000,
-      "thermal_storage_kwh": 2000
+      "thermal_storage_kwh": 2000,
+      "start_year": 3
     },
     {
       "type": "ev_charging",
       "name": "Wallbox-Fleet V2G",
-      "annual_addition_kw": [
+      "mean_kw_per_unit": 11.0,
+      "annual_additional_units": [
         0,
-        20,
-        50,
-        100,
-        200
+        2,
+        5,
+        10,
+        20
       ],
-      "daily_energy_demand_kwh": 5000,
+      "daily_energy_demand_kwh_per_unit": 30.0,
       "time_window": {
         "arrival_hour": 17,
         "departure_hour": 7
@@ -489,36 +575,32 @@ bestehenden Modell.
       "v2g_enabled": true,
       "v2g_rte_pct": 90.0,
       "min_departure_soc_pct": 80.0,
-      "usable_battery_kwh_per_kw": 3.0
+      "usable_battery_kwh_per_unit": 33.0,
+      "start_year": 1
     },
     {
       "type": "ev_charging",
       "name": "Wallbox-Fleet unidirektional",
-      "annual_addition_kw": [
+      "mean_kw_per_unit": 11.0,
+      "annual_additional_units": [
         0,
-        20,
-        50,
-        100,
-        200
+        2,
+        5,
+        10,
+        20
       ],
-      "daily_energy_demand_kwh": 5000,
+      "daily_energy_demand_kwh_per_unit": 30.0,
       "time_window": {
         "arrival_hour": 17,
         "departure_hour": 7
       },
       "v2g_enabled": false,
       "min_departure_soc_pct": 80.0,
-      "usable_battery_kwh_per_kw": 3.0
+      "usable_battery_kwh_per_unit": 33.0,
+      "start_year": 1
     }
   ],
   "price_inputs": {
-    "inflation_timeseries": {
-      "csv_path": "/test.csv",
-      "inflation_column": "I",
-      "year_column": "Y",
-      "separator": ",",
-      "decimal": "."
-    },
     "scenarios": [
       {
         "name": "Central",
@@ -567,16 +649,24 @@ bestehenden Modell.
 }
 ```
 
---> Nutze ebenfalls die jährliche Inflation aus dem Basis Modell.
 Beachte:
 
 - `generation` und `load` sind Listen, erweiterbar um weitere Erzeuger/Lastgruppen
 - `flexibilities` erlaubt mehrere Instanzen desselben Typs (z.B. zwei `heat_pump`-Einträge)
 - `price_inputs.scenarios[]` ist identisch zur bestehenden Struktur aus dem PV+BESS-Modell
+- **Inflation**: Wird im MVP vernachlässigt. Der Systemwert ist inflationsunabhängig, da sowohl
+  Welt A als auch Welt B denselben Spotpreisen unterliegen. `inflation_on_input_data` wird ignoriert.
 - Monte Carlo ist komplett entfernt (Post-MVP)
 - `weather_year` in den Preisszenarien steuert, für welches Kalenderjahr das SLP generiert wird
-  --> Die Listen von Generation, Load, und Flexibilities sollen ebenfalls die Möglichkeit besitzen, die Zubauraten erst
-  ab Simulationsjahr X starten zu lassen.
+- **`bundesland`**: Steuert den Feiertagskalender für die SLP-Aufbereitung (Default: `"SH"`).
+  Feiertage werden über die Python-Bibliothek `holidays` ermittelt.
+- **`start_year`** (Generation + Flexibilities): Simulationsjahr, ab dem der Zubau beginnt
+  (1-indiziert, default: 1). Vor `start_year` ist die Kapazität/Erzeugung 0.
+  Beispiel: `start_year: 3` → Zubau beginnt erst in Projektjahr 3 (2029 bei baseline_year 2027).
+  Nicht relevant für `load` – Last existiert ab Jahr 1.
+- **EV-Charging**: Flottengröße wird über `mean_kw_per_unit` und `annual_additional_units` definiert.
+  `daily_energy_demand_kwh_per_unit` und `usable_battery_kwh_per_unit` sind pro Einheit.
+  Gesamtwerte skalieren mit der kumulierten Flottenanzahl.
 
 ---
 
@@ -1514,21 +1604,16 @@ Jede Session endet mit lauffähigen Tests (`pytest`). Kein Code ohne Tests.
 
 ---
 
-## 15. Verbleibende offene Fragen
+## 15. Geklärte Fragen
 
-1. **BDEW-Excel-Datei**: Welche Version der BDEW-SLP-Daten soll verwendet werden? Hast du die Datei
-   bereits, oder muss sie beschafft werden? Gibt es eine bestimmte Quelle/URL? --> Ja, siehe oben Punkt 6.
-
-2. **Sommer-/Winterzeit im SLP**: Sollen die SLP-Profile in UTC oder in MEZ/MESZ aufbereitet werden?
-   Die Preisszenarien sind vermutlich in UTC (da Day-Ahead Spotmarkt) – konsistente Zeitzone ist kritisch. --> UTC
-
-3. **PVGIS-Temperatur für SLP-Dynamisierung**: Die BDEW-Dynamisierungsfunktion braucht eine
-   Tages-Durchschnittstemperatur. Soll diese aus denselben PVGIS-Daten kommen, die auch für die
-   PV-Erzeugung und Gradtagszahl verwendet werden? Das wäre konsistent, aber PVGIS liefert T2m
-   (2m-Temperatur), nicht die für SLP übliche Temperatur der nächstgelegenen Wetterstation. --> Ja, zur konsistenz
-   sollen die gleichen PVGIS Daten verwendet werden.
-
-4. **EV-Flottengröße und Zubau**: Im JSON ist `annual_addition_kw` als Ladeleistungszubau definiert.
-   Soll daraus die Flottengröße abgeleitet werden (z.B. 1 Wallbox = 11 kW → 100 kW/a = ~9 Wallboxen/a)?
-   Oder soll die Flottengröße separat definiert werden, um den `daily_energy_demand_kwh` korrekt zu
-   skalieren? --> es soll separat definiert werden. Diese Flexibilitätskategorie benötigt also 'mean_kw_per_unit' und 'annual_additional_units'
+1. ~~**BDEW-Datei**~~: Daten liegen als `.data/bdew_profile_2025.json` vor (BDEW 2025, Profile H25/G25/L25/P25/S25).
+2. ~~**Zeitzone SLP**~~: UTC (konsistent mit Day-Ahead Spotmarkt).
+3. ~~**PVGIS-Temperatur**~~: Ja, PVGIS T2m wird für Gradtagszahl (WP) verwendet (Konsistenz).
+4. ~~**EV-Flottengröße**~~: Separat definiert über `mean_kw_per_unit` + `annual_additional_units`.
+5. ~~**Dynamisierung**~~: Nur tagesbasiert (Polynom 4. Grades, `t` = Tag des Jahres). Keine Temperaturabhängigkeit.
+6. ~~**Feiertage**~~: Konfigurierbar im JSON (`bundesland`), Default: `"SH"` (Schleswig-Holstein).
+   Feiertage werden über die Python-Bibliothek `holidays` ermittelt (unterstützt alle Bundesländer und beliebige Jahre).
+7. ~~**SLP-Normierung**~~: 1 Mio. kWh/a. Skalierung: `slp[t] × (verbrauch_kwh / 1_000_000) × kundenanzahl`.
+8. ~~**`start_year` bei Last**~~: Irrelevant für Load. Last existiert ab Jahr 1, Wachstum wirkt ab Jahr 1.
+9. ~~**EV daily_energy_demand**~~: Pro Fahrzeug pro Tag (z.B. 30 kWh). Skaliert linear mit kumulierter Flottengröße.
+10. ~~**Inflation**~~: Wird im MVP vernachlässigt. Systemwert ist inflationsunabhängig.
