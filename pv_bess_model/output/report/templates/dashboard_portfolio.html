@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"/>
+<title>{{scenario_name}} – Portfolio / Systemwert Dashboard</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+:root{
+  --c1:#FF8200;--c2:#F73E5E;--c3:#A51BA7;--c4:#00467A;--c5:#006EB2;--c6:#00BDDC;
+  --bg:#f8fafc;--fg:#0f172a;--muted:#64748b;--surface:#fff;--border:#e2e8f0;
+  --success:#16a34a;--focus:var(--c5);
+}
+[data-theme="dark"]{
+  --bg:#0b1220;--fg:#e5e7eb;--muted:#94a3b8;--surface:#1e293b;--border:#334155;
+  --success:#22c55e;--focus:var(--c6);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,-apple-system,sans-serif;line-height:1.6}
+.wrap{max-width:1400px;margin:0 auto;padding:16px 28px 60px}
+
+/* Header */
+.hdr{display:flex;align-items:center;gap:16px;padding:16px 0;border-bottom:3px solid var(--c1);margin-bottom:20px}
+.hdr-text h1{font-size:18px;color:var(--c4);font-weight:700}
+.hdr-text p{font-size:12px;color:var(--muted)}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+
+/* Tabs */
+.tabs{display:flex;gap:6px;margin-bottom:20px;overflow-x:auto;padding-bottom:4px;flex-wrap:wrap}
+.tab{padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600;border:2px solid var(--border);color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .2s}
+.tab:hover{border-color:var(--c5)}
+.tab.active{border-color:var(--c1);color:var(--c1);background:rgba(255,130,0,.08)}
+
+/* Card */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:16px}
+.sec-title{font-size:15px;font-weight:700;color:var(--c4);margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid var(--c1)}
+.sub-title{font-size:13px;font-weight:700;color:var(--c5);margin:12px 0 8px}
+
+/* Grid */
+.g{display:grid;gap:16px}
+.g2{grid-template-columns:1fr 1fr}
+.g3{grid-template-columns:1fr 1fr 1fr}
+.g4{grid-template-columns:1fr 1fr 1fr 1fr}
+@media(max-width:700px){.g2,.g3,.g4{grid-template-columns:1fr}}
+
+/* Tables */
+.data-table{width:100%;border-collapse:collapse;font-size:12px}
+.data-table th{text-align:left;padding:6px 8px;background:var(--bg);color:var(--c4);border-bottom:2px solid var(--c1);font-weight:700}
+.data-table td{padding:5px 8px;border-bottom:1px solid var(--border)}
+.data-table tr:hover td{background:rgba(255,130,0,.04)}
+
+/* KPI pill */
+.kpi-row{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 18px;min-width:160px;flex:1}
+.kpi-label{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase}
+.kpi-value{font-size:22px;font-weight:700;color:var(--c4);margin-top:2px}
+.kpi-unit{font-size:11px;color:var(--muted)}
+
+/* Charts */
+.chart-container{position:relative;width:100%;height:400px;margin:16px 0}
+.chart-container canvas{width:100%!important;height:100%!important}
+
+/* Buttons */
+.btn{border:1px solid var(--border);background:var(--surface);color:var(--fg);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s}
+.btn:hover{border-color:var(--c1)}
+.btn-sm{padding:4px 8px;font-size:11px}
+
+/* Badge */
+.badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px}
+.badge-bess{color:var(--c5);background:rgba(0,110,178,.08);border:1px solid rgba(0,110,178,.2)}
+.badge-hp{color:var(--c3);background:rgba(165,27,167,.08);border:1px solid rgba(165,27,167,.2)}
+.badge-ev{color:var(--c1);background:rgba(255,130,0,.08);border:1px solid rgba(255,130,0,.2)}
+
+/* Tab content */
+.tab-content{display:none}
+.tab-content.visible{display:block}
+
+/* Dark mode toggle */
+.dm-btn{background:none;border:none;cursor:pointer;font-size:18px;padding:4px}
+
+/* Footer */
+.footer{text-align:center;font-size:11px;color:var(--muted);padding:20px 0;border-top:1px solid var(--border);margin-top:30px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- HEADER -->
+<div class="hdr">
+  <div class="hdr-text">
+    <h1>Portfolio / Systemwert – Dashboard</h1>
+    <p id="metaInfo"></p>
+  </div>
+  <div class="hdr-right">
+    <button class="dm-btn" onclick="toggleDark()" title="Dark Mode">🌓</button>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs" id="tabBar"></div>
+
+<!-- TAB 1: PORTFOLIO OVERVIEW -->
+<div class="tab-content" data-tab="1">
+  <div class="card">
+    <div class="sec-title">Portfolio-Übersicht</div>
+    <div class="g g2">
+      <div>
+        <div class="sub-title">Modell-Parameter</div>
+        <table class="data-table" id="tblMeta"></table>
+      </div>
+      <div>
+        <div class="sub-title">Zusammenfassung</div>
+        <div class="kpi-row" id="kpiOverview"></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="sub-title">Erzeugungsanlagen</div>
+    <table class="data-table" id="tblGeneration"></table>
+  </div>
+  <div class="card">
+    <div class="sub-title">Lastgruppen</div>
+    <table class="data-table" id="tblLoad"></table>
+  </div>
+  <div class="card">
+    <div class="sub-title">Flexibilitäten</div>
+    <div id="flexCards"></div>
+  </div>
+</div>
+
+<!-- TAB 2: WORLD A -->
+<div class="tab-content" data-tab="2">
+  <div class="card">
+    <div class="sec-title">Welt A – Systemkosten ohne Flexibilität</div>
+    <div class="kpi-row" id="kpiWorldA"></div>
+    <div class="chart-container"><canvas id="chartWorldA"></canvas></div>
+    <button class="btn btn-sm" onclick="downloadCSV('worldA')">CSV herunterladen</button>
+  </div>
+</div>
+
+<!-- TAB 3: SYSTEM VALUE CURVES -->
+<div class="tab-content" data-tab="3">
+  <div class="card">
+    <div class="sec-title">Systemwert-Kurven</div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Kumulierter Systemwert (EUR) pro Flex-Instanz über der Zubau-Rate (kW/a).</p>
+    <div class="chart-container"><canvas id="chartSystemValue"></canvas></div>
+    <table class="data-table" id="tblSystemValue"></table>
+  </div>
+</div>
+
+<!-- TAB 4: MARGINAL VALUE CURVES -->
+<div class="tab-content" data-tab="4">
+  <div class="card">
+    <div class="sec-title">Grenznutzen-Kurven</div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Marginaler Systemwert (EUR/kW/a) pro zusätzlicher kW Flexibilitätskapazität.</p>
+    <div class="chart-container"><canvas id="chartMarginalValue"></canvas></div>
+    <table class="data-table" id="tblMarginalValue"></table>
+  </div>
+</div>
+
+<!-- TAB 5: DISPATCH SAMPLE -->
+<div class="tab-content" data-tab="5">
+  <div class="card">
+    <div class="sec-title">Dispatch-Sample</div>
+    <div class="kpi-row" id="kpiDispatch"></div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px">Zusammenfassung der Dispatch-Ergebnisse für das erste Projektjahr.</p>
+    <table class="data-table" id="tblDispatch"></table>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  Erstellt am <span id="footerDate"></span> · PV+BESS Portfolio/Systemwert Modell v<span id="footerVersion"></span>
+</div>
+
+</div><!-- /wrap -->
+
+<!-- Chart.js from CDN (offline fallback: inline minimal) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+// ============================================================
+// DATA INJECTION – replaced by html_builder
+// ============================================================
+const DATA = {{REPORT_DATA_JSON}};
+
+// ============================================================
+// DARK MODE
+// ============================================================
+function toggleDark(){
+  const t = document.documentElement.getAttribute('data-theme')==='dark'?'':'dark';
+  document.documentElement.setAttribute('data-theme',t);
+  localStorage.setItem('pf_theme',t);
+}
+(function(){const t=localStorage.getItem('pf_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();
+
+// ============================================================
+// TAB NAVIGATION
+// ============================================================
+const TAB_LABELS = [
+  '1 · Übersicht',
+  '2 · Welt A',
+  '3 · Systemwert',
+  '4 · Grenznutzen',
+  '5 · Dispatch',
+];
+let currentTab = 1;
+
+function initTabs(){
+  const bar = document.getElementById('tabBar');
+  TAB_LABELS.forEach((label, i)=>{
+    const d = document.createElement('div');
+    d.className = 'tab' + (i===0?' active':'');
+    d.textContent = label;
+    d.addEventListener('click', ()=>switchTab(i+1));
+    bar.appendChild(d);
+  });
+  switchTab(1);
+}
+
+function switchTab(n){
+  currentTab = n;
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    t.classList.toggle('active', i===n-1);
+  });
+  document.querySelectorAll('.tab-content').forEach(tc=>{
+    tc.classList.toggle('visible', +tc.dataset.tab===n);
+  });
+}
+
+// ============================================================
+// FORMATTING HELPERS
+// ============================================================
+const fmtEur = v => v==null?'–':v.toLocaleString('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0});
+const fmtNum = (v,d=2) => v==null?'–':v.toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtPct = v => v==null?'–':fmtNum(v*100,1)+' %';
+const fmtKwh = v => v==null?'–':fmtNum(v/1000,1)+' MWh';
+
+function makeKPI(label, value, unit){
+  return `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value">${value} <span class="kpi-unit">${unit||''}</span></div></div>`;
+}
+
+function makeTable(headers, rows){
+  let h = '<thead><tr>' + headers.map(h=>`<th>${h}</th>`).join('') + '</tr></thead>';
+  let b = '<tbody>' + rows.map(r=>'<tr>'+r.map(c=>`<td>${c}</td>`).join('')+'</tr>').join('') + '</tbody>';
+  return h+b;
+}
+
+// ============================================================
+// TAB 1: PORTFOLIO OVERVIEW
+// ============================================================
+function renderOverview(){
+  // Meta info
+  document.getElementById('metaInfo').textContent =
+    `${DATA.scenario_name} · Erstellt ${DATA.creation_date} · Baseline ${DATA.baseline_year} · ${DATA.lifetime_years} Jahre`;
+
+  // Meta table
+  const metaRows = [
+    ['Szenario', DATA.scenario_name],
+    ['Baseline-Jahr', DATA.baseline_year],
+    ['Projektlaufzeit', DATA.lifetime_years + ' Jahre'],
+    ['Foresight-Discount', fmtNum(DATA.perfect_foresight_discount*100,0) + ' %'],
+    ['Modell-Version', DATA.model_version],
+  ];
+  document.getElementById('tblMeta').innerHTML = makeTable(['Parameter','Wert'], metaRows);
+
+  // KPI overview
+  const totalGenKwp = DATA.generation.reduce((s,g)=>s+g.peak_kwp, 0);
+  const totalLoadMwh = DATA.load_groups.reduce((s,l)=>s+l.total_mwh, 0);
+  document.getElementById('kpiOverview').innerHTML =
+    makeKPI('Erzeugung', fmtNum(totalGenKwp,0), 'kWp') +
+    makeKPI('Last', fmtNum(totalLoadMwh,0), 'MWh/a') +
+    makeKPI('Flex-Instanzen', DATA.flexibilities.length, '') +
+    makeKPI('Welt-A Gesamtkosten', fmtEur(DATA.world_a_total_cost), '');
+
+  // Generation table
+  const genRows = DATA.generation.map(g=>[g.name, g.type, fmtNum(g.peak_kwp,0)+' kWp',
+    fmtNum(g.latitude,2)+'°', fmtNum(g.longitude,2)+'°', fmtNum(g.degradation_pct,1)+' %/a']);
+  document.getElementById('tblGeneration').innerHTML = makeTable(
+    ['Name','Typ','Leistung','Lat','Lon','Degradation'], genRows);
+
+  // Load table
+  const loadRows = DATA.load_groups.map(l=>[l.name, l.slp_type, fmtNum(l.customer_count,0),
+    fmtNum(l.annual_kwh_per_customer,0)+' kWh', fmtNum(l.total_mwh,0)+' MWh',
+    fmtNum((l.growth_factor-1)*100,1)+' %/a']);
+  document.getElementById('tblLoad').innerHTML = makeTable(
+    ['Name','SLP','Kunden','Verbrauch/Kunde','Gesamt','Wachstum'], loadRows);
+
+  // Flex cards
+  const fc = document.getElementById('flexCards');
+  fc.innerHTML = DATA.flexibilities.map(f=>{
+    const badge = f.type==='bess'?'badge-bess':(f.type==='heat_pump'?'badge-hp':'badge-ev');
+    const typeLabel = f.type==='bess'?'BESS':(f.type==='heat_pump'?'Wärmepumpe':'EV Charging');
+    let details = '';
+    if(f.type==='bess'){
+      details = `Zubau-Raten: ${f.annual_addition_kw.join(', ')} kW/a · E/P: ${f.e_to_p_ratio_hours.join(', ')} h · RTE: ${fmtNum(f.rte_pct,0)}% · Degradation: ${fmtNum(f.degradation_pct,1)}%/a`;
+    } else if(f.type==='heat_pump'){
+      details = `Zubau-Raten: ${f.annual_addition_kw.join(', ')} kW/a · COP: ${fmtNum(f.cop_nominal,1)} · Wärmebedarf: ${fmtNum(f.thermal_demand_mwh,0)} MWh/a`;
+    } else {
+      details = `Einheiten/a: ${f.annual_additional_units.join(', ')} · ${fmtNum(f.kw_per_unit,0)} kW/Einheit · V2G: ${f.v2g_enabled?'Ja':'Nein'}`;
+    }
+    return `<div class="card" style="margin-bottom:8px"><span class="badge ${badge}">${typeLabel}</span> <b>${f.name}</b> (ab Jahr ${f.start_year})<br><span style="font-size:12px;color:var(--muted)">${details}</span></div>`;
+  }).join('');
+}
+
+// ============================================================
+// TAB 2: WORLD A
+// ============================================================
+function renderWorldA(){
+  const costs = DATA.world_a_annual_costs;
+  if(!costs || costs.length===0) return;
+
+  document.getElementById('kpiWorldA').innerHTML =
+    makeKPI('Gesamtkosten', fmtEur(DATA.world_a_total_cost), '') +
+    makeKPI('Ø Jahreskosten', fmtEur(DATA.world_a_total_cost/costs.length), '/a') +
+    makeKPI('Laufzeit', costs.length, 'Jahre');
+
+  if(typeof Chart === 'undefined') return;
+
+  const labels = costs.map((_,i) => DATA.baseline_year + i);
+  const cumulative = [];
+  let cum = 0;
+  costs.forEach(c => { cum += c; cumulative.push(cum); });
+
+  new Chart(document.getElementById('chartWorldA'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {label:'Jährliche Systemkosten (EUR)', data:costs, backgroundColor:'rgba(0,70,122,.6)', yAxisID:'y'},
+        {label:'Kumuliert (EUR)', data:cumulative, type:'line', borderColor:'var(--c1)', backgroundColor:'transparent', yAxisID:'y2', pointRadius:1, borderWidth:2},
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      scales:{
+        y:{position:'left', title:{display:true,text:'EUR/a'}},
+        y2:{position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'EUR kumuliert'}},
+      },
+      plugins:{legend:{position:'bottom'}}
+    }
+  });
+}
+
+// ============================================================
+// TAB 3: SYSTEM VALUE CURVES
+// ============================================================
+function renderSystemValue(){
+  const pts = DATA.system_value_points;
+  if(!pts || pts.length===0) return;
+
+  // Group by (flex_name, e_to_p_ratio) for chart series
+  const groups = {};
+  pts.forEach(p=>{
+    const key = p.flex_name + (p.e_to_p_ratio!=null ? ` (E/P=${p.e_to_p_ratio}h)` : '');
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(p);
+  });
+
+  const colors = ['#FF8200','#006EB2','#F73E5E','#A51BA7','#00BDDC','#16a34a'];
+  const datasets = [];
+  let ci = 0;
+  for(const [key, group] of Object.entries(groups)){
+    group.sort((a,b)=>a.annual_addition_kw - b.annual_addition_kw);
+    datasets.push({
+      label: key,
+      data: group.map(p=>({x:p.annual_addition_kw, y:p.cumulative_system_value_eur})),
+      borderColor: colors[ci%colors.length],
+      backgroundColor: colors[ci%colors.length]+'33',
+      fill: false, tension:0.1, pointRadius:4,
+    });
+    ci++;
+  }
+
+  if(typeof Chart !== 'undefined'){
+    new Chart(document.getElementById('chartSystemValue'), {
+      type: 'line',
+      data: {datasets},
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        scales:{
+          x:{type:'linear', title:{display:true,text:'Zubau-Rate (kW/a)'}},
+          y:{title:{display:true,text:'Systemwert (EUR)'}},
+        },
+        plugins:{legend:{position:'bottom'}}
+      }
+    });
+  }
+
+  // Table
+  const rows = pts.map(p=>[
+    p.flex_name, p.flex_type,
+    fmtNum(p.annual_addition_kw,0), p.e_to_p_ratio!=null?fmtNum(p.e_to_p_ratio,1):'–',
+    fmtEur(p.cumulative_system_value_eur),
+  ]);
+  document.getElementById('tblSystemValue').innerHTML = makeTable(
+    ['Flex','Typ','kW/a','E/P (h)','Systemwert (EUR)'], rows);
+}
+
+// ============================================================
+// TAB 4: MARGINAL VALUE CURVES
+// ============================================================
+function renderMarginalValue(){
+  const pts = DATA.marginal_value_points;
+  if(!pts || pts.length===0) return;
+
+  const groups = {};
+  pts.forEach(p=>{
+    const key = p.flex_name + (p.e_to_p_ratio!=null ? ` (E/P=${p.e_to_p_ratio}h)` : '');
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(p);
+  });
+
+  const colors = ['#FF8200','#006EB2','#F73E5E','#A51BA7','#00BDDC','#16a34a'];
+  const datasets = [];
+  let ci = 0;
+  for(const [key, group] of Object.entries(groups)){
+    group.sort((a,b)=>a.annual_addition_kw - b.annual_addition_kw);
+    datasets.push({
+      label: key,
+      data: group.map(p=>({x:p.annual_addition_kw, y:p.marginal_value_eur_per_kw_a})),
+      borderColor: colors[ci%colors.length],
+      backgroundColor: colors[ci%colors.length]+'33',
+      fill: false, tension:0.1, pointRadius:4,
+      stepped: 'before',
+    });
+    ci++;
+  }
+
+  if(typeof Chart !== 'undefined'){
+    new Chart(document.getElementById('chartMarginalValue'), {
+      type: 'line',
+      data: {datasets},
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        scales:{
+          x:{type:'linear', title:{display:true,text:'Zubau-Rate (kW/a)'}},
+          y:{title:{display:true,text:'Grenznutzen (EUR/kW/a)'}},
+        },
+        plugins:{legend:{position:'bottom'}}
+      }
+    });
+  }
+
+  // Table
+  const rows = pts.map(p=>[
+    p.flex_name, p.flex_type,
+    fmtNum(p.annual_addition_kw,0), p.e_to_p_ratio!=null?fmtNum(p.e_to_p_ratio,1):'–',
+    fmtNum(p.marginal_value_eur_per_kw_a,0)+' EUR/kW/a',
+    fmtNum(p.delta_kw,0)+' kW',
+    fmtEur(p.delta_value_eur),
+  ]);
+  document.getElementById('tblMarginalValue').innerHTML = makeTable(
+    ['Flex','Typ','kW/a','E/P (h)','Grenznutzen','Δ kW','Δ Wert'], rows);
+}
+
+// ============================================================
+// TAB 5: DISPATCH SAMPLE
+// ============================================================
+function renderDispatch(){
+  const ds = DATA.dispatch_sample_summary;
+  if(!ds) return;
+
+  document.getElementById('kpiDispatch').innerHTML =
+    makeKPI('Jahr', DATA.dispatch_sample_year||'–', '') +
+    makeKPI('Systemkosten', fmtEur(ds.system_cost_eur), '') +
+    makeKPI('Netzverkauf', fmtKwh(ds.total_sell_kwh), '') +
+    makeKPI('Netzbezug', fmtKwh(ds.total_buy_kwh), '');
+
+  const rows = [
+    ['Netzverkauf (Erlös)', fmtEur(ds.total_sell_eur)],
+    ['Netzbezug (Kosten)', fmtEur(ds.total_buy_eur)],
+    ['BESS Durchsatz', fmtKwh(ds.bess_throughput_kwh)],
+    ['BESS Kapazität', fmtNum(ds.bess_capacity_kwh,0)+' kWh'],
+    ['BESS Leistung', fmtNum(ds.bess_power_kw,0)+' kW'],
+  ];
+  if(ds.wp_power_kw > 0){
+    rows.push(['WP Leistung', fmtNum(ds.wp_power_kw,0)+' kW']);
+    rows.push(['WP Strombezug', fmtKwh(ds.wp_electrical_kwh)]);
+  }
+  if(ds.ev_power_kw > 0){
+    rows.push(['EV Ladeleistung', fmtNum(ds.ev_power_kw,0)+' kW']);
+    rows.push(['EV Ladung', fmtKwh(ds.ev_charge_kwh)]);
+    rows.push(['EV Entladung (V2G)', fmtKwh(ds.ev_discharge_kwh)]);
+  }
+  document.getElementById('tblDispatch').innerHTML = makeTable(['Kennzahl','Wert'], rows);
+}
+
+// ============================================================
+// CSV DOWNLOAD
+// ============================================================
+function downloadCSV(type){
+  let csv = '';
+  if(type==='worldA'){
+    csv = 'Jahr;Systemkosten_EUR;Kumuliert_EUR\n';
+    let cum = 0;
+    DATA.world_a_annual_costs.forEach((c,i)=>{
+      cum += c;
+      csv += `${DATA.baseline_year+i};${c.toFixed(2).replace('.',',')};${cum.toFixed(2).replace('.',',')}\n`;
+    });
+  }
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = DATA.scenario_name + '_' + type + '.csv';
+  a.click();
+}
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', ()=>{
+  initTabs();
+  renderOverview();
+  renderWorldA();
+  renderSystemValue();
+  renderMarginalValue();
+  renderDispatch();
+  document.getElementById('footerDate').textContent = DATA.creation_date;
+  document.getElementById('footerVersion').textContent = DATA.model_version;
+});
+</script>
+</body>
+</html>

@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from pathlib import Path
 
 from pv_bess_model.config.loader_portfolio import (
     BessFlexConfig,
@@ -24,6 +25,17 @@ from pv_bess_model.config.loader_portfolio import (
     PortfolioConfig,
     load_portfolio,
 )
+from pv_bess_model.output.csv_writer_portfolio import (
+    write_baseline_csv,
+    write_marginal_value_csv,
+    write_system_value_csv,
+)
+from pv_bess_model.output.report.data_collector_portfolio import (
+    collect_portfolio_report_data,
+)
+from pv_bess_model.output.report.html_builder import build_portfolio_html_report
+from pv_bess_model.portfolio.marginal_value import MarginalValuePoint, compute_marginal_values
+from pv_bess_model.portfolio.system_value import SystemValueResult
 
 logger = logging.getLogger(__name__)
 
@@ -170,16 +182,109 @@ def main(argv: list[str] | None = None) -> int:
         print("Dry run: JSON validated successfully. Exiting.")
         return 0
 
-    # --- Simulation pipeline (placeholder) ---------------------------------
-    # Phase 2+: PVGIS fetch, SLP generation, price loading
-    # Phase 3:  World A calculation, Portfolio LP
-    # Phase 4:  Multi-year engine, enumeration, system value
-    # Phase 5:  Heat pump flex
-    # Phase 6:  EV/V2G flex
-    # Phase 7:  CSV output, HTML dashboard
+    # --- Simulation pipeline ------------------------------------------------
+    # Phase 2: PVGIS fetch, SLP generation, price loading
+    # Phase 3: World A calculation, Portfolio LP
+    # Phase 4: Multi-year engine, enumeration, system value
+    # Phase 5: Heat pump flex in LP
+    # Phase 6: EV/V2G flex in LP
+    #
+    # Phases 2-6 produce:
+    #   - system_value_result: SystemValueResult
+    #   - annual_results: list[PortfolioAnnualResult] (optional, for dispatch)
+    #
+    # These are passed to Phase 7 for output generation.
 
-    print("Simulation pipeline not yet implemented (Phase 2+).")
+    print("Simulation pipeline (Phases 2-6) not yet implemented.")
+    print("Output generation (Phase 7) is ready and will run once upstream")
+    print("phases provide simulation results.")
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Output generation (Phase 7)
+# ---------------------------------------------------------------------------
+
+
+def write_output(
+    config: PortfolioConfig,
+    system_value_result: SystemValueResult,
+    marginal_values: list[MarginalValuePoint],
+    generate_report: bool = True,
+    annual_results: list | None = None,
+) -> None:
+    """Write all portfolio output files (CSV + HTML dashboard).
+
+    Parameters
+    ----------
+    config:
+        Validated portfolio configuration.
+    system_value_result:
+        Complete enumeration result from ``run_enumeration()``.
+    marginal_values:
+        Marginal value points from ``compute_marginal_values()``.
+    generate_report:
+        Whether to generate the HTML dashboard report.
+    annual_results:
+        Annual results from a representative simulation (for dispatch summary).
+    """
+    meta = config.meta
+    output_dir = Path(meta.output_directory or f".data/output/{meta.name}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    delimiter = meta.csv_separator
+    decimal = meta.csv_decimal
+
+    # 1. Baseline CSV (World A)
+    baseline_path = output_dir / f"{meta.name}_baseline.csv"
+    write_baseline_csv(
+        baseline_path,
+        system_value_result.world_a_annual_costs,
+        baseline_year=meta.baseline_year,
+        delimiter=delimiter,
+        decimal=decimal,
+    )
+
+    # 2. System value CSV
+    sv_path = output_dir / f"{meta.name}_system_value.csv"
+    write_system_value_csv(
+        sv_path,
+        system_value_result,
+        delimiter=delimiter,
+        decimal=decimal,
+    )
+
+    # 3. Marginal value CSV
+    mv_path = output_dir / f"{meta.name}_marginal_value.csv"
+    write_marginal_value_csv(
+        mv_path,
+        marginal_values,
+        delimiter=delimiter,
+        decimal=decimal,
+    )
+
+    # 4. Dispatch sample CSV (if enabled and data available)
+    # Dispatch CSV requires daily results from the engine, which are
+    # produced by the simulation pipeline (Phases 3-6). The dispatch
+    # sample writer is called from the pipeline, not from here.
+
+    print(f"\n  CSV output written to: {output_dir}")
+    print(f"    - {baseline_path.name}")
+    print(f"    - {sv_path.name}")
+    print(f"    - {mv_path.name}")
+
+    # 5. HTML dashboard
+    if generate_report:
+        report_data = collect_portfolio_report_data(
+            config=config,
+            system_value_result=system_value_result,
+            marginal_values=marginal_values,
+            annual_results=annual_results,
+        )
+        report_path = build_portfolio_html_report(report_data, output_dir)
+        print(f"    - {report_path.name}")
+
+    print()
 
 
 if __name__ == "__main__":
