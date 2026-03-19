@@ -25,6 +25,8 @@ from pv_bess_model.config.defaults import (
     CSV_INPUT_DECIMAL_SEPARATOR,
     CSV_TIMESTAMP_COLUMN,
     DEFAULT_DEBT_SIZING_DOWNSIDE_PCT,
+    DEFAULT_INFLATION_VALUE_COLUMN,
+    DEFAULT_INFLATION_YEAR_COLUMN,
     MIN_PRICE_TIMESERIES_HOURS,
 )
 from pv_bess_model.config.schema import validate_scenario
@@ -220,6 +222,31 @@ class PriceWeatherScenario:
     csv_timestamp_format: str | None = None
     pv_timeseries_15min: np.ndarray | None = field(default=None, repr=False)
     price_per_year: np.ndarray | None = field(default=None, repr=False)
+
+
+@dataclass
+class InflationTimeseriesConfig:
+    """Configuration for loading an inflation timeseries from CSV.
+
+    Attributes
+    ----------
+    csv_path:
+        Path to the inflation CSV file.
+    year_column:
+        Column name containing calendar years.
+    inflation_column:
+        Column name containing annual inflation rates in percent.
+    csv_separator:
+        CSV delimiter character.
+    csv_decimal:
+        CSV decimal separator character.
+    """
+
+    csv_path: str
+    year_column: str = DEFAULT_INFLATION_YEAR_COLUMN
+    inflation_column: str = DEFAULT_INFLATION_VALUE_COLUMN
+    csv_separator: str = CSV_DELIMITER
+    csv_decimal: str = CSV_INPUT_DECIMAL_SEPARATOR
 
 
 # ---------------------------------------------------------------------------
@@ -490,6 +517,118 @@ def load_price_csv(
         columns=columns_out,
         n_hours=n_rows,
     )
+
+
+def parse_inflation_timeseries_config(
+    scenario_config: ScenarioConfig,
+) -> InflationTimeseriesConfig | None:
+    """Parse the optional inflation timeseries config from the scenario.
+
+    Parameters
+    ----------
+    scenario_config:
+        Validated scenario configuration.
+
+    Returns
+    -------
+    InflationTimeseriesConfig | None
+        Parsed config, or ``None`` if no inflation timeseries is configured.
+    """
+    price_inputs = scenario_config.finance.get("price_inputs", {})
+    ts_cfg = price_inputs.get("inflation_timeseries")
+    if ts_cfg is None:
+        return None
+
+    return InflationTimeseriesConfig(
+        csv_path=ts_cfg["csv_path"],
+        year_column=ts_cfg.get("year_column", DEFAULT_INFLATION_YEAR_COLUMN),
+        inflation_column=ts_cfg.get("inflation_column", DEFAULT_INFLATION_VALUE_COLUMN),
+        csv_separator=ts_cfg.get("csv_separator", CSV_DELIMITER),
+        csv_decimal=ts_cfg.get("csv_decimal", CSV_INPUT_DECIMAL_SEPARATOR),
+    )
+
+
+def load_inflation_csv(
+    config: InflationTimeseriesConfig,
+    scenario_path: Path | None = None,
+) -> dict[int, float]:
+    """Load an inflation timeseries CSV and return year → rate mapping.
+
+    The CSV must contain a year column (integer) and an inflation column
+    (percentage, e.g. 2.5 means 2.5 %).  The returned dictionary maps
+    calendar year to inflation rate as a fraction (e.g. 2.5 → 0.025).
+
+    Parameters
+    ----------
+    config:
+        Inflation timeseries configuration.
+    scenario_path:
+        Path to the scenario JSON file (used to resolve relative CSV paths).
+
+    Returns
+    -------
+    dict[int, float]
+        Mapping of calendar year → annual inflation rate as fraction.
+
+    Raises
+    ------
+    FileNotFoundError
+        When the CSV file does not exist.
+    ValueError
+        When the CSV is malformed or contains invalid data.
+    """
+    csv_path = Path(config.csv_path)
+    if not csv_path.is_absolute() and scenario_path is not None:
+        csv_path = scenario_path.parent / csv_path
+
+    if not csv_path.exists():
+        raise FileNotFoundError(
+            f"Inflation timeseries CSV not found: '{csv_path}'. "
+            "Check the 'csv_path' in price_inputs.inflation_timeseries."
+        )
+
+    logger.debug("Loading inflation timeseries from '%s'", csv_path)
+
+    try:
+        df = pd.read_csv(
+            csv_path,
+            sep=config.csv_separator,
+            decimal=config.csv_decimal,
+        )
+    except Exception as exc:
+        raise ValueError(
+            f"Failed to parse inflation CSV '{csv_path}': {exc}"
+        ) from exc
+
+    # Validate columns
+    for col in [config.year_column, config.inflation_column]:
+        if col not in df.columns:
+            raise ValueError(
+                f"Inflation CSV '{csv_path}' is missing column '{col}'. "
+                f"Available columns: {sorted(df.columns.tolist())}."
+            )
+
+    # Validate no NaN
+    if df[config.year_column].isna().any() or df[config.inflation_column].isna().any():
+        raise ValueError(
+            f"Inflation CSV '{csv_path}' contains NaN values. "
+            "No missing values are allowed."
+        )
+
+    result: dict[int, float] = {}
+    for _, row in df.iterrows():
+        year = int(row[config.year_column])
+        rate_pct = float(row[config.inflation_column])
+        result[year] = rate_pct / 100.0
+
+    logger.info(
+        "Loaded inflation timeseries from '%s': %d years (%d–%d)",
+        csv_path,
+        len(result),
+        min(result.keys()),
+        max(result.keys()),
+    )
+    return result
 
 
 # ---------------------------------------------------------------------------

@@ -106,7 +106,7 @@ def _make_grid_config(
         leverage_pct=0.0,
         interest_rate_pct=4.5,
         loan_tenor_years=lifetime,
-        inflation_rate=0.0,
+        opex_inflation_factors=[(1.0) ** i for i in range(lifetime)],
         discount_rate=0.06,
         afa_years_pv=20,
         afa_years_bess=10,

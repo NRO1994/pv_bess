@@ -115,6 +115,9 @@ LP_SOLVER_METHOD: str = "highs"
 LP_INFEASIBILITY_TOLERANCE: float = 1e-6
 """Tolerance below which an LP solution is considered feasible."""
 
+MILP_TIME_LIMIT: float = 10.0
+"""Time limit in seconds for a single MILP solve (per day)."""
+
 # ---------------------------------------------------------------------------
 # Financial defaults
 # ---------------------------------------------------------------------------
@@ -124,6 +127,12 @@ DEFAULT_DISCOUNT_RATE: float = 0.06
 
 DEFAULT_INFLATION_RATE: float = 0.02
 """Default annual inflation rate (2 %) applied to OPEX and optionally to prices."""
+
+DEFAULT_INFLATION_YEAR_COLUMN: str = "year"
+"""Default column name for the year field in inflation timeseries CSV files."""
+
+DEFAULT_INFLATION_VALUE_COLUMN: str = "inflation_pct"
+"""Default column name for the inflation rate (%) field in inflation CSV files."""
 
 DEFAULT_LEVERAGE_PCT: float = 75.0
 """Default debt leverage as a percentage of total CAPEX."""
@@ -331,7 +340,7 @@ REPORT_LLM_PROMPT_FILENAME: str = "_llm_prompt.md"
 REPORT_LLM_RESPONSE_FILENAME: str = "_llm_response.json"
 """Suffix for the LLM response JSON file expected in the output directory."""
 
-REPORT_MODEL_VERSION: str = "0.1.0"
+REPORT_MODEL_VERSION: str = "1.0"
 """Version string displayed on the report cover page."""
 
 PRICE_DATA_ORIGIN: str = "Prognos 2026"

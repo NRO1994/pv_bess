@@ -76,16 +76,18 @@ from pv_bess_model.config.loader import (
     PriceWeatherScenario,
     ScenarioConfig,
     extend_price_timeseries,
+    load_inflation_csv,
     load_price_csv,
     load_scenario,
+    parse_inflation_timeseries_config,
     parse_scenarios,
 )
-from pv_bess_model.finance.inflation import inflate_value
-from pv_bess_model.market.eeg import eeg_config_from_dict, effective_eeg_price
-from pv_bess_model.market.ppa import (
-    pay_as_produced_price,
-    ppa_config_from_dict,
+from pv_bess_model.finance.inflation import (
+    build_opex_inflation_factors,
+    build_price_inflation_factors,
 )
+from pv_bess_model.market.eeg import eeg_config_from_dict
+from pv_bess_model.market.ppa import ppa_config_from_dict
 from pv_bess_model.optimization.analyses import (
     run_eeg_sensitivity,
     run_ppa_baseload_analysis,
@@ -197,18 +199,20 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _build_fixed_prices_yearly(
     scenario: ScenarioConfig,
-    inflation_rate: float,
+    opex_inflation_factors: list[float],
 ) -> list[float]:
     """Build the per-year floor/fixed price list for the dispatch engine.
 
     Returns 0.0 for each year when no floor is active (pure market).
+    Uses *opex_inflation_factors* (base = commissioning year) for contract
+    price inflation (EEG, PPA floor/cap/pay-as-produced).
 
     Parameters
     ----------
     scenario:
         Validated scenario configuration.
-    inflation_rate:
-        Annual inflation rate as a fraction.
+    opex_inflation_factors:
+        Per-year cumulative inflation factors (base = commissioning year).
 
     Returns
     -------
@@ -227,19 +231,19 @@ def _build_fixed_prices_yearly(
 
     for year in range(1, lifetime + 1):
         price = 0.0
+        factor = opex_inflation_factors[year - 1]
 
         if marketing_type == "eeg":
             eeg_cfg = eeg_config_from_dict(marketing)
-            price = effective_eeg_price(eeg_cfg, year, inflation_rate)
+            if year <= eeg_cfg.fixed_price_years:
+                base = eeg_cfg.floor_price_eur_per_kwh
+                price = base * factor if eeg_cfg.inflation_enabled else base
 
         elif ppa_type == PPA_TYPE_FLOOR:
             ppa_cfg = ppa_config_from_dict(ppa_dict)
             if year <= ppa_cfg.duration_years:
                 base = ppa_cfg.floor_price_eur_per_kwh or 0.0
-                if ppa_cfg.inflation_enabled:
-                    price = inflate_value(base, inflation_rate, year)
-                else:
-                    price = base
+                price = base * factor if ppa_cfg.inflation_enabled else base
                 # GoO premium is NOT added here; it is passed separately via
                 # _build_goo_prices_yearly() and added after the floor comparison.
 
@@ -247,18 +251,16 @@ def _build_fixed_prices_yearly(
             ppa_cfg = ppa_config_from_dict(ppa_dict)
             if year <= ppa_cfg.duration_years:
                 base = ppa_cfg.floor_price_eur_per_kwh or 0.0
-                if ppa_cfg.inflation_enabled:
-                    price = inflate_value(base, inflation_rate, year)
-                else:
-                    price = base
+                price = base * factor if ppa_cfg.inflation_enabled else base
                 # GoO premium is NOT added here; it is passed separately via
                 # _build_goo_prices_yearly() and added after the clip operation.
                 # Cap price is handled via _build_cap_prices_yearly().
 
         elif ppa_type in (PPA_TYPE_PAY_AS_PRODUCED, PPA_TYPE_BASELOAD):
             ppa_cfg = ppa_config_from_dict(ppa_dict)
-            price = pay_as_produced_price(ppa_cfg, year, inflation_rate)
             if year <= ppa_cfg.duration_years:
+                base = ppa_cfg.pay_as_produced_price_eur_per_kwh or 0.0
+                price = base * factor if ppa_cfg.inflation_enabled else base
                 price += ppa_cfg.goo_premium_eur_per_kwh
 
         fixed_prices.append(price)
@@ -306,7 +308,7 @@ def _build_goo_prices_yearly(
 
 def _build_cap_prices_yearly(
     scenario: ScenarioConfig,
-    inflation_rate: float,
+    opex_inflation_factors: list[float],
 ) -> list[float]:
     """Build the per-year cap price list for the dispatch engine.
 
@@ -317,8 +319,8 @@ def _build_cap_prices_yearly(
     ----------
     scenario:
         Validated scenario configuration.
-    inflation_rate:
-        Annual inflation rate as a fraction.
+    opex_inflation_factors:
+        Per-year cumulative inflation factors (base = commissioning year).
 
     Returns
     -------
@@ -347,7 +349,7 @@ def _build_cap_prices_yearly(
     for year in range(1, lifetime + 1):
         if year <= ppa_cfg.duration_years:
             if ppa_cfg.inflation_enabled:
-                price = inflate_value(base, inflation_rate, year)
+                price = base * opex_inflation_factors[year - 1]
             else:
                 price = base
         else:
@@ -359,7 +361,7 @@ def _build_cap_prices_yearly(
 def _build_spot_prices_yearly(
     price_array: np.ndarray,
     lifetime_years: int,
-    inflation_rate: float,
+    price_inflation_factors: list[float],
     apply_inflation: bool,
     intervals_per_year: int = HOURS_PER_YEAR,
 ) -> list[np.ndarray]:
@@ -372,8 +374,9 @@ def _build_spot_prices_yearly(
         (€/kWh).
     lifetime_years:
         Number of project years.
-    inflation_rate:
-        Annual inflation rate as a fraction.
+    price_inflation_factors:
+        Per-year cumulative inflation factors for spot prices.
+        Base = year before first forecast year (= commissioning_year − 1).
     apply_inflation:
         Whether to scale each year's prices by the annual inflation factor.
     intervals_per_year:
@@ -390,8 +393,7 @@ def _build_spot_prices_yearly(
         end = y * intervals_per_year
         year_prices = price_array[start:end].copy()
         if apply_inflation:
-            factor = inflate_value(1.0, inflation_rate, y)
-            year_prices = year_prices * factor
+            year_prices = year_prices * price_inflation_factors[y - 1]
         yearly.append(year_prices)
     return yearly
 
@@ -524,6 +526,34 @@ def run(args: argparse.Namespace) -> int:
     # Finance parameters
     finance = scenario.finance
     inflation_rate = float(finance.get("inflation_rate", DEFAULT_INFLATION_RATE))
+
+    # Load inflation timeseries (if configured) and build factor arrays
+    inflation_ts_config = parse_inflation_timeseries_config(scenario)
+    yearly_inflation_rates: dict[int, float] | None = None
+    if inflation_ts_config is not None:
+        yearly_inflation_rates = load_inflation_csv(
+            inflation_ts_config,
+            scenario_path=scenario.path,
+        )
+        logger.info(
+            "Using inflation timeseries (%d years) instead of fixed rate %.4f",
+            len(yearly_inflation_rates),
+            inflation_rate,
+        )
+
+    opex_inflation_factors = build_opex_inflation_factors(
+        inflation_rate=inflation_rate,
+        lifetime_years=scenario.lifetime_years,
+        yearly_rates=yearly_inflation_rates,
+        commissioning_year=scenario.commissioning_year,
+    )
+    price_inflation_factors = build_price_inflation_factors(
+        inflation_rate=inflation_rate,
+        lifetime_years=scenario.lifetime_years,
+        yearly_rates=yearly_inflation_rates,
+        commissioning_year=scenario.commissioning_year,
+    )
+
     leverage_pct = float(finance.get("leverage_pct", 0.0))
     interest_rate_pct = float(finance.get("interest_rate_pct", DEFAULT_INTEREST_RATE_PCT))
     loan_tenor_years = int(finance.get("loan_tenor_years", DEFAULT_LOAN_TENOR_YEARS))
@@ -755,7 +785,7 @@ def run(args: argparse.Namespace) -> int:
 
         # Extend prices to lifetime (hourly first, then replicate to 15min)
         extended_prices_hourly = _extend_all_price_columns(
-            price_data, [sc.csv_column], lifetime, HOURS_PER_YEAR
+            price_data, [sc.csv_column], lifetime, INTERVALS_PER_YEAR
         )
 
         # Replicate hourly prices to 15min: each hour repeats 4x
@@ -770,7 +800,7 @@ def run(args: argparse.Namespace) -> int:
         spot_prices_yearly = _build_spot_prices_yearly(
             extended_prices_15min[sc.csv_column],
             lifetime,
-            inflation_rate,
+            price_inflation_factors,
             sc.inflation_on_input_data,
             intervals_per_year=ts_intervals_per_year,
         )
@@ -778,11 +808,11 @@ def run(args: argparse.Namespace) -> int:
         sc.price_per_year = spot_prices_yearly
 
     # Fixed prices per year (EEG / PPA floor, WITHOUT GoO)
-    fixed_prices_yearly = _build_fixed_prices_yearly(scenario, inflation_rate)
+    fixed_prices_yearly = _build_fixed_prices_yearly(scenario, opex_inflation_factors)
     # GoO premium per year (for floor and collar PPA types)
     goo_prices_yearly = _build_goo_prices_yearly(scenario)
     # Cap prices per year (PPA Collar only; 0.0 = no cap)
-    cap_prices_yearly = _build_cap_prices_yearly(scenario, inflation_rate)
+    cap_prices_yearly = _build_cap_prices_yearly(scenario, opex_inflation_factors)
 
     # ------------------------------------------------------------------
     # Step 5: Grid Search
@@ -830,7 +860,7 @@ def run(args: argparse.Namespace) -> int:
         leverage_pct=leverage_pct,
         interest_rate_pct=interest_rate_pct,
         loan_tenor_years=loan_tenor_years,
-        inflation_rate=inflation_rate,
+        opex_inflation_factors=opex_inflation_factors,
         discount_rate=discount_rate,
         afa_years_pv=afa_years_pv,
         afa_years_bess=afa_years_bess,
@@ -924,7 +954,7 @@ def run(args: argparse.Namespace) -> int:
             baseload_mw=0,
             skip_baseline=True,
         )
-        logger.info("Computing baseline Direktvermarktung IRR via Monte Carlo (pure spot market)…")
+        logger.info("Computing baseline Direktvermarktung IRR via Monte Carlo (pure spot market)...")
         baseline_mc_result = run_monte_carlo(
             base_config=baseline_market_config,
             optimal=optimal_setup,
@@ -986,7 +1016,7 @@ def run(args: argparse.Namespace) -> int:
                 mc_params=mc_params,
                 scenario_prices=scenarios_list,
                 floor_prices=floor_prices,
-                inflation_rate=inflation_rate,
+                opex_inflation_factors=opex_inflation_factors,
                 eeg_inflation=eeg_inflation_flag,
                 fixed_price_years=eeg_fixed_price_years,
             )
@@ -1010,7 +1040,7 @@ def run(args: argparse.Namespace) -> int:
                 duration_years=collar_cfg["duration_years"],
                 inflation_on_ppa=collar_cfg.get("inflation_on_ppa", False),
                 goo_premium_eur_per_kwh=collar_cfg["goo_premium_eur_per_kwh"],
-                inflation_rate=inflation_rate,
+                opex_inflation_factors=opex_inflation_factors,
             )
 
         if analyses_cfg.get("ppa_baseload", {}).get("enabled", False):
@@ -1032,7 +1062,7 @@ def run(args: argparse.Namespace) -> int:
                 duration_years=bl_cfg["duration_years"],
                 inflation_on_ppa=bl_cfg.get("inflation_on_ppa", False),
                 goo_premium_eur_per_kwh=bl_cfg["goo_premium_eur_per_kwh"],
-                inflation_rate=inflation_rate,
+                opex_inflation_factors=opex_inflation_factors,
             )
 
     # ------------------------------------------------------------------
@@ -1156,6 +1186,7 @@ def run(args: argparse.Namespace) -> int:
         analyses=analyses_cfg,
         baseline_market_irr=baseline_market_irr,
         equity_irr_target=equity_irr_target,
+        price_inflation_factors=list(yearly_inflation_rates.values()) if yearly_inflation_rates is not None else None
     )
 
     # ------------------------------------------------------------------
@@ -1184,16 +1215,16 @@ def _generate_report(
     analyses: dict,
     baseline_market_irr: float | None = None,
     equity_irr_target: float | None = None,
+    price_inflation_factors: list[float] | None = None,
 ) -> None:
     """Generate the interactive HTML report (Step 7b).
 
     New flow:
     1. Collect all data into ``HtmlReportData``.
-    2. Create matplotlib PNG charts (optional, for standalone use).
-    3. Save rendered LLM prompt to output directory.
-    4. Interactive pause for LLM response (unless ``--skip-llm-prompt``
+    2. Save rendered LLM prompt to output directory.
+    3. Interactive pause for LLM response (unless ``--skip-llm-prompt``
        or ``--llm-response`` is used).
-    5. Build and write the HTML report.
+    4. Build and write the HTML report.
 
     Parameters
     ----------
@@ -1252,38 +1283,17 @@ def _generate_report(
             analyses=analyses,
             baseline_market_irr=baseline_market_irr,
             equity_irr_target=equity_irr_target,
+            price_inflation_factors=price_inflation_factors
         )
     except Exception:
         logger.error("Report data collection failed.", exc_info=True)
         return
 
-    # Step 2: Create matplotlib PNG charts (optional, for standalone use)
-    try:
-        from pv_bess_model.output.report.charts import create_all_charts
-
-        logger.info("Generating report charts…")
-        create_all_charts(
-            output_dir=output_dir,
-            grid_result=grid_result,
-            weather_timeseries=weather_data_for_report,
-            scenario_prices=scenario_prices,
-            commissioning_year=commissioning_year,
-            eeg_result=eeg_sens_result,
-            collar_result=collar_result,
-            baseload_result=baseload_result,
-            baseline_market_irr=baseline_market_irr,
-            equity_irr_target=equity_irr_target,
-        )
-    except ImportError:
-        logger.debug("matplotlib not available. Skipping PNG chart generation.")
-    except Exception:
-        logger.warning("Chart generation failed.", exc_info=True)
-
-    # Step 3 + 4: LLM prompt workflow
+    # Step 2 + 3: LLM prompt workflow
     llm_texts = _resolve_llm_texts(report_data, output_dir, args)
     report_data.llm_texts = llm_texts
 
-    # Step 5: Build HTML report
+    # Step 4: Build HTML report
     logger.info("Assembling HTML report…")
     try:
         html_path = build_html_report(report_data, output_dir)

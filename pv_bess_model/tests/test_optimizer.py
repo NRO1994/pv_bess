@@ -104,19 +104,24 @@ def _assert_soc_tracking_green(
 
 
 class TestGreenModeReferenceOptimizer4h:
-    """Reference 4-hour LP test with exact hand-computed results."""
+    """Reference 4-hour MILP test with hand-computed results.
+
+    Note: t=1 and t=2 have the same price (10 EUR/MWh), so the MILP may
+    distribute charging between them differently than the LP.  Tests check
+    aggregate totals, key SoC states, and constraint satisfaction rather
+    than exact per-timestep dispatch patterns.
+    """
 
     def test_optimal_dispatch_matches_reference(
         self, reference_optimizer_4h: dict
     ) -> None:
-        """The LP solution must match the documented optimal dispatch."""
+        """Key dispatch invariants must hold (aggregate totals, SoC endpoints)."""
         ref = reference_optimizer_4h
         bess = _make_bess(
             power_kw=ref["bess_power_kw"],
             capacity_kwh=ref["bess_capacity_kwh"],
             rte=ref["rte"],
         )
-        # Spot prices in fixture are EUR/MWh, optimizer expects EUR/kWh
         spot_eur_kwh = ref["spot_prices_eur_per_mwh"] / 1000.0
 
         result = optimize_day(
@@ -129,23 +134,22 @@ class TestGreenModeReferenceOptimizer4h:
             start_soc_kwh=ref["start_soc_kwh"],
         )
 
-        np.testing.assert_allclose(
-            result["charge_pv"], ref["expected_charge_pv_kwh"], atol=ATOL
-        )
-        np.testing.assert_allclose(
-            result["export_pv"], ref["expected_export_pv_kwh"], atol=ATOL
-        )
+        # Total charge must equal sum of reference (680/9 kWh)
+        assert abs(np.sum(result["charge_pv"]) - np.sum(ref["expected_charge_pv_kwh"])) < ATOL
+        # No curtailment
         np.testing.assert_allclose(
             result["curtail"], ref["expected_curtail_kwh"], atol=ATOL
         )
-        np.testing.assert_allclose(
-            result["discharge_green"],
-            ref["expected_discharge_green_kwh"],
-            atol=ATOL,
-        )
-        np.testing.assert_allclose(
-            result["soc"], ref["expected_soc_kwh"], atol=ATOL
-        )
+        # t=0 discharge and t=3 discharge are uniquely determined
+        assert abs(result["discharge_green"][0] - ref["expected_discharge_green_kwh"][0]) < ATOL
+        assert abs(result["discharge_green"][3] - ref["expected_discharge_green_kwh"][3]) < ATOL
+        # SoC at end of t=0 (after discharge) and end of t=3 (min SoC)
+        assert abs(result["soc"][0] - ref["expected_soc_kwh"][0]) < ATOL
+        assert abs(result["soc"][3] - ref["expected_soc_kwh"][3]) < ATOL
+        # SoC before discharge at t=3 must be 120 kWh
+        assert abs(result["soc"][2] - 120.0) < ATOL
+        # Energy balance
+        _assert_energy_balance(result, ref["pv_production_kwh"])
 
     def test_total_revenue_matches_reference(
         self, reference_optimizer_4h: dict
@@ -175,7 +179,7 @@ class TestGreenModeReferenceOptimizer4h:
     def test_grid_export_matches_reference(
         self, reference_optimizer_4h: dict
     ) -> None:
-        """Grid export per hour (PV + BESS x RTE) matches reference."""
+        """Total grid export and key timesteps match reference."""
         ref = reference_optimizer_4h
         bess = _make_bess(
             power_kw=ref["bess_power_kw"],
@@ -194,11 +198,12 @@ class TestGreenModeReferenceOptimizer4h:
             start_soc_kwh=ref["start_soc_kwh"],
         )
 
-        # discharge_green is already post-RTE, no additional multiplication needed
         grid_export = result["export_pv"] + result["discharge_green"]
-        np.testing.assert_allclose(
-            grid_export, ref["expected_grid_export_kwh"], atol=ATOL
-        )
+        # t=0 grid limit binding (150 kWh) and t=3 discharge (90 kWh)
+        assert abs(grid_export[0] - ref["expected_grid_export_kwh"][0]) < ATOL
+        assert abs(grid_export[3] - ref["expected_grid_export_kwh"][3]) < ATOL
+        # Total grid export must match
+        assert abs(np.sum(grid_export) - np.sum(ref["expected_grid_export_kwh"])) < ATOL
 
 
 class TestGreenModePvEnergyBalance:
@@ -825,6 +830,125 @@ class TestEdgeCaseNegativePrices:
         assert abs(total_export - 400.0) < ATOL, (
             f"Should export all PV at floor price, got export={total_export:.1f}"
         )
+
+
+class TestNoSimultaneousChargeDischarge:
+    """MILP binary variable must prevent charge and discharge in same timestep."""
+
+    def _assert_no_simultaneous(self, result: DailyDispatchResult) -> None:
+        """Assert no timestep has both charge > 0 and discharge > 0."""
+        T = len(result["charge_pv"])
+        for t in range(T):
+            total_charge = result["charge_pv"][t] + result["charge_grid"][t]
+            total_discharge = result["discharge_green"][t] + result["discharge_grey"][t]
+            assert not (total_charge > ATOL and total_discharge > ATOL), (
+                f"t={t}: simultaneous charge={total_charge:.4f} and "
+                f"discharge={total_discharge:.4f}"
+            )
+
+    def test_green_positive_prices(self) -> None:
+        """Green mode with positive prices: no simultaneous charge/discharge."""
+        pv = np.array([200.0, 200.0, 50.0, 0.0])
+        spot = np.array([0.03, 0.01, 0.01, 0.08])
+        bess = _make_bess(power_kw=100.0, capacity_kwh=200.0)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=150.0,
+            mode="green",
+            start_soc_kwh=100.0,
+        )
+        self._assert_no_simultaneous(result)
+
+    def test_green_floor_price(self) -> None:
+        """Green mode with floor price (degenerate case): no simultaneous."""
+        pv = np.array([100.0, 100.0, 100.0, 0.0])
+        spot = np.array([0.02, 0.02, 0.02, 0.08])
+        bess = _make_bess(power_kw=100.0, capacity_kwh=200.0)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.05,  # floor above spot
+            bess=bess,
+            grid_max_kw=150.0,
+            mode="green",
+            start_soc_kwh=100.0,
+        )
+        self._assert_no_simultaneous(result)
+
+    def test_green_negative_prices(self) -> None:
+        """Green mode with negative prices: no simultaneous."""
+        pv = np.array([100.0, 100.0, 50.0, 0.0])
+        spot = np.array([-0.02, 0.01, -0.01, 0.10])
+        bess = _make_bess(power_kw=100.0, capacity_kwh=200.0)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=150.0,
+            mode="green",
+            start_soc_kwh=100.0,
+        )
+        self._assert_no_simultaneous(result)
+
+    def test_grey_arbitrage(self) -> None:
+        """Grey mode arbitrage: no simultaneous charge/discharge."""
+        pv = np.array([50.0, 50.0, 0.0, 0.0])
+        spot = np.array([0.01, 0.01, 0.08, 0.10])
+        bess = _make_bess(power_kw=100.0, capacity_kwh=200.0)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="grey",
+            start_soc_kwh=100.0,
+        )
+        self._assert_no_simultaneous(result)
+
+    def test_grey_negative_prices(self) -> None:
+        """Grey mode with negative prices: no simultaneous."""
+        pv = np.array([100.0, 100.0, 0.0, 0.0])
+        spot = np.array([-0.03, 0.01, -0.02, 0.10])
+        bess = _make_bess(power_kw=100.0, capacity_kwh=200.0)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="grey",
+            start_soc_kwh=100.0,
+        )
+        self._assert_no_simultaneous(result)
+
+    def test_collar_mixed_prices(self) -> None:
+        """Collar PPA with mixed prices: no simultaneous."""
+        pv = np.array([150.0, 150.0, 50.0, 0.0])
+        spot = np.array([0.02, 0.04, 0.07, 0.10])
+        bess = _make_bess(power_kw=100.0, capacity_kwh=200.0)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.03,  # floor
+            price_cap_eur_per_kwh=0.08,    # cap
+            goo_premium_eur_per_kwh=0.005,
+            bess=bess,
+            grid_max_kw=200.0,
+            mode="green",
+            start_soc_kwh=100.0,
+        )
+        self._assert_no_simultaneous(result)
 
 
 class TestEdgeCaseZeroPv:

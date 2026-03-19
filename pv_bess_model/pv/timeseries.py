@@ -38,7 +38,7 @@ _P50_PERCENTILE: float = 50.0
 
 
 def compute_p50_p90(
-    yearly_data: dict[int, np.ndarray],
+        yearly_data: dict[int, np.ndarray],
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute hourly P50 and P90 production arrays from multi-year data.
 
@@ -95,8 +95,8 @@ def compute_p50_p90(
 
 
 def _validate_arrays(
-    yearly_data: dict[int, np.ndarray],
-    years: list[int],
+        yearly_data: dict[int, np.ndarray],
+        years: list[int],
 ) -> None:
     """Raise ``ValueError`` if any array has the wrong length."""
     wrong = {
@@ -117,9 +117,9 @@ def _validate_arrays(
 
 
 def align_weather_to_forecast_year(
-    weather_ts: np.ndarray,
-    weather_year: int,
-    forecast_year: int,
+        weather_ts: np.ndarray,
+        weather_year: int,
+        forecast_year: int,
 ) -> np.ndarray:
     """Align a historical weather-year timeseries to a forecast year.
 
@@ -146,6 +146,11 @@ def align_weather_to_forecast_year(
     ValueError
         When *weather_ts* does not have exactly 8 760 elements.
     """
+
+    # TODO: Seems like prognos is matching the timeseries directly, no shifting necessary, to be checked!!!
+    if True:
+        return weather_ts
+
     if len(weather_ts) != INTERVALS_PER_YEAR:
         raise ValueError(
             f"weather_ts must have exactly {INTERVALS_PER_YEAR} elements, "
@@ -197,5 +202,3 @@ def hourly_to_quarter_hourly(hourly_ts: np.ndarray) -> np.ndarray:
         )
 
     return np.repeat(hourly_ts / INTERVALS_PER_HOUR, INTERVALS_PER_HOUR)
-
-

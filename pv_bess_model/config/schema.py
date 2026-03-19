@@ -437,6 +437,19 @@ _PRICE_WEATHER_SCENARIO = {
     "additionalProperties": False,
 }
 
+_INFLATION_TIMESERIES = {
+    "type": "object",
+    "required": ["csv_path"],
+    "properties": {
+        "csv_path": {"type": "string", "minLength": 1},
+        "year_column": {"type": "string", "minLength": 1},
+        "inflation_column": {"type": "string", "minLength": 1},
+        "csv_separator": {"type": "string", "minLength": 1},
+        "csv_decimal": {"type": "string", "minLength": 1},
+    },
+    "additionalProperties": False,
+}
+
 _PRICE_INPUTS = {
     "type": "object",
     "required": ["scenarios"],
@@ -446,6 +459,7 @@ _PRICE_INPUTS = {
             "items": _PRICE_WEATHER_SCENARIO,
             "minItems": 1,
         },
+        "inflation_timeseries": _INFLATION_TIMESERIES,
     },
     "additionalProperties": False,
 }

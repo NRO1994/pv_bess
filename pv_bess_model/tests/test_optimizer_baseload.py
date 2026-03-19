@@ -77,7 +77,7 @@ class TestBaseloadShortfallGreenMode:
             grid_max_kw=500.0,
             mode="green",
             start_soc_kwh=100.0,
-            baseload_kw=0.0,
+            baseload_mw=0.0,
         )
 
         np.testing.assert_array_equal(result["shortfall"], np.zeros(T))
@@ -98,7 +98,7 @@ class TestBaseloadShortfallGreenMode:
             grid_max_kw=500.0,
             mode="green",
             start_soc_kwh=10.0,  # min SoC
-            baseload_kw=0.08,  # 80 kWh/h (0.08 MW)
+            baseload_mw=0.08,  # 80 kWh/h (0.08 MW)
         )
 
         # In hours 0 and 3, PV=0 and BESS may not have enough → shortfall expected
@@ -122,7 +122,7 @@ class TestBaseloadShortfallGreenMode:
             grid_max_kw=500.0,
             mode="green",
             start_soc_kwh=100.0,
-            baseload_kw=0.1,  # 100 kWh/h (0.1 MW)
+            baseload_mw=0.1,  # 100 kWh/h (0.1 MW)
         )
 
         np.testing.assert_allclose(result["shortfall"], 0.0, atol=ATOL)
@@ -145,7 +145,7 @@ class TestBaseloadShortfallGreenMode:
             grid_max_kw=500.0,
             mode="green",
             start_soc_kwh=20.0,  # near min SoC
-            baseload_kw=0.05,  # 50 kWh/h
+            baseload_mw=0.05,  # 50 kWh/h
         )
 
         # Without BESS (offline day): shortfall in hours 2-3 = 50 kWh each
@@ -155,7 +155,7 @@ class TestBaseloadShortfallGreenMode:
             price_fixed_eur_per_kwh=0.07,
             grid_max_kw=500.0,
             start_soc_kwh=20.0,
-            baseload_kw=0.05,
+            baseload_mw=0.05,
         )
 
         total_shortfall_with = np.sum(result_with_bess["shortfall"])
@@ -182,7 +182,7 @@ class TestBaseloadShortfallGreenMode:
             grid_max_kw=500.0,
             mode="green",
             start_soc_kwh=100.0,
-            baseload_kw=0.1,  # 100 kWh/h
+            baseload_mw=0.1,  # 100 kWh/h
         )
 
         np.testing.assert_allclose(result["shortfall"], 0.0, atol=ATOL)
@@ -202,7 +202,7 @@ class TestBaseloadShortfallGreenMode:
             grid_max_kw=500.0,
             mode="green",
             start_soc_kwh=100.0,
-            baseload_kw=0.08,  # 80 kWh/h
+            baseload_mw=0.08,  # 80 kWh/h
         )
 
         _assert_energy_balance(result, pv)
@@ -234,7 +234,7 @@ class TestBaseloadShortfallGreenMode:
             grid_max_kw=500.0,
             mode="green",
             start_soc_kwh=100.0,  # Enough for 2 hours of discharge
-            baseload_kw=0.05,  # 50 kWh/h
+            baseload_mw=0.05,  # 50 kWh/h
         )
 
         # BESS should discharge in BOTH hours to reduce shortfall
@@ -262,7 +262,7 @@ class TestBaseloadShortfallGreyMode:
             grid_max_kw=500.0,
             mode="grey",
             start_soc_kwh=100.0,
-            baseload_kw=0.0,
+            baseload_mw=0.0,
         )
 
         np.testing.assert_array_equal(result["shortfall"], np.zeros(T))
@@ -282,7 +282,7 @@ class TestBaseloadShortfallGreyMode:
             grid_max_kw=500.0,
             mode="grey",
             start_soc_kwh=10.0,
-            baseload_kw=0.08,  # 80 kWh/h
+            baseload_mw=0.08,  # 80 kWh/h
         )
 
         assert np.all(result["shortfall"] >= -ATOL)
@@ -304,7 +304,7 @@ class TestBaseloadShortfallGreyMode:
             grid_max_kw=500.0,
             mode="grey",
             start_soc_kwh=100.0,
-            baseload_kw=0.08,
+            baseload_mw=0.08,
         )
 
         _assert_energy_balance(result, pv)
@@ -326,7 +326,7 @@ class TestBaseloadOfflineDay:
             price_fixed_eur_per_kwh=0.07,
             grid_max_kw=500.0,
             start_soc_kwh=100.0,
-            baseload_kw=0.1,  # 100 kWh/h (0.1 MW)
+            baseload_mw=0.1,  # 100 kWh/h (0.1 MW)
         )
 
         # Hour 0: PV=0, export=0 → shortfall=100
@@ -350,7 +350,7 @@ class TestBaseloadOfflineDay:
             price_fixed_eur_per_kwh=0.07,
             grid_max_kw=500.0,
             start_soc_kwh=100.0,
-            baseload_kw=0.0,
+            baseload_mw=0.0,
         )
 
         np.testing.assert_array_equal(result["shortfall"], np.zeros(T))
@@ -369,7 +369,7 @@ class TestBaseloadOfflineDay:
             price_fixed_eur_per_kwh=0.07,
             grid_max_kw=grid_max_kw,
             start_soc_kwh=100.0,
-            baseload_kw=0.1,  # 100 kWh/h
+            baseload_mw=0.1,  # 100 kWh/h
         )
 
         # Export limited to 80 kWh/h, baseload=100 → shortfall=20 each hour
@@ -395,7 +395,7 @@ class TestBaseloadDoesNotAffectOtherStructures:
             grid_max_kw=500.0,
             mode="green",
             start_soc_kwh=100.0,
-            baseload_kw=0.0,
+            baseload_mw=0.0,
         )
 
         # Effective price should be max(spot, 0.07)
@@ -418,7 +418,7 @@ class TestBaseloadDoesNotAffectOtherStructures:
             grid_max_kw=500.0,
             mode="green",
             start_soc_kwh=100.0,
-            baseload_kw=0.0,
+            baseload_mw=0.0,
             goo_premium_eur_per_kwh=0.005,
             price_cap_eur_per_kwh=0.10,
         )
@@ -451,7 +451,7 @@ class TestBaseloadWithGooPremium:
             grid_max_kw=500.0,
             mode="green",
             start_soc_kwh=20.0,
-            baseload_kw=0.06,  # 60 kWh/h
+            baseload_mw=0.06,  # 60 kWh/h
             goo_premium_eur_per_kwh=0.01,
         )
 
@@ -464,7 +464,7 @@ class TestBaseloadWithGooPremium:
             grid_max_kw=500.0,
             mode="green",
             start_soc_kwh=20.0,
-            baseload_kw=0.06,
+            baseload_mw=0.06,
             goo_premium_eur_per_kwh=0.0,
         )
 
@@ -498,7 +498,7 @@ class TestBaseloadShortfallConsistency:
             grid_max_kw=500.0,
             mode="green",
             start_soc_kwh=20.0,
-            baseload_kw=0.08,  # 80 kWh/h
+            baseload_mw=0.08,  # 80 kWh/h
         )
 
         # Grid export = export_pv + discharge_green (both post-RTE/GLF)
@@ -526,7 +526,7 @@ class TestBaseloadShortfallConsistency:
             grid_max_kw=500.0,
             mode="grey",
             start_soc_kwh=20.0,
-            baseload_kw=0.08,
+            baseload_mw=0.08,
         )
 
         # Grid export = export_pv + discharge_green + discharge_grey

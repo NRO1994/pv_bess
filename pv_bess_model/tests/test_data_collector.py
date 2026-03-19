@@ -203,6 +203,7 @@ def _make_grid_point(*, scale: float = 40.0, optimal: bool = False) -> GridPoint
             export_pv=np.zeros(8760),
             curtail=np.zeros(8760),
             revenue=np.zeros(8760),
+            baseload_shortfall=np.zeros(8760),
         ),
     )
     return GridPointResult(

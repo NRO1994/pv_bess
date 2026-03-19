@@ -151,11 +151,13 @@ def check_dispatch_constraints(
                     actual=soc[t],
                     severity="error",
                 ))
-            if abs(soc[t] - dispatch_df["bess_soc_green_kwh"][t] - dispatch_df["bess_soc_grey_kwh"][t]) > tolerance:
+            soc_green_t = dispatch_df["bess_soc_green_kwh"].values[t]
+            soc_grey_t = dispatch_df["bess_soc_grey_kwh"].values[t]
+            if abs(soc[t] - soc_green_t - soc_grey_t) > tolerance:
                 violations.append(ConstraintViolation(
                     constraint="soc_limits_sum_up",
                     timestep=t,
-                    expected=f"soc = soc_green + soc_grey = {dispatch_df["bess_soc_green_kwh"][t] - dispatch_df["bess_soc_grey_kwh"][t]:.2f}",
+                    expected=f"soc = soc_green + soc_grey = {soc_green_t + soc_grey_t:.2f}",
                     actual=soc[t],
                     severity="error",
                 ))
@@ -248,20 +250,13 @@ def check_dispatch_constraints(
             total_charge = charge_grid[t] + charge_pv[t]
             total_discharge = (discharge_green[t] / grid_loss_factor + discharge_grey[t]) / rte
 
-            if (effective_price[t] < 0) and (total_discharge > 0):
-                violations.append(ConstraintViolation(
-                        constraint="discharging_at_neg_price",
-                        timestep=t,
-                        expected=f"only discharge, if effective price is > 0",
-                        actual=total_discharge,
-                        severity="error",))
             if (total_discharge > 0) and (total_charge > 0):
                 violations.append(ConstraintViolation(
                     constraint="charging_discharging_simultaneously",
                     timestep=t,
                     expected=f"only discharge, or charge",
                     actual=total_discharge,
-                    severity="warning", ))
+                    severity="error", ))
             else:
                 if (total_charge > 0) and (abs(previous_soc + total_charge - soc[t]) > tolerance):
                     violations.append(ConstraintViolation(

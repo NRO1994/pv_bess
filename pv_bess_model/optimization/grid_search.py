@@ -39,7 +39,7 @@ from pv_bess_model.dispatch.engine import (
 from pv_bess_model.finance.cashflow import build_cashflow_projection, CashflowProjection
 from pv_bess_model.finance.costs import calculate_total_costs
 from pv_bess_model.finance.debt import build_annuity_schedule
-from pv_bess_model.finance.inflation import inflate_value
+
 from pv_bess_model.finance.metrics import calculate_dscr, compute_all_metrics, FinancialMetrics
 
 logger = logging.getLogger(__name__)
@@ -131,8 +131,8 @@ class GridSearchConfig:
         Annual debt interest rate in % (e.g. 4.5).
     loan_tenor_years:
         Loan tenor in years.
-    inflation_rate:
-        Annual inflation rate as a fraction (e.g. 0.02).
+    opex_inflation_factors:
+        Per-year cumulative inflation factors for OPEX (length = lifetime_years).
     discount_rate:
         Discount rate for NPV calculation as a fraction.
     afa_years_pv:
@@ -215,7 +215,7 @@ class GridSearchConfig:
     leverage_pct: float
     interest_rate_pct: float
     loan_tenor_years: int
-    inflation_rate: float
+    opex_inflation_factors: list[float]
     discount_rate: float
     afa_years_pv: int
     afa_years_bess: int
@@ -395,7 +395,7 @@ class _GridPointArgs:
     leverage_pct: float
     interest_rate_pct: float
     loan_tenor_years: int
-    inflation_rate: float
+    opex_inflation_factors: list[float]
     discount_rate: float
     afa_years_pv: int
     afa_years_bess: int
@@ -469,7 +469,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         pv_base_timeseries_year=args.pv_base_timeseries_year,
         spot_prices_yearly=args.spot_prices_yearly,
         fixed_prices_yearly=args.fixed_prices_yearly,
-        baseload_kw=args.baseload_mw,
+        baseload_mw=args.baseload_mw,
         offline_days_yearly=args.offline_days_bess_yearly,
         pv_offline_days_yearly=args.offline_days_pv_yearly,
         goo_prices_yearly=args.goo_prices_yearly,
@@ -478,7 +478,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
 
     annual_revenues_p50 = [r.total_revenue for r in sim_p50.annual_results]
     annual_bess_spot_revenues_p50 = [r.bess_spot_revenue for r in sim_p50.annual_results]
-    total_production_kwh = sum(r.pv_production for r in sim_p50.annual_results)
+    total_production_kwh = sum(r.pv_production + r.bess_discharge_grey + r.bess_discharge_green for r in sim_p50.annual_results)
 
     # Optional downside simulation – used for conservative DSCR calculation, P90 only on PV revenue
     annual_revenues_downside = [
@@ -502,7 +502,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
         lifetime_years=args.lifetime_years,
         annual_revenues=annual_revenues_p50,
         base_opex=args.opex_base,
-        inflation_rate=args.inflation_rate,
+        opex_inflation_factors=args.opex_inflation_factors,
         capex_total=args.capex_total,
         capex_pv=args.capex_pv,
         capex_bess=args.capex_bess,
@@ -721,7 +721,7 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     leverage_pct=config.leverage_pct,
                     interest_rate_pct=config.interest_rate_pct,
                     loan_tenor_years=config.loan_tenor_years,
-                    inflation_rate=config.inflation_rate,
+                    opex_inflation_factors=config.opex_inflation_factors,
                     discount_rate=config.discount_rate,
                     afa_years_pv=config.afa_years_pv,
                     afa_years_bess=config.afa_years_bess,

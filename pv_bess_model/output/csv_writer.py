@@ -528,6 +528,7 @@ def write_dispatch_sample_csv(
                 hourly_sample.export_pv[h] + hourly_sample.discharge_green[h] + hourly_sample.discharge_grey[h]
             ), decimal=d),
             "curtailed_kwh": fmt_float(float(hourly_sample.curtail[h]), decimal=d),
+            "baseload_shortfall_kwh": fmt_float(float(hourly_sample.baseload_shortfall[h]), decimal=d),
             "revenue_eur": fmt_float(float(hourly_sample.revenue[h]), decimal=d),
         })
 

@@ -805,7 +805,8 @@ class TestBuildFixedPricesYearlyCollar:
         from pv_bess_model.main import _build_fixed_prices_yearly
 
         scenario = _make_scenario(lifetime=15, floor=0.04, duration=10)
-        prices = _build_fixed_prices_yearly(scenario, inflation_rate=0.02)
+        opex_factors = [(1.02) ** i for i in range(scenario.lifetime_years)]
+        prices = _build_fixed_prices_yearly(scenario, opex_inflation_factors=opex_factors)
         # Years 1-10: floor = 0.04 (no inflation)
         for y in range(10):
             assert math.isclose(prices[y], 0.04), f"Year {y+1}: expected 0.04, got {prices[y]}"
@@ -820,7 +821,8 @@ class TestBuildFixedPricesYearlyCollar:
         scenario = _make_scenario(
             lifetime=5, floor=0.04, duration=5, inflation_on_ppa=True,
         )
-        prices = _build_fixed_prices_yearly(scenario, inflation_rate=0.02)
+        opex_factors = [(1.02) ** i for i in range(scenario.lifetime_years)]
+        prices = _build_fixed_prices_yearly(scenario, opex_inflation_factors=opex_factors)
         for y in range(5):
             from pv_bess_model.finance.inflation import inflate_value
             expected = inflate_value(0.04, 0.02, y + 1)
@@ -833,7 +835,8 @@ class TestBuildFixedPricesYearlyCollar:
         from pv_bess_model.main import _build_fixed_prices_yearly
 
         scenario = _make_scenario(floor=0.04, goo=0.010, duration=10)
-        prices = _build_fixed_prices_yearly(scenario, inflation_rate=0.0)
+        opex_factors = [1.0] * scenario.lifetime_years
+        prices = _build_fixed_prices_yearly(scenario, opex_inflation_factors=opex_factors)
         # Floor = 0.04, GoO = 0.010.  fixed_prices should be 0.04, NOT 0.05.
         assert math.isclose(prices[0], 0.04), (
             f"GoO should not be in fixed price: got {prices[0]}, expected 0.04"
@@ -882,7 +885,8 @@ class TestBuildCapPricesYearly:
         from pv_bess_model.main import _build_cap_prices_yearly
 
         scenario = _make_scenario(lifetime=15, cap=0.10, duration=10)
-        caps = _build_cap_prices_yearly(scenario, inflation_rate=0.02)
+        opex_factors = [(1.02) ** i for i in range(scenario.lifetime_years)]
+        caps = _build_cap_prices_yearly(scenario, opex_inflation_factors=opex_factors)
         for y in range(10):
             assert math.isclose(caps[y], 0.10), f"Year {y+1}: expected 0.10, got {caps[y]}"
         for y in range(10, 15):
@@ -895,10 +899,10 @@ class TestBuildCapPricesYearly:
         scenario = _make_scenario(
             lifetime=5, cap=0.10, duration=5, inflation_on_ppa=True,
         )
-        caps = _build_cap_prices_yearly(scenario, inflation_rate=0.03)
+        opex_factors = [(1.03) ** i for i in range(scenario.lifetime_years)]
+        caps = _build_cap_prices_yearly(scenario, opex_inflation_factors=opex_factors)
         for y in range(5):
-            from pv_bess_model.finance.inflation import inflate_value
-            expected = inflate_value(0.10, 0.03, y + 1)
+            expected = 0.10 * opex_factors[y]
             assert math.isclose(caps[y], expected, rel_tol=1e-9)
 
     def test_cap_non_collar_type_returns_zeros(self, _make_scenario) -> None:
@@ -906,7 +910,8 @@ class TestBuildCapPricesYearly:
         from pv_bess_model.main import _build_cap_prices_yearly
 
         scenario = _make_scenario(ppa_type="ppa_floor", cap=0.10)
-        caps = _build_cap_prices_yearly(scenario, inflation_rate=0.02)
+        opex_factors = [(1.02) ** i for i in range(scenario.lifetime_years)]
+        caps = _build_cap_prices_yearly(scenario, opex_inflation_factors=opex_factors)
         assert all(c == 0.0 for c in caps)
 
     def test_cap_eeg_marketing_returns_zeros(self, _make_scenario) -> None:
@@ -916,5 +921,6 @@ class TestBuildCapPricesYearly:
         scenario = _make_scenario(ppa_type="none")
         # Override marketing to EEG
         scenario.finance["revenue_streams"]["marketing"]["type"] = "eeg"
-        caps = _build_cap_prices_yearly(scenario, inflation_rate=0.02)
+        opex_factors = [(1.02) ** i for i in range(scenario.lifetime_years)]
+        caps = _build_cap_prices_yearly(scenario, opex_inflation_factors=opex_factors)
         assert all(c == 0.0 for c in caps)

@@ -49,7 +49,7 @@ from pv_bess_model.dispatch.engine import (
 )
 from pv_bess_model.finance.cashflow import build_cashflow_projection
 from pv_bess_model.finance.debt import build_annuity_schedule
-from pv_bess_model.finance.inflation import inflate_value
+
 from pv_bess_model.finance.metrics import compute_all_metrics
 from pv_bess_model.optimization.grid_search import GridPointResult, GridSearchConfig
 
@@ -324,7 +324,7 @@ def _run_scenario_dispatch(scenario_name: str) -> _ScenarioDispatch:
         cap_prices_yearly=base.cap_prices_yearly if base.cap_prices_yearly else None,
         pv_offline_days_yearly=None,
         pv_base_timeseries_year=scenario.weather_year,
-        baseload_kw=base.baseload_mw,
+        baseload_mw=base.baseload_mw,
     )
 
     return _ScenarioDispatch(
@@ -466,13 +466,13 @@ def _run_mc_iteration_fast(
         bess_spot = rev_bess_green + rev_bess_grey
         annual_bess_spot_revenues.append(bess_spot)
 
-    total_production_kwh = dispatch.total_production_kwh * pv_availability_factor
     annual_pv_production_kwh = [
         p * pv_availability_factor for p in dispatch.annual_pv_production_kwh
     ]
     annual_bess_discharge_kwh = [
         d * bess_availability_factor for d in dispatch.annual_bess_discharge_kwh
     ]
+    total_production_kwh = annual_pv_production_kwh + annual_bess_discharge_kwh
 
     # --- Build cashflow projection ---
     debt_schedule = build_annuity_schedule(
@@ -488,7 +488,7 @@ def _run_mc_iteration_fast(
         lifetime_years=base.lifetime_years,
         annual_revenues=annual_revenues,
         base_opex=opex_base,
-        inflation_rate=base.inflation_rate,
+        opex_inflation_factors=base.opex_inflation_factors,
         capex_total=capex_total,
         capex_pv=capex_pv,
         capex_bess=capex_bess,
@@ -510,7 +510,7 @@ def _run_mc_iteration_fast(
 
     annual_opex = []
     for y in range(1, base.lifetime_years + 1):
-        opex_y = inflate_value(opex_base, base.inflation_rate, y)
+        opex_y = opex_base * base.opex_inflation_factors[y - 1]
         if base.optimization_fee_pct > 0.0:
             opex_y += annual_bess_spot_revenues[y - 1] * base.optimization_fee_pct / 100.0
         annual_opex.append(opex_y)
@@ -527,7 +527,7 @@ def _run_mc_iteration_fast(
         annual_debt_service=annual_debt_service,
         total_capex=capex_total,
         total_opex_lifetime=total_opex_lifetime,
-        total_production_kwh=total_production_kwh,
+        total_production_kwh=float(np.sum(total_production_kwh)),
         discount_rate=base.discount_rate,
         annual_pv_production_kwh=annual_pv_production_kwh,
         annual_bess_discharge_kwh=annual_bess_discharge_kwh,
@@ -609,7 +609,7 @@ def _build_stats(
         ``(overall_stats, per_scenario_stats)`` where each inner dict maps
         metric names to :class:`MCStatistics`.
     """
-    metric_names = ("equity_irr", "project_irr", "npv", "dscr_min")
+    metric_names = ("equity_irr", "project_irr", "npv", "dscr_min", "capture_rate")
 
     overall_stats: dict[str, MCStatistics] = {
         m: _compute_statistics([getattr(r, m) for r in results])
@@ -672,7 +672,7 @@ def run_monte_carlo(
         All iteration results plus overall and per-scenario statistics.
     """
     n_scenarios = len(scenario_prices)
-    logger.info(
+    logger.debug(
         "Monte Carlo: %d iterations, %d price scenario(s), max_workers=%s.",
         mc_params.iterations,
         n_scenarios,
