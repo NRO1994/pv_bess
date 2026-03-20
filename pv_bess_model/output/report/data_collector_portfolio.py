@@ -21,7 +21,10 @@ from typing import Any
 
 import numpy as np
 
-from pv_bess_model.config.defaults import REPORT_MODEL_VERSION
+from pv_bess_model.config.defaults import (
+    INTERVALS_PER_DAY,
+    REPORT_MODEL_VERSION,
+)
 from pv_bess_model.config.loader_portfolio import (
     BessFlexConfig,
     EVFlexConfig,
@@ -103,6 +106,14 @@ class PortfolioReportData:
     marginal_value_points: list[dict]
     # [{flex_name, flex_type, annual_addition_kw, e_to_p_ratio,
     #   marginal_value_eur_per_kw_a, cumulative_system_value_eur}]
+
+    # -- Tab 2: World A – average week profiles (optional) --
+    world_a_avg_week_loads: list[dict] = field(default_factory=list)
+    # [{name, values: [672 floats]}]  – per load group, Mo-So × 96 intervals
+    world_a_avg_week_generation: list[dict] = field(default_factory=list)
+    # [{name, values: [672 floats]}]  – per generation unit, Mo-So × 96 intervals
+    world_a_avg_week_prices: list[dict] = field(default_factory=list)
+    # [{name, values: [672 floats]}]  – per price scenario, Mo-So × 96 intervals
 
     # -- Tab 5: Dispatch sample (optional) --
     dispatch_sample_year: int | None = None
@@ -248,6 +259,66 @@ def _extract_dispatch_summary(
 
 
 # ---------------------------------------------------------------------------
+# Average week computation
+# ---------------------------------------------------------------------------
+
+
+def compute_average_week(
+    profile_qh: np.ndarray,
+    year: int,
+) -> list[float]:
+    """Compute the average week profile from a quarter-hourly annual profile.
+
+    Groups 365 days by weekday (Monday=0 … Sunday=6), averages all
+    occurrences of each weekday, and concatenates to produce 672 values
+    (7 days × 96 quarter-hour intervals).
+
+    Parameters
+    ----------
+    profile_qh:
+        Quarter-hourly profile (35,040 values for 365 days).
+    year:
+        Calendar year used to determine weekday of January 1st.
+
+    Returns
+    -------
+    list[float]
+        672 values representing the average week (Mon–Sun).
+    """
+    import datetime
+
+    n_days = 365
+    ipd = INTERVALS_PER_DAY  # 96
+    expected = n_days * ipd
+
+    if len(profile_qh) < expected:
+        logger.warning(
+            "Profile has %d values, expected %d. Padding with zeros.",
+            len(profile_qh),
+            expected,
+        )
+        padded = np.zeros(expected, dtype=float)
+        padded[: len(profile_qh)] = profile_qh
+        profile_qh = padded
+
+    # Reshape to (365, 96)
+    daily = profile_qh[:expected].reshape(n_days, ipd)
+
+    # Determine weekday for each day (0=Monday, 6=Sunday)
+    jan1 = datetime.date(year, 1, 1)
+    weekdays = np.array([(jan1 + datetime.timedelta(days=d)).weekday() for d in range(n_days)])
+
+    # Average per weekday
+    avg_week = np.zeros((7, ipd), dtype=float)
+    for wd in range(7):
+        mask = weekdays == wd
+        if np.any(mask):
+            avg_week[wd] = daily[mask].mean(axis=0)
+
+    return avg_week.flatten().tolist()
+
+
+# ---------------------------------------------------------------------------
 # Factory function
 # ---------------------------------------------------------------------------
 
@@ -257,6 +328,9 @@ def collect_portfolio_report_data(
     system_value_result: SystemValueResult,
     marginal_values: list[MarginalValuePoint],
     annual_results: list[PortfolioAnnualResult] | None = None,
+    avg_week_loads: list[dict] | None = None,
+    avg_week_generation: list[dict] | None = None,
+    avg_week_prices: list[dict] | None = None,
 ) -> PortfolioReportData:
     """Aggregate all portfolio simulation results into report data.
 
@@ -270,6 +344,12 @@ def collect_portfolio_report_data(
         Marginal value points.
     annual_results:
         Annual results from a representative simulation (for dispatch summary).
+    avg_week_loads:
+        Average week profiles per load group (from ``compute_average_week``).
+    avg_week_generation:
+        Average week profiles per generation unit.
+    avg_week_prices:
+        Average week profiles per price scenario.
 
     Returns
     -------
@@ -299,6 +379,10 @@ def collect_portfolio_report_data(
         # World A
         world_a_annual_costs=system_value_result.world_a_annual_costs,
         world_a_total_cost=sum(system_value_result.world_a_annual_costs),
+        # World A – average week profiles
+        world_a_avg_week_loads=avg_week_loads or [],
+        world_a_avg_week_generation=avg_week_generation or [],
+        world_a_avg_week_prices=avg_week_prices or [],
         # System value
         system_value_points=_extract_system_value_points(system_value_result),
         # Marginal value

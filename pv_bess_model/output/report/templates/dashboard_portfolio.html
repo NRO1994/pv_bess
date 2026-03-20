@@ -132,8 +132,18 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,-appl
   <div class="card">
     <div class="sec-title">Welt A – Systemkosten ohne Flexibilität</div>
     <div class="kpi-row" id="kpiWorldA"></div>
-    <div class="chart-container"><canvas id="chartWorldA"></canvas></div>
-    <button class="btn btn-sm" onclick="downloadCSV('worldA')">CSV herunterladen</button>
+  </div>
+  <div class="card">
+    <div class="sub-title">Ø Wochenverbrauch – Lastgruppen</div>
+    <div class="chart-container"><canvas id="chartWorldALoad"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="sub-title">Ø Wochenerzeugung – Erzeugungsanlagen</div>
+    <div class="chart-container"><canvas id="chartWorldAGeneration"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="sub-title">Ø Wochenstrompreise – Preisszenarien</div>
+    <div class="chart-container"><canvas id="chartWorldAPrices"></canvas></div>
   </div>
 </div>
 
@@ -304,6 +314,22 @@ function renderOverview(){
 // ============================================================
 // TAB 2: WORLD A
 // ============================================================
+const WEEKDAY_LABELS_DE = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+const AVG_WEEK_COLORS = ['#FF8200','#006EB2','#F73E5E','#A51BA7','#00BDDC','#16a34a','#eab308','#6366f1'];
+
+function makeAvgWeekLabels(){
+  // 7 days × 96 intervals = 672 labels, show HH:MM at day boundaries
+  const labels = [];
+  for(let d=0;d<7;d++){
+    for(let i=0;i<96;i++){
+      const h = Math.floor(i/4);
+      const m = (i%4)*15;
+      labels.push(WEEKDAY_LABELS_DE[d]+' '+String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'));
+    }
+  }
+  return labels;
+}
+
 function renderWorldA(){
   const costs = DATA.world_a_annual_costs;
   if(!costs || costs.length===0) return;
@@ -315,29 +341,127 @@ function renderWorldA(){
 
   if(typeof Chart === 'undefined') return;
 
-  const labels = costs.map((_,i) => DATA.baseline_year + i);
-  const cumulative = [];
-  let cum = 0;
-  costs.forEach(c => { cum += c; cumulative.push(cum); });
+  const avgLabels = makeAvgWeekLabels();
 
-  new Chart(document.getElementById('chartWorldA'), {
-    type: 'bar',
-    data: {
-      labels: labels,
-      datasets: [
-        {label:'Jährliche Systemkosten (EUR)', data:costs, backgroundColor:'rgba(0,70,122,.6)', yAxisID:'y'},
-        {label:'Kumuliert (EUR)', data:cumulative, type:'line', borderColor:'var(--c1)', backgroundColor:'transparent', yAxisID:'y2', pointRadius:1, borderWidth:2},
-      ]
-    },
-    options: {
-      responsive:true, maintainAspectRatio:false,
-      scales:{
-        y:{position:'left', title:{display:true,text:'EUR/a'}},
-        y2:{position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'EUR kumuliert'}},
-      },
-      plugins:{legend:{position:'bottom'}}
-    }
-  });
+  // --- Chart 1: Load (stacked bar) ---
+  const loads = DATA.world_a_avg_week_loads || [];
+  if(loads.length > 0){
+    const loadDatasets = loads.map((lg, i) => ({
+      label: lg.name,
+      data: lg.values,
+      backgroundColor: AVG_WEEK_COLORS[i % AVG_WEEK_COLORS.length] + 'AA',
+    }));
+    new Chart(document.getElementById('chartWorldALoad'), {
+      type: 'bar',
+      data: {labels: avgLabels, datasets: loadDatasets},
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        scales:{
+          x:{
+            title:{display:true, text:'Wochentag / Uhrzeit'},
+            ticks:{
+              maxTicksLimit: 28,
+              callback: function(val, idx){
+                return idx % 96 === 0 ? WEEKDAY_LABELS_DE[Math.floor(idx/96)] : (idx % 24 === 0 ? String(Math.floor((idx%96)/4)).padStart(2,'0')+':00' : '');
+              }
+            }
+          },
+          y:{stacked:true, title:{display:true, text:'kWh'}},
+        },
+        plugins:{
+          legend:{position:'bottom'},
+          tooltip:{
+            callbacks:{
+              title: function(items){ return items[0].label; },
+              label: function(ctx){ return ctx.dataset.label + ': ' + fmtNum(ctx.parsed.y,1) + ' kWh'; }
+            }
+          }
+        },
+        datasets:{bar:{stacked:true, barPercentage:1.0, categoryPercentage:1.0}},
+      }
+    });
+  }
+
+  // --- Chart 2: Generation (stacked bar) ---
+  const gen = DATA.world_a_avg_week_generation || [];
+  if(gen.length > 0){
+    const genDatasets = gen.map((g, i) => ({
+      label: g.name,
+      data: g.values,
+      backgroundColor: AVG_WEEK_COLORS[(i+2) % AVG_WEEK_COLORS.length] + 'AA',
+    }));
+    new Chart(document.getElementById('chartWorldAGeneration'), {
+      type: 'bar',
+      data: {labels: avgLabels, datasets: genDatasets},
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        scales:{
+          x:{
+            title:{display:true, text:'Wochentag / Uhrzeit'},
+            ticks:{
+              maxTicksLimit: 28,
+              callback: function(val, idx){
+                return idx % 96 === 0 ? WEEKDAY_LABELS_DE[Math.floor(idx/96)] : (idx % 24 === 0 ? String(Math.floor((idx%96)/4)).padStart(2,'0')+':00' : '');
+              }
+            }
+          },
+          y:{stacked:true, title:{display:true, text:'kWh'}},
+        },
+        plugins:{
+          legend:{position:'bottom'},
+          tooltip:{
+            callbacks:{
+              title: function(items){ return items[0].label; },
+              label: function(ctx){ return ctx.dataset.label + ': ' + fmtNum(ctx.parsed.y,1) + ' kWh'; }
+            }
+          }
+        },
+        datasets:{bar:{stacked:true, barPercentage:1.0, categoryPercentage:1.0}},
+      }
+    });
+  }
+
+  // --- Chart 3: Prices (line chart) ---
+  const prices = DATA.world_a_avg_week_prices || [];
+  if(prices.length > 0){
+    const priceDatasets = prices.map((p, i) => ({
+      label: p.name,
+      data: p.values.map(v => v * 1000),  // EUR/kWh → EUR/MWh
+      borderColor: AVG_WEEK_COLORS[i % AVG_WEEK_COLORS.length],
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      tension: 0.2,
+    }));
+    new Chart(document.getElementById('chartWorldAPrices'), {
+      type: 'line',
+      data: {labels: avgLabels, datasets: priceDatasets},
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        scales:{
+          x:{
+            title:{display:true, text:'Wochentag / Uhrzeit'},
+            ticks:{
+              maxTicksLimit: 28,
+              callback: function(val, idx){
+                return idx % 96 === 0 ? WEEKDAY_LABELS_DE[Math.floor(idx/96)] : (idx % 24 === 0 ? String(Math.floor((idx%96)/4)).padStart(2,'0')+':00' : '');
+              }
+            }
+          },
+          y:{title:{display:true, text:'EUR/MWh'}},
+        },
+        plugins:{
+          legend:{position:'bottom'},
+          tooltip:{
+            callbacks:{
+              title: function(items){ return items[0].label; },
+              label: function(ctx){ return ctx.dataset.label + ': ' + fmtNum(ctx.parsed.y,2) + ' EUR/MWh'; }
+            }
+          }
+        },
+      }
+    });
+  }
 }
 
 // ============================================================

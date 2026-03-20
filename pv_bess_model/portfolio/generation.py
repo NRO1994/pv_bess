@@ -120,3 +120,60 @@ def build_aggregated_pv_profile(
 
     assert temperature_hourly is not None  # guaranteed by non-empty list
     return aggregated, temperature_hourly
+
+
+def build_per_asset_pv_profiles(
+    generation_configs: list[GenerationConfig],
+    weather_year: int,
+    pvgis_client: PVGISClient | None = None,
+) -> dict[str, np.ndarray]:
+    """Build individual PV production profiles for each generation asset.
+
+    Parameters
+    ----------
+    generation_configs:
+        List of PV generation asset configurations.
+    weather_year:
+        Calendar year for PVGIS data.
+    pvgis_client:
+        Optional pre-configured PVGIS client.
+
+    Returns
+    -------
+    dict[str, numpy.ndarray]
+        Mapping of asset name to quarter-hourly production profile (35,040).
+    """
+    if not generation_configs:
+        return {}
+
+    if pvgis_client is None:
+        pvgis_client = PVGISClient()
+
+    expected_qh = HOURS_PER_YEAR * INTERVALS_PER_HOUR
+    profiles: dict[str, np.ndarray] = {}
+
+    for gen in generation_configs:
+        result = pvgis_client.fetch_single_year(
+            year=weather_year,
+            latitude=gen.latitude,
+            longitude=gen.longitude,
+            peak_power_kwp=gen.peak_power_kwp,
+            mounting_type=gen.mounting_type,
+            azimuth_deg=gen.azimuth_deg,
+            tilt_deg=gen.tilt_deg,
+            pvgis_database=gen.pvgis_database,
+            include_temperature=False,
+        )
+
+        assert isinstance(result, np.ndarray)
+        production_hourly = result
+
+        # Apply system losses
+        loss_factor = 1.0 - gen.system_loss_pct / 100.0
+        production_hourly = production_hourly * loss_factor
+
+        # Convert to quarter-hourly
+        production_qh = hourly_to_quarter_hourly(production_hourly)
+        profiles[gen.name] = production_qh
+
+    return profiles

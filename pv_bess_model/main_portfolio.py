@@ -52,9 +52,13 @@ from pv_bess_model.output.csv_writer_portfolio import (
 )
 from pv_bess_model.output.report.data_collector_portfolio import (
     collect_portfolio_report_data,
+    compute_average_week,
 )
 from pv_bess_model.output.report.html_builder import build_portfolio_html_report
-from pv_bess_model.portfolio.generation import build_aggregated_pv_profile
+from pv_bess_model.portfolio.generation import (
+    build_aggregated_pv_profile,
+    build_per_asset_pv_profiles,
+)
 from pv_bess_model.portfolio.heat_demand import (
     compute_cop,
     compute_heat_demand,
@@ -237,9 +241,16 @@ def main(argv: list[str] | None = None) -> int:
         len(temperature_hourly),
     )
 
+    # Per-asset PV profiles for average week charts
+    per_gen_profiles = build_per_asset_pv_profiles(
+        generation_configs=config.generation,
+        weather_year=weather_year,
+    )
+
     # --- Step 3: Generate SLP profiles -------------------------------------
     logger.info("Generating SLP load profiles ...")
     load_profile_qh = np.zeros_like(pv_profile_qh)
+    per_load_profiles: dict[str, np.ndarray] = {}
     for lg in config.load:
         slp_norm = generate_slp(
             slp_type=lg.slp_type,
@@ -251,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
             annual_consumption_kwh=lg.annual_consumption_kwh_per_customer,
             customer_count=lg.customer_count,
         )
+        per_load_profiles[lg.name] = scaled
         load_profile_qh += scaled
 
     logger.info(
@@ -294,9 +306,11 @@ def main(argv: list[str] | None = None) -> int:
     if config.path is not None and not Path(csv_path).is_absolute():
         csv_path = str(config.path.parent / csv_path)
 
+    # Load all price scenario columns for average week charts
+    all_price_columns = [ps.csv_column for ps in config.price_scenarios]
     market_prices = load_market_prices(
         csv_path=csv_path,
-        required_columns=[central_scenario.csv_column],
+        required_columns=all_price_columns,
         lifetime_years=meta.project_lifetime_years,
         commissioning_year=meta.baseline_year,
         delimiter=central_scenario.csv_separator or ";",
@@ -311,6 +325,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     # Convert hourly prices to quarter-hourly by repeating each value 4x
     spot_prices_qh = np.repeat(spot_prices_hourly, INTERVALS_PER_HOUR)
+
+    # Per-scenario price profiles (quarter-hourly) for average week charts
+    per_scenario_prices_qh: dict[str, np.ndarray] = {}
+    for ps in config.price_scenarios:
+        ps_hourly = market_prices.get_year_prices(ps.csv_column, year=1)
+        per_scenario_prices_qh[ps.label] = np.repeat(ps_hourly, INTERVALS_PER_HOUR)
 
     logger.info(
         "Prices loaded: column='%s', mean=%.1f EUR/MWh",
@@ -350,11 +370,28 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("Computed %d marginal value points.", len(marginal_values))
 
     # --- Steps 9-11: Output -----------------------------------------------
+    # Compute average week profiles for Welt A dashboard
+    avg_week_loads = [
+        {"name": name, "values": compute_average_week(profile, weather_year)}
+        for name, profile in per_load_profiles.items()
+    ]
+    avg_week_generation = [
+        {"name": name, "values": compute_average_week(profile, weather_year)}
+        for name, profile in per_gen_profiles.items()
+    ]
+    avg_week_prices = [
+        {"name": name, "values": compute_average_week(profile, weather_year)}
+        for name, profile in per_scenario_prices_qh.items()
+    ]
+
     write_output(
         config=config,
         system_value_result=system_value_result,
         marginal_values=marginal_values,
         generate_report=not args.no_report,
+        avg_week_loads=avg_week_loads,
+        avg_week_generation=avg_week_generation,
+        avg_week_prices=avg_week_prices,
     )
 
     # --- Summary -----------------------------------------------------------
@@ -455,6 +492,9 @@ def write_output(
     marginal_values: list[MarginalValuePoint],
     generate_report: bool = True,
     annual_results: list | None = None,
+    avg_week_loads: list[dict] | None = None,
+    avg_week_generation: list[dict] | None = None,
+    avg_week_prices: list[dict] | None = None,
 ) -> None:
     """Write all portfolio output files (CSV + HTML dashboard).
 
@@ -470,6 +510,12 @@ def write_output(
         Whether to generate the HTML dashboard report.
     annual_results:
         Annual results from a representative simulation (for dispatch summary).
+    avg_week_loads:
+        Average week profiles per load group.
+    avg_week_generation:
+        Average week profiles per generation unit.
+    avg_week_prices:
+        Average week profiles per price scenario.
     """
     meta = config.meta
     output_dir = Path(meta.output_directory or f".data/output/{meta.name}")
@@ -523,6 +569,9 @@ def write_output(
             system_value_result=system_value_result,
             marginal_values=marginal_values,
             annual_results=annual_results,
+            avg_week_loads=avg_week_loads,
+            avg_week_generation=avg_week_generation,
+            avg_week_prices=avg_week_prices,
         )
         report_path = build_portfolio_html_report(report_data, output_dir)
         print(f"    - {report_path.name}")
