@@ -1617,3 +1617,416 @@ Jede Session endet mit lauffähigen Tests (`pytest`). Kein Code ohne Tests.
 8. ~~**`start_year` bei Last**~~: Irrelevant für Load. Last existiert ab Jahr 1, Wachstum wirkt ab Jahr 1.
 9. ~~**EV daily_energy_demand**~~: Pro Fahrzeug pro Tag (z.B. 30 kWh). Skaliert linear mit kumulierter Flottengröße.
 10. ~~**Inflation**~~: Wird im MVP vernachlässigt. Systemwert ist inflationsunabhängig.
+
+---
+
+## 16. Erweiterungskonzept: Multi-Flex-Portfolio & Vertriebssynergien
+
+### Status: Konzeptphase (Stand: 2026-03-20)
+
+### 16.1 Motivation
+
+Das aktuelle Modell bewertet jede Flexibilität **isoliert** im Welt-A/B-Vergleich. Für die strategische
+Entscheidung eines Stadtwerk-Geschäftsführers reicht das nicht aus. Die zentralen Fragen sind:
+
+1. **Geschäftsfeldvergleich:** Welches Geschäftsfeld (BESS, WP, Ladeinfrastruktur) bekommt welches Budget
+   und welche Personalressourcen?
+2. **Ausbaupriorisierung:** Welches Geschäftsfeld soll ausgebaut werden, welches bleibt auf Status Quo,
+   welches muss zurückgebaut werden?
+3. **Vertriebssynergien:** Welchen Synergieeffekt haben die Flexibilitäten auf Vertrieb und
+   Liefermanagement, wenn eigene Erzeugungsanlagen den Strombedarf eigener Kunden decken?
+
+---
+
+### 16.2 Ist-Zustand und Kernlücke
+
+Die Enumerationslogik in `system_value.py:run_enumeration()` testet immer nur **einen Flex-Typ pro
+Durchlauf**. Der LP-Solver in `optimizer_portfolio.py` kann technisch bereits mehrere Flex-Typen
+gleichzeitig dispatchen (BESS + WP + EV in einer gemeinsamen Energiebilanz-Constraint). Die Lücke liegt
+ausschließlich in der Orchestrierung.
+
+**Konsequenz der isolierten Bewertung:** Jede Flexibilität "erntet" den gesamten Arbitrage-Pool allein.
+Die Summe der Einzelsystemwerte **überschätzt** den tatsächlichen Portfoliowert systematisch, weil
+Kannibalisierungseffekte (BESS und WP konkurrieren um dieselben Preisspreads) ignoriert werden.
+
+---
+
+### 16.3 Phase A: Kombinierte Multi-Flex-Enumeration
+
+#### Konzept
+
+Statt pro Flex-Typ isoliert zu enumerieren, wird ein **kartesisches Produkt** über die Zubauraten
+aller Flex-Typen gebildet. Jeder Punkt im Produktraum wird als kombinierter LP gelöst.
+
+```
+Neue Enumeration:
+  Für jede Kombination (bess_rate, wp_rate, ev_rate):
+    → Run LP mit allen Flex-Typen gleichzeitig aktiv
+    → Systemwert_kombiniert
+    → Vergleich mit Σ Systemwerte_einzeln
+    → Synergieeffekt = Systemwert_kombiniert - Σ Systemwerte_einzeln
+```
+
+#### Änderungen
+
+**Primär betroffen:** `portfolio/system_value.py:run_enumeration()`
+
+Aktuell iteriert `run_enumeration()` über jeden Flex-Typ einzeln. Die Änderung: kartesisches Produkt
+über alle `annual_addition_kw`-Listen (bzw. `annual_additional_units` für EV) bilden und für jede
+Kombination alle Flex-Typen gleichzeitig an den LP übergeben.
+
+**LP-Solver:** Keine Änderung nötig. `optimizer_portfolio.py` baut seine Variablen und Constraints
+bereits bedingt auf (BESS-Block wenn BESS vorhanden, WP-Block wenn WP vorhanden, EV-Block wenn EV
+vorhanden). Die Energiebilanz-Constraint bindet alle aktiven Flex-Typen ein.
+
+#### Kombinatorische Explosion und Gegenmaßnahmen
+
+| Flex-Typen | Stufen | Kombinationen | LP-Solves (25J×365d) | Zeit (3ms/Solve, 8 Cores) |
+|---|---|---|---|---|
+| 1 (BESS, 6 Stufen × 3 E/P) | 18 | 18 | 164K | ~3 min |
+| 2 (BESS 18 + WP 5) | 90 | 90 | 822K | ~15 min |
+| 3 (BESS 18 + WP 5 + EV 5) | 450 | 450 | 4.1M | ~25 min (parallel) |
+
+**Pragmatische Vereinfachung (Mehrstufiger Ansatz):**
+
+1. **Stufe 1 – Isolierte Bewertung** (wie bisher): Identifiziere Top-3-Konfigurationen pro Flex-Typ
+   anhand des Grenznutzens
+2. **Stufe 2 – Kombinierte Runs** (neu): Nur für die Top-Kandidaten kombinierte Simulationen →
+   Synergien/Kannibalisierung quantifizieren
+
+Bei 3 Kandidaten pro Flex-Typ: 3 × 3 × 3 = 27 kombinierte Runs statt 450 → ~5 min.
+
+#### Neue Output-Metriken
+
+- **Systemwert_kombiniert**: Systemwert mit allen Flex-Typen gleichzeitig aktiv
+- **Kannibalisierungseffekt**: `Σ Systemwerte_einzeln - Systemwert_kombiniert` (erwartbar > 0)
+- **Synergieeffekt**: Falls Systemwert_kombiniert > Σ Systemwerte_einzeln (z.B. WP-Last erzeugt
+  neue Arbitrage-Möglichkeiten für BESS)
+
+#### Aufwand: Mittel | Impact: Hoch
+
+---
+
+### 16.4 Phase B: Vertriebskosten-Integration (Eigenversorgungsquote)
+
+#### Konzept
+
+Aktuell optimiert das LP rein auf Spotmarkt-Arbitrage. Für die Vertriebssicht muss die LP-Zielfunktion
+um den **Eigenversorgungsvorteil** erweitert werden: Eigenversorgung spart Netzentgelte und Umlagen,
+die beim Netzbezug anfallen.
+
+#### Erweiterung der LP-Zielfunktion
+
+```
+Aktuelle Zielfunktion:
+  min: Σ[ grid_buy[t] × spot[t] - grid_sell[t] × spot[t] × discount ]
+
+Erweiterte Zielfunktion:
+  min: Σ[ grid_buy[t] × (spot[t] + netzentgelt + umlagen)
+        - grid_sell[t] × spot[t] × discount
+        - eigenversorgung[t] × (netzentgelt + umlagen) ]
+
+Dabei:
+  eigenversorgung[t] = min(pv[t], load[t]) + flex_beitrag[t]
+```
+
+Die Eigenversorgung spart Netzentgelte und Umlagen, die beim Netzbezug anfallen. Das ist der zentrale
+Werthebel für den Vertrieb.
+
+#### Neue KPIs
+
+- **Eigenversorgungsquote**: `Σ eigenversorgung / Σ load × 100%` (pro Jahr und kumuliert)
+- **Vermiedene Netzentgelte**: `Σ eigenversorgung × netzentgelt` (€/a)
+- **Vermiedene Umlagen**: `Σ eigenversorgung × umlagen` (€/a)
+- **Vertriebsmarge-Delta**: Unterschied in der Vertriebsmarge zwischen Welt A und Welt B
+
+#### Fehlende Inputdaten
+
+| Datenpunkt | Typ | Quelle | Im JSON |
+|---|---|---|---|
+| Netzentgelte (€/kWh, ggf. zeitvariabel) | Zeitreihe oder Skalar | Netzentgelt-Preisblatt des VNB | `portfolio.grid_costs.netzentgelt_eur_per_kwh` |
+| Umlagen & Abgaben (KWK, §19, Offshore) | Skalar pro Jahr | BNetzA-Veröffentlichungen | `portfolio.grid_costs.umlagen_eur_per_kwh` |
+| Konzessionsabgabe | Skalar | Konzessionsvertrag | `portfolio.grid_costs.konzessionsabgabe_eur_per_kwh` |
+| Endkunden-Arbeitspreis | Skalar pro Tarifgruppe | Vertriebskalkulation | `portfolio.load[].tarif_eur_per_kwh` |
+| Bilanzkreis-Ausgleichsenergiekosten | Skalar (€/MWh) | Bilanzkreisabrechnung | `portfolio.grid_costs.ausgleichsenergie_eur_per_mwh` |
+
+#### JSON-Erweiterung (Entwurf)
+
+```json
+{
+  "portfolio": {
+    "grid_costs": {
+      "netzentgelt_eur_per_kwh": 0.08,
+      "umlagen_eur_per_kwh": 0.025,
+      "konzessionsabgabe_eur_per_kwh": 0.011,
+      "ausgleichsenergie_eur_per_mwh": 50.0,
+      "netzentgelt_inflation_rate": 0.02
+    },
+    "load": [
+      {
+        "type": "slp",
+        "name": "Haushaltskunden",
+        "slp_type": "H25",
+        "customer_count": 8500,
+        "annual_consumption_kwh_per_customer": 3200,
+        "annual_growth_factor": 1.01,
+        "tarif_eur_per_kwh": 0.32
+      }
+    ]
+  }
+}
+```
+
+#### Aufwand: Mittel-Groß | Impact: Hoch
+
+---
+
+### 16.5 Phase C: Einheitliche Grenzwert-Darstellung (Investitionsranking)
+
+#### Konzept
+
+Die Grenzkosten-/Grenznutzen-Analyse in `marginal_value.py` existiert bereits pro Flex-Typ. Für den
+Geschäftsfeldvergleich müssen alle Flex-Typen in einer **gemeinsamen Währung** (€ pro investiertem €)
+dargestellt werden.
+
+#### Umsetzung
+
+1. **x-Achse normieren:** Statt kW (nicht vergleichbar zwischen BESS/WP/EV) → kumulierte Investition
+   in € (CAPEX). Das ist über `flex_costs.py` bereits berechenbar.
+2. **y-Achse:** Marginaler Systemwert pro investiertem € (€/€·a)
+3. **Gemeinsames Chart:** Alle Flex-Typen als überlagerte Kurven mit gemeinsamer x-Achse
+4. **Entscheidungsregel:** Der Flex-Typ mit dem höchsten marginalen ROI bei gegebenem Budget bekommt
+   die nächste Investitionseinheit
+
+#### Visualisierung im Dashboard
+
+```
+Chart: "Investitionsranking – Marginaler Systemwert pro €"
+  X-Achse: Kumulierte Investition (€)
+  Y-Achse: Marginaler Systemwert (€/€·a)
+  Kurven:  BESS (blau), WP (rot), EV (grün)
+  Horizontale Linie: Grenzkosten-Benchmark (z.B. WACC)
+  Vertikale Linie: Budget-Constraint
+```
+
+**Ergebnis:** Der GF sieht auf einen Blick, welche Kurve am längsten über der Grenzkostenlinie bleibt
+→ dieses Geschäftsfeld bekommt Priorität.
+
+#### Aufwand: Klein | Impact: Mittel
+
+---
+
+### 16.6 Phase D: Wind als Erzeugungstyp
+
+#### Konzept
+
+Erweiterung der `generation[]`-Liste um `type: "wind"`. Konzeptionell identisch zu PV – ein
+nicht-dispatchbarer Erzeuger, dessen Profil zur aggregierten Erzeugung addiert wird.
+
+#### Umsetzung
+
+- **Datenquelle Option 1:** renewables.ninja API (historische Stundenwerte für beliebige Standorte)
+- **Datenquelle Option 2:** CSV-Import (eigene Messdaten oder Gutachten)
+- **Integration:** `portfolio/generation.py` um `type: "wind"` erweitern
+- **LP-Auswirkung:** Keine – Wind geht in die aggregierte Erzeugung ein, wie PV
+
+#### JSON-Erweiterung
+
+```json
+{
+  "portfolio": {
+    "generation": [
+      {
+        "type": "wind",
+        "name": "Windpark Nord",
+        "rated_power_kw": 15000,
+        "source": "csv",
+        "csv_path": "./inputs/wind_profile.csv",
+        "csv_column": "production_kwh",
+        "degradation_rate_pct_per_year": 0.3,
+        "start_year": 1,
+        "commissioning_year": 2022,
+        "lifetime_years": 25
+      }
+    ]
+  }
+}
+```
+
+#### Aufwand: Klein | Impact: Mittel
+
+---
+
+### 16.7 Phase E: BHKW als dispatchbare Erzeugung mit Rückbau
+
+#### Konzept
+
+Der Rückbau gasbetriebener BHKWs ist ein **Substitutionseffekt**: Weniger BHKW → weniger
+Grundlast-Wärmeerzeugung → mehr WP-Bedarf → mehr Strombedarf → mehr Flexibilitätsbedarf.
+
+#### Modellierung
+
+- BHKW als dispatchbare Erzeugung mit Grenzkosten (Gaspreis / Wirkungsgrad)
+- Rückbau = jährliche Reduktion der BHKW-Kapazität (konfigurierbar)
+- KWK-Kopplung: BHKW erzeugt gleichzeitig Strom und Wärme → reduziert den WP-Wärmebedarf
+- Entscheidungsvariable im LP: `bhkw_output[t]` (Stromerzeugung in kWh/15min)
+
+#### LP-Erweiterung
+
+```
+Neue Entscheidungsvariablen:
+  bhkw_output[t]     – elektrische BHKW-Erzeugung (kWh/15min)
+  bhkw_heat[t]       – thermische BHKW-Erzeugung (kWh_th/15min)
+
+Neue Constraints:
+  0 ≤ bhkw_output[t] ≤ P_bhkw_el × timestep_hours              (Power-Limit)
+  bhkw_heat[t] = bhkw_output[t] × stromkennzahl                 (KWK-Kopplung)
+
+Anpassung Energiebilanz (Strom):
+  grid_sell[t] - grid_buy[t] = pv[t] + bhkw_output[t] - load[t] - wp_load[t]
+                                + bess_discharge[t]×RTE - bess_charge[t]
+                                + ev_discharge[t]×v2g_rte - ev_charge[t]
+
+Anpassung Wärmebilanz:
+  thermal_soc[t+1] = thermal_soc[t] + wp_load[t]×COP[t] + bhkw_heat[t]
+                     - heat_demand[t]
+
+Zielfunktion (zusätzlicher Term):
+  - bhkw_output[t] × gaspreis_eur_per_kwh_el                    (Brennstoffkosten)
+  + bhkw_output[t] × kwk_zuschlag_eur_per_kwh                   (KWK-Vergütung)
+```
+
+#### Fehlende Inputdaten
+
+| Datenpunkt | Typ | Quelle |
+|---|---|---|
+| Gaspreis-Zeitreihe (€/kWh_th) | Zeitreihe oder Skalar | Gasliefervertrag |
+| BHKW elektrischer Wirkungsgrad | Skalar | Herstellerdatenblatt |
+| BHKW Stromkennzahl (P_el/P_th) | Skalar | Herstellerdatenblatt |
+| KWK-Zuschlag (€/kWh_el) | Skalar | KWKG |
+| CO2-Preis (€/t CO2) | Skalar pro Jahr | EU-ETS / nationales EBV |
+| BHKW Rückbau-Plan (kW/a Reduktion) | Skalar | Unternehmensplanung |
+
+#### JSON-Erweiterung (Entwurf)
+
+```json
+{
+  "portfolio": {
+    "generation": [
+      {
+        "type": "bhkw",
+        "name": "BHKW Heizkraftwerk",
+        "rated_power_el_kw": 5000,
+        "stromkennzahl": 0.85,
+        "electrical_efficiency_pct": 38.0,
+        "gas_price_eur_per_kwh_th": 0.045,
+        "kwk_zuschlag_eur_per_kwh_el": 0.08,
+        "co2_factor_kg_per_kwh_th": 0.201,
+        "co2_price_eur_per_ton": 45.0,
+        "annual_reduction_kw": 500,
+        "start_year": 1,
+        "lifetime_years": 15
+      }
+    ]
+  }
+}
+```
+
+#### Aufwand: Groß | Impact: Mittel
+
+---
+
+### 16.8 Phase F: Budget-Constraint-Optimierung
+
+#### Konzept
+
+Automatische Bestimmung der optimalen Ressourcenverteilung über alle Geschäftsfelder, gegeben ein
+Gesamtbudget (€) und optional Personalrestriktionen (FTE).
+
+#### Algorithmus-Optionen
+
+**Option 1: Greedy auf Basis der Grenzwerte (einfach)**
+
+```
+1. Berechne marginalen Systemwert pro € für alle Flex-Typen (Phase C)
+2. Sortiere absteigend
+3. Allokiere Budget zum Flex-Typ mit höchstem marginalem ROI
+4. Re-evaluiere Grenzwerte (wegen Sättigung/Kannibalisierung → Phase A nötig)
+5. Wiederhole bis Budget erschöpft
+```
+
+Nachteil: Schritt 4 erfordert Re-Simulation bei kombinierter Betrachtung → rechenintensiv.
+
+**Option 2: MILP-Formulierung (exakt, aber komplex)**
+
+```
+Entscheidungsvariablen:
+  x_bess ∈ {0, ..., N_bess}   – Stufe BESS-Zubau
+  x_wp   ∈ {0, ..., N_wp}     – Stufe WP-Zubau
+  x_ev   ∈ {0, ..., N_ev}     – Stufe EV-Zubau
+
+Zielfunktion:
+  max SystemWert(x_bess, x_wp, x_ev)
+
+Constraints:
+  CAPEX(x_bess) + CAPEX(x_wp) + CAPEX(x_ev) ≤ Budget
+  FTE(x_bess) + FTE(x_wp) + FTE(x_ev) ≤ Personal_Budget
+```
+
+Problem: `SystemWert()` ist keine analytische Funktion, sondern erfordert eine volle Simulation pro
+Punkt. Bei vorberechneten Enumerationspunkten (Phase A, Stufe 2) kann aber ein Lookup-Table erstellt
+werden, der als MILP-Input dient.
+
+**Empfehlung:** Option 1 (Greedy) als MVP, da es auf den bereits berechneten Grenzwerten aufbaut.
+Option 2 nur sinnvoll, wenn mehr als 3 Flex-Typen betrachtet werden.
+
+#### Aufwand: Groß | Impact: Hoch
+
+---
+
+### 16.9 Implementierungsreihenfolge
+
+| Phase | Feature | Abhängigkeit | Aufwand | Impact | Priorität |
+|-------|---------|--------------|---------|--------|-----------|
+| **A** | Kombinierte Multi-Flex-Enumeration | – | Mittel | Hoch | 1 |
+| **B** | Vertriebskosten-Integration (Netzentgelte/Umlagen, Eigenversorgungsquote) | – | Mittel-Groß | Hoch | 2 |
+| **C** | Einheitliche Grenzwert-Darstellung (€ pro investiertem €) | A | Klein | Mittel | 3 |
+| **D** | Wind als Erzeugungstyp (CSV-Import) | – | Klein | Mittel | 4 |
+| **E** | BHKW als dispatchbare Erzeugung mit Rückbau | B (Wärmebilanz) | Groß | Mittel | 5 |
+| **F** | Budget-Constraint-Optimierung (Greedy) | A, C | Groß | Hoch | 6 |
+
+```
+Abhängigkeitsgraph:
+
+  Phase A (Multi-Flex)──→ Phase C (Grenzwert-Darstellung)──→ Phase F (Budget-Optimierung)
+                                                               ↑
+  Phase B (Vertrieb)  ──→ Phase E (BHKW)                      │
+                                                               │
+  Phase D (Wind)      ──────────────────────────────────────────┘
+```
+
+**Phase A ist der entscheidende Hebel.** Ohne kombinierte Betrachtung sind alle Einzelbewertungen
+systematisch zu optimistisch. Die Änderung betrifft primär `system_value.py:run_enumeration()` –
+der LP-Solver kann es bereits.
+
+---
+
+### 16.10 Offene Fragen
+
+1. **Wie granular soll die kombinierte Enumeration sein?** Volle Enumeration (450+ Punkte) oder
+   zweistufiger Ansatz (isoliert → Top-Kandidaten kombiniert)?
+
+2. **Netzentgelte zeitvariabel oder Skalar?** Zeitvariable Netzentgelte (z.B. dynamische Netzentgelte
+   nach §14a EnWG) würden den Flex-Wert signifikant beeinflussen, erfordern aber eine Zeitreihe als Input.
+
+3. **CO2-Bewertung:** Soll der vermiedene CO2-Ausstoß (durch Eigenversorgung statt Netzbezug, durch
+   BHKW-Substitution mit WP) als separate KPI ausgewiesen werden?
+
+4. **Regulatorische Effekte:** Sollten §14a EnWG (steuerbare Verbrauchseinrichtungen → reduzierte
+   Netzentgelte für WP/EV) als eigener Kostenvorteil modelliert werden?
+
+5. **Personalkosten pro Geschäftsfeld:** Welche Granularität? FTE pro installierte kW? Oder als
+   Stufenfunktion (z.B. ab 1 MW BESS → 0.5 FTE, ab 5 MW → 1.5 FTE)?
+
+6. **Bilanzkreiseffekte:** Soll die Reduktion von Bilanzkreisabweichungen durch Flexibilität
+   quantifiziert werden? Das erfordert ein Prognosemodell (PV-Forecast-Fehler, Last-Forecast-Fehler).

@@ -51,19 +51,20 @@
 
 ### Systemwert Entwicklung
 
-- Welt A in Dashboard: KPI's stehen lassen, aber eine Darstellung einer durchschnittlichen Woche aller Jahre. Dazu
+- DONE Welt A in Dashboard: KPI's stehen lassen, aber eine Darstellung einer durchschnittlichen Woche aller Jahre. Dazu
   sollen drei Diagramme untereinander stehen. 1. Der mittlere Verbrauch aller Lasten (Dargestellt als gespaltelte
   Säulen) 2. Die gestapelte Erzeugung über alle Erzeugungseinheiten, ebenfalls als gestapelte Säulen. Und zu letzt die
   mittleren Strompreise über alle Szenarien.
-- Inbetriebnahme Jahr aller Erzeugungsanlagen, um die Degrataion zu Beginn der Simulation zu berechnen. Zudem sollen
+- DONE Inbetriebnahme Jahr aller Erzeugungsanlagen, um die Degradation zu Beginn der Simulation zu berechnen. Zudem sollen
   alle eine Laufzeit haben, nach der diese keine Erzeugung mehr haben
-- Bei BESS gibt es ein Replacement nach X Jahren. Wie kann man das sinnvoll in die Betrachtung aufnehmen?
-- Die Darstellung der unterschiedlichen Flexibilitäten ist nicht intuitiv, da sich die Bereiche nicht überschneiden (
+- DONE Bei BESS gibt es ein Replacement nach X Jahren. Wie kann man das sinnvoll in die Betrachtung aufnehmen?
+- DONE Die Darstellung der unterschiedlichen Flexibilitäten ist nicht intuitiv, da sich die Bereiche nicht überschneiden (
   BESS Zubau bei 10.000kW, WP nur bei 100 kW). Wie kann man das besser darstellen? Ein Diagramm pro Flex-Typ?
-- Wie kann man die Grenzkosten mitaufnehmen? Denn optimal ist der Ausbau der Flex-Typen nur bis sich Grenznutzen und
-  Grenzksoten angleichen, oder? Wie sind die Grenzkosten der Flex-Typen zu bestimmen, gerade unter beachtung, dass es
-  sich dabei um einen größer werdenen jährlichen Zubau über den Betrachtungszeitraum handelt, und nicht über die
-  Anschaffung einzelner Assets.
+- DONE Bei der Betrachtung des Protfolio Meta-Modells stellt sich die Fragen wie man die Grenzkosten mitaufnehmen kann? Denn
+  optimal ist der Ausbau der Flex-Typen nur bis sich Grenznutzen und Grenzkosten angleichen, oder? Wie sind die
+  Grenzkosten der Flex-Typen zu bestimmen, gerade unter Beachtung, dass es sich dabei um einen größer werdenden
+  jährlichen Zubau über den Betrachtungszeitraum handelt, und nicht über die Anschaffung einzelner Assets. Welche
+  kostenpunkte müssen dafür berücksichtigt werden?
 - ich würde auch gerne den Zubau von weiteren Erzeugungseinheiten (PV und Wind) mit in die Betrachtung aufnehmen, wie
   kann das sinnvoll gelingen?
 - Wie kann der Rückbau der Gas-befeuerten BHKW's sinnvoll in das Prinzip eingebaut werden?
