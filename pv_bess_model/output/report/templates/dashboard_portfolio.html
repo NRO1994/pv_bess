@@ -157,12 +157,11 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,-appl
   </div>
 </div>
 
-<!-- TAB 4: MARGINAL VALUE CURVES -->
+<!-- TAB 4: MARGINAL VALUE / COST CURVES (one chart per flex instance) -->
 <div class="tab-content" data-tab="4">
-  <div class="card">
-    <div class="sec-title">Grenznutzen-Kurven</div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Marginaler Systemwert (EUR/kW/a) pro zusätzlicher kW Flexibilitätskapazität.</p>
-    <div class="chart-container"><canvas id="chartMarginalValue"></canvas></div>
+  <div id="marginalChartsContainer"></div>
+  <div class="card" style="margin-top:16px">
+    <div class="sec-title">Daten</div>
     <table class="data-table" id="tblMarginalValue"></table>
   </div>
 </div>
@@ -209,7 +208,7 @@ const TAB_LABELS = [
   '1 · Übersicht',
   '2 · Welt A',
   '3 · Systemwert',
-  '4 · Grenznutzen',
+  '4 · Grenznutzen / Grenzkosten',
   '5 · Dispatch',
 ];
 let currentTab = 1;
@@ -522,48 +521,105 @@ function renderSystemValue(){
 }
 
 // ============================================================
-// TAB 4: MARGINAL VALUE CURVES
+// TAB 4: MARGINAL VALUE / COST CURVES (one chart per flex instance)
 // ============================================================
 function renderMarginalValue(){
   const pts = DATA.marginal_value_points;
   if(!pts || pts.length===0) return;
 
+  // Group by (flex_name, e_to_p_ratio) — one chart per group
   const groups = {};
   pts.forEach(p=>{
-    const key = p.flex_name + (p.e_to_p_ratio!=null ? ` (E/P=${p.e_to_p_ratio}h)` : '');
-    if(!groups[key]) groups[key] = [];
-    groups[key].push(p);
+    const key = p.flex_name + (p.e_to_p_ratio!=null ? `|${p.e_to_p_ratio}` : '');
+    if(!groups[key]) groups[key] = {label: p.flex_name + (p.e_to_p_ratio!=null ? ` (E/P=${p.e_to_p_ratio}h)` : ''), points:[]};
+    groups[key].points.push(p);
   });
 
-  const colors = ['#FF8200','#006EB2','#F73E5E','#A51BA7','#00BDDC','#16a34a'];
-  const datasets = [];
-  let ci = 0;
-  for(const [key, group] of Object.entries(groups)){
-    group.sort((a,b)=>a.annual_addition_kw - b.annual_addition_kw);
-    datasets.push({
-      label: key,
-      data: group.map(p=>({x:p.annual_addition_kw, y:p.marginal_value_eur_per_kw_a})),
-      borderColor: colors[ci%colors.length],
-      backgroundColor: colors[ci%colors.length]+'33',
+  const container = document.getElementById('marginalChartsContainer');
+  const colorValue = '#FF8200';
+  const colorCost = '#006EB2';
+
+  for(const [key, grp] of Object.entries(groups)){
+    grp.points.sort((a,b)=>a.annual_addition_kw - b.annual_addition_kw);
+
+    // Check if cost data is present
+    const hasCosts = grp.points.some(p=> p.cumulative_cost_eur > 0);
+
+    // Find optimal point
+    const optPt = grp.points.find(p=>p.is_optimal);
+
+    // Create card with canvas
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.marginBottom = '16px';
+
+    const title = document.createElement('div');
+    title.className = 'sec-title';
+    title.textContent = grp.label + (hasCosts ? ' — Grenznutzen vs. Grenzkosten' : ' — Grenznutzen');
+    card.appendChild(title);
+
+    if(optPt){
+      const optInfo = document.createElement('p');
+      optInfo.style.cssText = 'font-size:12px;color:var(--muted);margin-bottom:12px';
+      optInfo.innerHTML = 'Optimaler Zubau: <strong>' + fmtNum(optPt.annual_addition_kw,0) + ' kW/a</strong> (Grenznutzen ' + fmtNum(optPt.marginal_value_eur_per_kw_a,0) + ' EUR/kW/a, Grenzkosten ' + fmtNum(optPt.marginal_cost_eur_per_kw_a,0) + ' EUR/kW/a)';
+      card.appendChild(optInfo);
+    }
+
+    const chartDiv = document.createElement('div');
+    chartDiv.className = 'chart-container';
+    const canvas = document.createElement('canvas');
+    chartDiv.appendChild(canvas);
+    card.appendChild(chartDiv);
+    container.appendChild(card);
+
+    // Build datasets
+    const datasets = [{
+      label: 'Grenznutzen (EUR/kW/a)',
+      data: grp.points.map(p=>({x:p.annual_addition_kw, y:p.marginal_value_eur_per_kw_a})),
+      borderColor: colorValue,
+      backgroundColor: colorValue+'33',
       fill: false, tension:0.1, pointRadius:4,
       stepped: 'before',
-    });
-    ci++;
-  }
+    }];
 
-  if(typeof Chart !== 'undefined'){
-    new Chart(document.getElementById('chartMarginalValue'), {
-      type: 'line',
-      data: {datasets},
-      options: {
-        responsive:true, maintainAspectRatio:false,
-        scales:{
-          x:{type:'linear', title:{display:true,text:'Zubau-Rate (kW/a)'}},
-          y:{title:{display:true,text:'Grenznutzen (EUR/kW/a)'}},
-        },
-        plugins:{legend:{position:'bottom'}}
-      }
-    });
+    if(hasCosts){
+      datasets.push({
+        label: 'Grenzkosten (EUR/kW/a)',
+        data: grp.points.map(p=>({x:p.annual_addition_kw, y:p.marginal_cost_eur_per_kw_a})),
+        borderColor: colorCost,
+        backgroundColor: colorCost+'33',
+        borderDash: [6,3],
+        fill: false, tension:0.1, pointRadius:4,
+        stepped: 'before',
+      });
+    }
+
+    // Highlight optimal point
+    if(optPt){
+      datasets.push({
+        label: 'Optimum',
+        data: [{x:optPt.annual_addition_kw, y:optPt.marginal_value_eur_per_kw_a}],
+        borderColor: '#16a34a',
+        backgroundColor: '#16a34a',
+        pointRadius: 8, pointStyle: 'star',
+        showLine: false,
+      });
+    }
+
+    if(typeof Chart !== 'undefined'){
+      new Chart(canvas, {
+        type: 'line',
+        data: {datasets},
+        options: {
+          responsive:true, maintainAspectRatio:false,
+          scales:{
+            x:{type:'linear', title:{display:true,text:'Zubau-Rate (kW/a)'}},
+            y:{title:{display:true,text:'EUR/kW/a'}},
+          },
+          plugins:{legend:{position:'bottom'}}
+        }
+      });
+    }
   }
 
   // Table
@@ -571,11 +627,12 @@ function renderMarginalValue(){
     p.flex_name, p.flex_type,
     fmtNum(p.annual_addition_kw,0), p.e_to_p_ratio!=null?fmtNum(p.e_to_p_ratio,1):'–',
     fmtNum(p.marginal_value_eur_per_kw_a,0)+' EUR/kW/a',
-    fmtNum(p.delta_kw,0)+' kW',
-    fmtEur(p.delta_value_eur),
+    fmtNum(p.marginal_cost_eur_per_kw_a,0)+' EUR/kW/a',
+    fmtEur(p.cumulative_cost_eur),
+    p.is_optimal?'*':'',
   ]);
   document.getElementById('tblMarginalValue').innerHTML = makeTable(
-    ['Flex','Typ','kW/a','E/P (h)','Grenznutzen','Δ kW','Δ Wert'], rows);
+    ['Flex','Typ','kW/a','E/P (h)','Grenznutzen','Grenzkosten','Kosten kum.','Opt.'], rows);
 }
 
 // ============================================================

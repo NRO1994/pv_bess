@@ -167,6 +167,63 @@ class LoadGroupConfig:
 
 
 @dataclass
+class PersonnelStep:
+    """A single personnel cost step.
+
+    When cumulative installed capacity exceeds ``threshold_kw``, the annual
+    personnel cost increases to ``annual_cost_eur``.
+
+    Attributes
+    ----------
+    threshold_kw:
+        Cumulative installed capacity threshold in kW.
+    annual_cost_eur:
+        Annual personnel cost in EUR when this threshold is exceeded.
+    """
+
+    threshold_kw: float
+    annual_cost_eur: float
+
+
+@dataclass
+class FlexCostConfig:
+    """Cost configuration for a flexibility instance.
+
+    All fields default to 0.0 so that costs are optional.  When no ``costs``
+    block is present in the JSON, the flex instance has zero cost.
+
+    Attributes
+    ----------
+    capex_fixed_eur:
+        Fixed CAPEX per annual installation event (EUR).
+    capex_eur_per_kw:
+        CAPEX per kW of annual addition (EUR/kW).
+    capex_eur_per_kwh:
+        CAPEX per kWh of annual addition (EUR/kWh, BESS only).
+    opex_fixed_eur:
+        Fixed annual OPEX independent of capacity (EUR/year).
+    opex_eur_per_kw:
+        Annual OPEX per kW of cumulative installed power (EUR/kW/year).
+    opex_eur_per_kwh:
+        Annual OPEX per kWh of cumulative installed capacity (EUR/kWh/year).
+    capex_learning_rate_pct:
+        Annual CAPEX cost reduction in percent (learning curve).
+        E.g. 2.0 means CAPEX decreases by 2 % each year.
+    personnel_steps:
+        List of personnel cost steps, sorted by threshold_kw ascending.
+    """
+
+    capex_fixed_eur: float = 0.0
+    capex_eur_per_kw: float = 0.0
+    capex_eur_per_kwh: float = 0.0
+    opex_fixed_eur: float = 0.0
+    opex_eur_per_kw: float = 0.0
+    opex_eur_per_kwh: float = 0.0
+    capex_learning_rate_pct: float = 0.0
+    personnel_steps: list[PersonnelStep] = field(default_factory=list)
+
+
+@dataclass
 class BessFlexConfig:
     """Configuration for a BESS flexibility instance.
 
@@ -201,6 +258,7 @@ class BessFlexConfig:
     max_soc_pct: float = DEFAULT_BESS_MAX_SOC_PCT
     degradation_rate_pct_per_year: float = DEFAULT_BESS_DEGRADATION_RATE_PCT
     start_year: int = DEFAULT_FLEX_START_YEAR
+    costs: FlexCostConfig = field(default_factory=FlexCostConfig)
 
 
 @dataclass
@@ -235,6 +293,7 @@ class HeatPumpFlexConfig:
     annual_thermal_demand_mwh: float = 0.0
     thermal_storage_kwh: float = 0.0
     start_year: int = DEFAULT_FLEX_START_YEAR
+    costs: FlexCostConfig = field(default_factory=FlexCostConfig)
 
 
 @dataclass
@@ -281,6 +340,7 @@ class EVFlexConfig:
     min_departure_soc_pct: float = DEFAULT_EV_MIN_DEPARTURE_SOC_PCT
     usable_battery_kwh_per_unit: float = 0.0
     start_year: int = DEFAULT_FLEX_START_YEAR
+    costs: FlexCostConfig = field(default_factory=FlexCostConfig)
 
 
 # Union type alias for all flex configs
@@ -506,6 +566,41 @@ def _parse_flex(raw: dict) -> FlexConfig:
         raise ValueError(f"Unknown flexibility type: '{flex_type}'")
 
 
+def _parse_flex_costs(raw: dict) -> FlexCostConfig:
+    """Parse the optional ``costs`` block of a flexibility entry."""
+    costs_raw = raw.get("costs")
+    if costs_raw is None:
+        return FlexCostConfig()
+
+    capex = costs_raw.get("capex", {})
+    opex = costs_raw.get("opex", {})
+
+    steps_raw = costs_raw.get("personnel_steps", [])
+    personnel_steps = sorted(
+        [
+            PersonnelStep(
+                threshold_kw=float(s["threshold_kw"]),
+                annual_cost_eur=float(s["annual_cost_eur"]),
+            )
+            for s in steps_raw
+        ],
+        key=lambda s: s.threshold_kw,
+    )
+
+    return FlexCostConfig(
+        capex_fixed_eur=float(capex.get("fixed_eur", 0.0)),
+        capex_eur_per_kw=float(capex.get("eur_per_kw", 0.0)),
+        capex_eur_per_kwh=float(capex.get("eur_per_kwh", 0.0)),
+        opex_fixed_eur=float(opex.get("fixed_eur", 0.0)),
+        opex_eur_per_kw=float(opex.get("eur_per_kw", 0.0)),
+        opex_eur_per_kwh=float(opex.get("eur_per_kwh", 0.0)),
+        capex_learning_rate_pct=float(
+            costs_raw.get("capex_learning_rate_pct", 0.0)
+        ),
+        personnel_steps=personnel_steps,
+    )
+
+
 def _parse_flex_bess(raw: dict) -> BessFlexConfig:
     """Parse a BESS flexibility entry."""
     return BessFlexConfig(
@@ -522,6 +617,7 @@ def _parse_flex_bess(raw: dict) -> BessFlexConfig:
             raw.get("degradation_rate_pct_per_year", DEFAULT_BESS_DEGRADATION_RATE_PCT)
         ),
         start_year=int(raw.get("start_year", DEFAULT_FLEX_START_YEAR)),
+        costs=_parse_flex_costs(raw),
     )
 
 
@@ -536,6 +632,7 @@ def _parse_flex_heat_pump(raw: dict) -> HeatPumpFlexConfig:
         annual_thermal_demand_mwh=float(raw["annual_thermal_demand_mwh"]),
         thermal_storage_kwh=float(raw["thermal_storage_kwh"]),
         start_year=int(raw.get("start_year", DEFAULT_FLEX_START_YEAR)),
+        costs=_parse_flex_costs(raw),
     )
 
 
@@ -559,6 +656,7 @@ def _parse_flex_ev(raw: dict) -> EVFlexConfig:
         ),
         usable_battery_kwh_per_unit=float(raw["usable_battery_kwh_per_unit"]),
         start_year=int(raw.get("start_year", DEFAULT_FLEX_START_YEAR)),
+        costs=_parse_flex_costs(raw),
     )
 
 

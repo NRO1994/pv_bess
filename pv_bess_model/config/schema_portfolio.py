@@ -24,6 +24,54 @@ _POSITIVE_INTEGER = {"type": "integer", "minimum": 1}
 _PERCENTAGE = {"type": "number", "minimum": 0, "maximum": 100}
 
 # ---------------------------------------------------------------------------
+# Reusable flex cost sub-schemas
+# ---------------------------------------------------------------------------
+
+_FLEX_COST_CAPEX = {
+    "type": "object",
+    "properties": {
+        "fixed_eur": _NON_NEGATIVE_NUMBER,
+        "eur_per_kw": _NON_NEGATIVE_NUMBER,
+        "eur_per_kwh": _NON_NEGATIVE_NUMBER,
+    },
+    "additionalProperties": False,
+}
+
+_FLEX_COST_OPEX = {
+    "type": "object",
+    "properties": {
+        "fixed_eur": _NON_NEGATIVE_NUMBER,
+        "eur_per_kw": _NON_NEGATIVE_NUMBER,
+        "eur_per_kwh": _NON_NEGATIVE_NUMBER,
+    },
+    "additionalProperties": False,
+}
+
+_PERSONNEL_STEP = {
+    "type": "object",
+    "required": ["threshold_kw", "annual_cost_eur"],
+    "properties": {
+        "threshold_kw": _NON_NEGATIVE_NUMBER,
+        "annual_cost_eur": _NON_NEGATIVE_NUMBER,
+    },
+    "additionalProperties": False,
+}
+
+_FLEX_COSTS = {
+    "type": "object",
+    "properties": {
+        "capex": _FLEX_COST_CAPEX,
+        "opex": _FLEX_COST_OPEX,
+        "capex_learning_rate_pct": _PERCENTAGE,
+        "personnel_steps": {
+            "type": "array",
+            "items": _PERSONNEL_STEP,
+        },
+    },
+    "additionalProperties": False,
+}
+
+# ---------------------------------------------------------------------------
 # meta_model
 # ---------------------------------------------------------------------------
 
@@ -165,6 +213,7 @@ _FLEX_BESS = {
         "max_soc_pct": _PERCENTAGE,
         "degradation_rate_pct_per_year": _PERCENTAGE,
         "start_year": _POSITIVE_INTEGER,
+        "costs": _FLEX_COSTS,
     },
     "additionalProperties": False,
 }
@@ -187,6 +236,7 @@ _FLEX_HEAT_PUMP = {
         "annual_thermal_demand_mwh": _POSITIVE_NUMBER,
         "thermal_storage_kwh": _NON_NEGATIVE_NUMBER,
         "start_year": _POSITIVE_INTEGER,
+        "costs": _FLEX_COSTS,
     },
     "additionalProperties": False,
 }
@@ -222,6 +272,7 @@ _FLEX_EV = {
         "min_departure_soc_pct": _PERCENTAGE,
         "usable_battery_kwh_per_unit": _POSITIVE_NUMBER,
         "start_year": _POSITIVE_INTEGER,
+        "costs": _FLEX_COSTS,
     },
     "additionalProperties": False,
 }

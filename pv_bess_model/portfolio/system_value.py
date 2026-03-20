@@ -35,8 +35,10 @@ from pv_bess_model.config.loader_portfolio import (
     BessFlexConfig,
     EVFlexConfig,
     FlexConfig,
+    FlexCostConfig,
     HeatPumpFlexConfig,
 )
+from pv_bess_model.portfolio.flex_costs import compute_flex_lifecycle_cost
 from pv_bess_model.dispatch.engine_portfolio import (
     PortfolioEngineConfig,
     run_portfolio_simulation,
@@ -187,6 +189,8 @@ class SystemValuePoint:
     cumulative_system_value_eur: float
     annual_system_values: list[float]
     marginal_value_eur_per_kw_a: float = 0.0
+    cumulative_cost_eur: float = 0.0
+    annual_costs: list[float] = field(default_factory=list)
 
 
 @dataclass
@@ -286,6 +290,7 @@ def _evaluate_bess_point(
     load_growth_factor: float,
     start_year: int,
     pv_profiles_by_year: list[np.ndarray] | None = None,
+    costs: FlexCostConfig | None = None,
 ) -> SystemValuePoint:
     """Evaluate a single BESS enumeration point.
 
@@ -315,6 +320,17 @@ def _evaluate_bess_point(
     ]
     cumulative = sum(annual_system_values)
 
+    # Lifecycle cost calculation (post-hoc, no dispatch impact)
+    cost_config = costs if costs is not None else FlexCostConfig()
+    lifecycle = compute_flex_lifecycle_cost(
+        costs=cost_config,
+        annual_addition_kw=annual_addition_kw,
+        lifetime_years=config.lifetime_years,
+        e_to_p_ratio=e_to_p_ratio,
+        degradation_rate=bess_degradation_rate,
+        start_year=start_year,
+    )
+
     return SystemValuePoint(
         flex_name=flex_name,
         flex_type="bess",
@@ -322,6 +338,8 @@ def _evaluate_bess_point(
         e_to_p_ratio=e_to_p_ratio,
         cumulative_system_value_eur=cumulative,
         annual_system_values=annual_system_values,
+        cumulative_cost_eur=lifecycle.cumulative_cost,
+        annual_costs=lifecycle.annual_total,
     )
 
 
@@ -342,6 +360,7 @@ def _evaluate_hp_point(
     load_growth_factor: float,
     start_year: int,
     pv_profiles_by_year: list[np.ndarray] | None = None,
+    costs: FlexCostConfig | None = None,
 ) -> SystemValuePoint:
     """Evaluate a single heat pump enumeration point.
 
@@ -379,6 +398,17 @@ def _evaluate_hp_point(
     ]
     cumulative = sum(annual_system_values)
 
+    # Lifecycle cost (no degradation, no kWh dimension for HP)
+    cost_config = costs if costs is not None else FlexCostConfig()
+    lifecycle = compute_flex_lifecycle_cost(
+        costs=cost_config,
+        annual_addition_kw=annual_addition_kw,
+        lifetime_years=config.lifetime_years,
+        e_to_p_ratio=0.0,
+        degradation_rate=0.0,
+        start_year=start_year,
+    )
+
     return SystemValuePoint(
         flex_name=flex_name,
         flex_type="heat_pump",
@@ -386,6 +416,8 @@ def _evaluate_hp_point(
         e_to_p_ratio=None,
         cumulative_system_value_eur=cumulative,
         annual_system_values=annual_system_values,
+        cumulative_cost_eur=lifecycle.cumulative_cost,
+        annual_costs=lifecycle.annual_total,
     )
 
 
@@ -409,6 +441,7 @@ def _evaluate_ev_point(
     load_growth_factor: float,
     start_year: int,
     pv_profiles_by_year: list[np.ndarray] | None = None,
+    costs: FlexCostConfig | None = None,
 ) -> SystemValuePoint:
     """Evaluate a single EV enumeration point.
 
@@ -449,6 +482,17 @@ def _evaluate_ev_point(
     ]
     cumulative = sum(annual_system_values)
 
+    # Lifecycle cost (no degradation, no kWh dimension for EV)
+    cost_config = costs if costs is not None else FlexCostConfig()
+    lifecycle = compute_flex_lifecycle_cost(
+        costs=cost_config,
+        annual_addition_kw=annual_addition_kw,
+        lifetime_years=config.lifetime_years,
+        e_to_p_ratio=0.0,
+        degradation_rate=0.0,
+        start_year=start_year,
+    )
+
     return SystemValuePoint(
         flex_name=flex_name,
         flex_type="ev_charging",
@@ -456,6 +500,8 @@ def _evaluate_ev_point(
         e_to_p_ratio=None,
         cumulative_system_value_eur=cumulative,
         annual_system_values=annual_system_values,
+        cumulative_cost_eur=lifecycle.cumulative_cost,
+        annual_costs=lifecycle.annual_total,
     )
 
 
@@ -543,6 +589,7 @@ def run_enumeration(
                 load_growth_factor=load_growth_factor,
                 max_workers=max_workers,
                 pv_profiles_by_year=pv_profiles_by_year,
+                costs=flex.costs,
             )
             points.extend(bess_points)
         elif isinstance(flex, HeatPumpFlexConfig):
@@ -563,6 +610,7 @@ def run_enumeration(
                 load_growth_factor=load_growth_factor,
                 max_workers=max_workers,
                 pv_profiles_by_year=pv_profiles_by_year,
+                costs=flex.costs,
             )
             points.extend(hp_points)
         elif isinstance(flex, EVFlexConfig):
@@ -577,6 +625,7 @@ def run_enumeration(
                 load_growth_factor=load_growth_factor,
                 max_workers=max_workers,
                 pv_profiles_by_year=pv_profiles_by_year,
+                costs=flex.costs,
             )
             points.extend(ev_points)
         else:
@@ -608,6 +657,7 @@ def _enumerate_bess(
     load_growth_factor: float,
     max_workers: int | None,
     pv_profiles_by_year: list[np.ndarray] | None = None,
+    costs: FlexCostConfig | None = None,
 ) -> list[SystemValuePoint]:
     """Enumerate all (addition_rate x e_to_p_ratio) combinations for one BESS.
 
@@ -652,6 +702,7 @@ def _enumerate_bess(
                 load_growth_factor=load_growth_factor,
                 start_year=flex.start_year,
                 pv_profiles_by_year=pv_profiles_by_year,
+                costs=costs,
             )
             results.append(point)
             logger.info(
@@ -684,6 +735,7 @@ def _enumerate_bess(
                     load_growth_factor=load_growth_factor,
                     start_year=flex.start_year,
                     pv_profiles_by_year=pv_profiles_by_year,
+                    costs=costs,
                 )
                 future_map[future] = (rate, etp)
 
@@ -718,6 +770,7 @@ def _enumerate_heat_pump(
     load_growth_factor: float,
     max_workers: int | None,
     pv_profiles_by_year: list[np.ndarray] | None = None,
+    costs: FlexCostConfig | None = None,
 ) -> list[SystemValuePoint]:
     """Enumerate all addition_rate combinations for one heat pump.
 
@@ -770,6 +823,7 @@ def _enumerate_heat_pump(
                 load_growth_factor=load_growth_factor,
                 start_year=flex.start_year,
                 pv_profiles_by_year=pv_profiles_by_year,
+                costs=costs,
             )
             results.append(point)
             logger.info(
@@ -800,6 +854,7 @@ def _enumerate_heat_pump(
                     load_growth_factor=load_growth_factor,
                     start_year=flex.start_year,
                     pv_profiles_by_year=pv_profiles_by_year,
+                    costs=costs,
                 )
                 future_map[future] = rate
 
@@ -829,6 +884,7 @@ def _enumerate_ev(
     load_growth_factor: float,
     max_workers: int | None,
     pv_profiles_by_year: list[np.ndarray] | None = None,
+    costs: FlexCostConfig | None = None,
 ) -> list[SystemValuePoint]:
     """Enumerate all addition_rate combinations for one EV fleet.
 
@@ -892,6 +948,7 @@ def _enumerate_ev(
                 load_growth_factor=load_growth_factor,
                 start_year=flex.start_year,
                 pv_profiles_by_year=pv_profiles_by_year,
+                costs=costs,
             )
             results.append(point)
             logger.info(
@@ -925,6 +982,7 @@ def _enumerate_ev(
                     load_growth_factor=load_growth_factor,
                     start_year=flex.start_year,
                     pv_profiles_by_year=pv_profiles_by_year,
+                    costs=costs,
                 )
                 future_map[future] = rate_kw
 

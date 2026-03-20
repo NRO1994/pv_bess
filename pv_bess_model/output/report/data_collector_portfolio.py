@@ -227,6 +227,9 @@ def _extract_marginal_value_points(
             "e_to_p_ratio": mv.e_to_p_ratio,
             "cumulative_system_value_eur": mv.cumulative_system_value_eur,
             "marginal_value_eur_per_kw_a": mv.marginal_value_eur_per_kw_a,
+            "cumulative_cost_eur": mv.cumulative_cost_eur,
+            "marginal_cost_eur_per_kw_a": mv.marginal_cost_eur_per_kw_a,
+            "is_optimal": mv.is_optimal,
             "delta_kw": mv.delta_kw,
             "delta_value_eur": mv.delta_value_eur,
         }

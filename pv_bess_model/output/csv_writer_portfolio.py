@@ -127,6 +127,9 @@ def write_system_value_csv(
             "cumulative_system_value_eur": fmt_currency(
                 pt.cumulative_system_value_eur, decimal=decimal
             ),
+            "cumulative_cost_eur": fmt_currency(
+                pt.cumulative_cost_eur, decimal=decimal
+            ),
             "marginal_value_eur_per_kw_a": fmt_float(
                 pt.marginal_value_eur_per_kw_a, decimal=decimal
             ),
@@ -178,8 +181,15 @@ def write_marginal_value_csv(
             "marginal_value_eur_per_kw_a": fmt_float(
                 mv.marginal_value_eur_per_kw_a, decimal=decimal
             ),
+            "cumulative_cost_eur": fmt_currency(
+                mv.cumulative_cost_eur, decimal=decimal
+            ),
+            "marginal_cost_eur_per_kw_a": fmt_float(
+                mv.marginal_cost_eur_per_kw_a, decimal=decimal
+            ),
             "delta_kw": fmt_float(mv.delta_kw, decimal=decimal),
             "delta_value_eur": fmt_currency(mv.delta_value_eur, decimal=decimal),
+            "is_optimal": "true" if mv.is_optimal else "false",
         })
 
     _write_dicts(path, rows, delimiter=delimiter)

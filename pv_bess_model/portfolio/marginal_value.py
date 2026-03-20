@@ -1,16 +1,15 @@
-"""Marginal value curves for flexibility assets.
+"""Marginal value and marginal cost curves for flexibility assets.
 
 Computes discrete marginal value (EUR/kW per year of addition) as the
-incremental system value per additional unit of flexibility capacity.
-This enables comparison across flexibility types and identification of
-diminishing returns.
+incremental system value per additional unit of flexibility capacity,
+and marginal cost as the incremental lifecycle cost per additional unit.
 
-The marginal value is computed as a discrete derivative::
+Both are computed as discrete derivatives::
 
     marginal[i] = (value[i] - value[i-1]) / (kw[i] - kw[i-1])
 
-where ``value`` is the cumulative system value and ``kw`` is the annual
-addition rate.  The result is in EUR per kW/a of additional capacity.
+The optimal addition rate is the last point where marginal value exceeds
+marginal cost (i.e. the net marginal value is positive).
 
 Typical usage::
 
@@ -32,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MarginalValuePoint:
-    """Marginal value for one step in the addition-rate curve.
+    """Marginal value and cost for one step in the addition-rate curve.
 
     Attributes
     ----------
@@ -52,6 +51,12 @@ class MarginalValuePoint:
         Step size: ``kw[i] - kw[i-1]``.
     delta_value_eur : float
         Value increment: ``value[i] - value[i-1]``.
+    cumulative_cost_eur : float
+        Total lifecycle cost at this addition rate (EUR).
+    marginal_cost_eur_per_kw_a : float
+        Incremental lifecycle cost per additional kW/a (EUR / kW/a).
+    is_optimal : bool
+        True if this is the last point where marginal value > marginal cost.
     """
 
     flex_name: str
@@ -62,18 +67,26 @@ class MarginalValuePoint:
     marginal_value_eur_per_kw_a: float
     delta_kw: float
     delta_value_eur: float
+    cumulative_cost_eur: float = 0.0
+    marginal_cost_eur_per_kw_a: float = 0.0
+    is_optimal: bool = False
 
 
 def compute_marginal_values(
     points: list[SystemValuePoint],
 ) -> list[MarginalValuePoint]:
-    """Compute marginal value curves from enumeration points.
+    """Compute marginal value and cost curves from enumeration points.
 
     Groups points by ``(flex_name, flex_type, e_to_p_ratio)``, sorts each
-    group by ``annual_addition_kw``, and computes the discrete derivative.
+    group by ``annual_addition_kw``, and computes discrete derivatives for
+    both system value and lifecycle cost.
 
     For the first point in each group (or when ``delta_kw == 0``), the
-    marginal value is set to 0.0.
+    marginal value and cost are set to 0.0.
+
+    The ``is_optimal`` flag is set on the last point in each group where
+    ``marginal_value > marginal_cost``.  If costs are all zero (no cost
+    config), no optimal point is marked.
 
     Parameters
     ----------
@@ -102,15 +115,21 @@ def compute_marginal_values(
 
         prev_kw = 0.0
         prev_value = 0.0
+        prev_cost = 0.0
+
+        group_start_idx = len(result)
 
         for p in group:
             delta_kw = p.annual_addition_kw - prev_kw
             delta_value = p.cumulative_system_value_eur - prev_value
+            delta_cost = p.cumulative_cost_eur - prev_cost
 
             if delta_kw > 0:
-                marginal = delta_value / delta_kw
+                marginal_value = delta_value / delta_kw
+                marginal_cost = delta_cost / delta_kw
             else:
-                marginal = 0.0
+                marginal_value = 0.0
+                marginal_cost = 0.0
 
             result.append(
                 MarginalValuePoint(
@@ -119,14 +138,28 @@ def compute_marginal_values(
                     annual_addition_kw=p.annual_addition_kw,
                     e_to_p_ratio=p.e_to_p_ratio,
                     cumulative_system_value_eur=p.cumulative_system_value_eur,
-                    marginal_value_eur_per_kw_a=marginal,
+                    marginal_value_eur_per_kw_a=marginal_value,
                     delta_kw=delta_kw,
                     delta_value_eur=delta_value,
+                    cumulative_cost_eur=p.cumulative_cost_eur,
+                    marginal_cost_eur_per_kw_a=marginal_cost,
                 )
             )
 
             prev_kw = p.annual_addition_kw
             prev_value = p.cumulative_system_value_eur
+            prev_cost = p.cumulative_cost_eur
+
+        # Mark optimal point: last point where marginal_value > marginal_cost
+        group_points = result[group_start_idx:]
+        has_costs = any(m.cumulative_cost_eur > 0 for m in group_points)
+        if has_costs:
+            optimal_idx = None
+            for i, m in enumerate(group_points):
+                if m.delta_kw > 0 and m.marginal_value_eur_per_kw_a > m.marginal_cost_eur_per_kw_a:
+                    optimal_idx = i
+            if optimal_idx is not None:
+                group_points[optimal_idx].is_optimal = True
 
         logger.debug(
             "Marginal values for '%s' (E/P=%s): %d steps, "
@@ -134,7 +167,7 @@ def compute_marginal_values(
             key[0],
             key[2],
             len(group),
-            max((m.marginal_value_eur_per_kw_a for m in result[-len(group):]), default=0),
+            max((m.marginal_value_eur_per_kw_a for m in group_points), default=0),
         )
 
     return result

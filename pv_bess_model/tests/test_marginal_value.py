@@ -158,3 +158,95 @@ class TestComputeMarginalValues:
         result = compute_marginal_values(points)
         assert result[0].marginal_value_eur_per_kw_a == 0.0
         assert result[1].marginal_value_eur_per_kw_a == pytest.approx(500.0)
+
+
+# ---------------------------------------------------------------------------
+# Marginal cost tests
+# ---------------------------------------------------------------------------
+
+
+def _make_point_with_cost(
+    rate: float,
+    value: float,
+    cost: float,
+    etp: float = 2.0,
+    name: str = "BESS_1",
+) -> SystemValuePoint:
+    """Helper to create a SystemValuePoint with cost data."""
+    return SystemValuePoint(
+        flex_name=name,
+        flex_type="bess",
+        annual_addition_kw=rate,
+        e_to_p_ratio=etp,
+        cumulative_system_value_eur=value,
+        annual_system_values=[value / 25] * 25,
+        cumulative_cost_eur=cost,
+        annual_costs=[cost / 25] * 25,
+    )
+
+
+class TestMarginalCost:
+    """Tests for marginal cost computation alongside marginal value."""
+
+    def test_marginal_cost_computed(self) -> None:
+        """Marginal cost is computed as discrete derivative of cumulative cost."""
+        points = [
+            _make_point_with_cost(rate=100.0, value=50000.0, cost=20000.0),
+            _make_point_with_cost(rate=200.0, value=80000.0, cost=45000.0),
+        ]
+        result = compute_marginal_values(points)
+        # First: 20000 / 100 = 200
+        assert result[0].marginal_cost_eur_per_kw_a == pytest.approx(200.0)
+        # Second: (45000 - 20000) / (200 - 100) = 250
+        assert result[1].marginal_cost_eur_per_kw_a == pytest.approx(250.0)
+
+    def test_zero_cost_no_optimal(self) -> None:
+        """No optimal point is marked when all costs are zero."""
+        points = [
+            _make_point(rate=100.0, value=50000.0),
+            _make_point(rate=200.0, value=80000.0),
+        ]
+        result = compute_marginal_values(points)
+        assert all(not m.is_optimal for m in result)
+
+    def test_optimal_point_marked(self) -> None:
+        """Optimal = last point where marginal_value > marginal_cost."""
+        points = [
+            # rate=100: mv=500, mc=200 → positive
+            _make_point_with_cost(rate=100.0, value=50000.0, cost=20000.0),
+            # rate=200: mv=300, mc=250 → positive (still value > cost)
+            _make_point_with_cost(rate=200.0, value=80000.0, cost=45000.0),
+            # rate=300: mv=100, mc=350 → negative (cost exceeds value)
+            _make_point_with_cost(rate=300.0, value=90000.0, cost=80000.0),
+        ]
+        result = compute_marginal_values(points)
+        # Point at rate=200 is the last positive, should be optimal
+        assert not result[0].is_optimal
+        assert result[1].is_optimal
+        assert not result[2].is_optimal
+
+    def test_all_positive_last_is_optimal(self) -> None:
+        """If all points have value > cost, the last point is optimal."""
+        points = [
+            _make_point_with_cost(rate=100.0, value=50000.0, cost=10000.0),
+            _make_point_with_cost(rate=200.0, value=80000.0, cost=25000.0),
+        ]
+        result = compute_marginal_values(points)
+        assert not result[0].is_optimal
+        assert result[1].is_optimal
+
+    def test_all_negative_no_optimal(self) -> None:
+        """If all points have cost > value, no optimal point is marked."""
+        points = [
+            _make_point_with_cost(rate=100.0, value=10000.0, cost=50000.0),
+            _make_point_with_cost(rate=200.0, value=15000.0, cost=100000.0),
+        ]
+        result = compute_marginal_values(points)
+        assert all(not m.is_optimal for m in result)
+
+    def test_cost_fields_default_zero(self) -> None:
+        """Points without cost data default to zero."""
+        points = [_make_point(rate=100.0, value=50000.0)]
+        result = compute_marginal_values(points)
+        assert result[0].cumulative_cost_eur == 0.0
+        assert result[0].marginal_cost_eur_per_kw_a == 0.0
