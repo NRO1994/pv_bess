@@ -186,6 +186,40 @@ class PersonnelStep:
 
 
 @dataclass
+class ReplacementConfig:
+    """BESS tranche replacement configuration.
+
+    Each BESS tranche is replaced after ``after_years`` of operation.
+    Replacement cost follows the unified three-component schema.
+
+    Attributes
+    ----------
+    after_years:
+        Technical lifetime of each tranche in years.  After this many
+        years, the tranche is replaced.
+    fixed_eur:
+        Fixed replacement cost per event (EUR).
+    eur_per_kw:
+        Replacement cost per kW of tranche power (EUR/kW).
+    eur_per_kwh:
+        Replacement cost per kWh of tranche capacity (EUR/kWh).
+    capacity_factor_pct:
+        Capacity factor for the replacement unit as percent of original.
+        E.g. 120.0 means the replacement has 20 % more capacity.
+        Applied cumulatively for multiple replacements.
+    apply_learning_rate:
+        Whether to apply the CAPEX learning rate to replacement costs.
+    """
+
+    after_years: int
+    fixed_eur: float = 0.0
+    eur_per_kw: float = 0.0
+    eur_per_kwh: float = 0.0
+    capacity_factor_pct: float = 100.0
+    apply_learning_rate: bool = True
+
+
+@dataclass
 class FlexCostConfig:
     """Cost configuration for a flexibility instance.
 
@@ -221,6 +255,7 @@ class FlexCostConfig:
     opex_eur_per_kwh: float = 0.0
     capex_learning_rate_pct: float = 0.0
     personnel_steps: list[PersonnelStep] = field(default_factory=list)
+    replacement: ReplacementConfig | None = None
 
 
 @dataclass
@@ -587,6 +622,19 @@ def _parse_flex_costs(raw: dict) -> FlexCostConfig:
         key=lambda s: s.threshold_kw,
     )
 
+    # Parse optional replacement block
+    repl_raw = costs_raw.get("replacement")
+    replacement: ReplacementConfig | None = None
+    if repl_raw is not None:
+        replacement = ReplacementConfig(
+            after_years=int(repl_raw["after_years"]),
+            fixed_eur=float(repl_raw.get("fixed_eur", 0.0)),
+            eur_per_kw=float(repl_raw.get("eur_per_kw", 0.0)),
+            eur_per_kwh=float(repl_raw.get("eur_per_kwh", 0.0)),
+            capacity_factor_pct=float(repl_raw.get("capacity_factor_pct", 100.0)),
+            apply_learning_rate=bool(repl_raw.get("apply_learning_rate", True)),
+        )
+
     return FlexCostConfig(
         capex_fixed_eur=float(capex.get("fixed_eur", 0.0)),
         capex_eur_per_kw=float(capex.get("eur_per_kw", 0.0)),
@@ -598,6 +646,7 @@ def _parse_flex_costs(raw: dict) -> FlexCostConfig:
             costs_raw.get("capex_learning_rate_pct", 0.0)
         ),
         personnel_steps=personnel_steps,
+        replacement=replacement,
     )
 
 

@@ -57,6 +57,20 @@ _PERSONNEL_STEP = {
     "additionalProperties": False,
 }
 
+_FLEX_COST_REPLACEMENT = {
+    "type": "object",
+    "required": ["after_years"],
+    "properties": {
+        "after_years": _POSITIVE_INTEGER,
+        "fixed_eur": _NON_NEGATIVE_NUMBER,
+        "eur_per_kw": _NON_NEGATIVE_NUMBER,
+        "eur_per_kwh": _NON_NEGATIVE_NUMBER,
+        "capacity_factor_pct": _NON_NEGATIVE_NUMBER,
+        "apply_learning_rate": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+}
+
 _FLEX_COSTS = {
     "type": "object",
     "properties": {
@@ -67,6 +81,7 @@ _FLEX_COSTS = {
             "type": "array",
             "items": _PERSONNEL_STEP,
         },
+        "replacement": _FLEX_COST_REPLACEMENT,
     },
     "additionalProperties": False,
 }

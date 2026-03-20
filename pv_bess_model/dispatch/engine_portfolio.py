@@ -152,6 +152,8 @@ def compute_bess_tranche_capacity(
     project_year: int,
     degradation_rate: float,
     start_year: int = 1,
+    replacement_after_years: int | None = None,
+    replacement_capacity_factor: float = 1.0,
 ) -> tuple[float, float]:
     """Compute aggregated BESS capacity using the tranche degradation model.
 
@@ -165,6 +167,16 @@ def compute_bess_tranche_capacity(
 
     Power does not degrade -- only energy capacity.
 
+    When ``replacement_after_years`` is set, each tranche is replaced after
+    that many years of operation.  The tranche's age is reset (modulo) and
+    the ``replacement_capacity_factor`` is applied cumulatively for each
+    replacement cycle::
+
+        n_replacements = age // replacement_after_years
+        effective_age  = age % replacement_after_years
+        capacity_factor = replacement_capacity_factor ** n_replacements
+        tranche_kwh = addition_kw × e_to_p × capacity_factor × (1 - deg)^effective_age
+
     Parameters
     ----------
     annual_addition_kw:
@@ -177,6 +189,12 @@ def compute_bess_tranche_capacity(
         Annual capacity degradation as a fraction (e.g. 0.02 for 2 %).
     start_year:
         First project year in which additions begin (1-indexed, default 1).
+    replacement_after_years:
+        Technical lifetime of each tranche in years.  ``None`` means no
+        replacement (infinite lifetime, continuous degradation).
+    replacement_capacity_factor:
+        Capacity factor for the replacement unit as a fraction (e.g. 1.2
+        for 20 % more capacity).  Applied cumulatively per replacement.
 
     Returns
     -------
@@ -199,8 +217,20 @@ def compute_bess_tranche_capacity(
     for install_year in range(start_year, project_year + 1):
         age = project_year - install_year  # years since installation
         tranche_power = annual_addition_kw
-        tranche_capacity = annual_addition_kw * e_to_p_ratio * (
-            (1.0 - degradation_rate) ** age
+
+        if replacement_after_years is not None and replacement_after_years > 0:
+            n_replacements = age // replacement_after_years
+            effective_age = age % replacement_after_years
+            capacity_factor = replacement_capacity_factor ** n_replacements
+        else:
+            effective_age = age
+            capacity_factor = 1.0
+
+        tranche_capacity = (
+            annual_addition_kw
+            * e_to_p_ratio
+            * capacity_factor
+            * (1.0 - degradation_rate) ** effective_age
         )
         total_power_kw += tranche_power
         total_capacity_kwh += tranche_capacity
@@ -313,6 +343,8 @@ def run_portfolio_simulation(
     ev_start_year: int = 1,
     ev_base_power_kw: float = 0.0,
     pv_profiles_by_year: list[np.ndarray] | None = None,
+    bess_replacement_after_years: int | None = None,
+    bess_replacement_capacity_factor: float = 1.0,
 ) -> list[PortfolioAnnualResult]:
     """Run a multi-year portfolio simulation with annual flex build-out.
 
@@ -446,6 +478,8 @@ def run_portfolio_simulation(
             project_year=year,
             degradation_rate=bess_degradation_rate,
             start_year=start_year,
+            replacement_after_years=bess_replacement_after_years,
+            replacement_capacity_factor=bess_replacement_capacity_factor,
         )
 
         # Build BESS params (or None for no-BESS)

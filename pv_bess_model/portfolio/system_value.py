@@ -291,6 +291,8 @@ def _evaluate_bess_point(
     start_year: int,
     pv_profiles_by_year: list[np.ndarray] | None = None,
     costs: FlexCostConfig | None = None,
+    replacement_after_years: int | None = None,
+    replacement_capacity_factor: float = 1.0,
 ) -> SystemValuePoint:
     """Evaluate a single BESS enumeration point.
 
@@ -312,6 +314,8 @@ def _evaluate_bess_point(
         load_growth_factor=load_growth_factor,
         start_year=start_year,
         pv_profiles_by_year=pv_profiles_by_year,
+        bess_replacement_after_years=replacement_after_years,
+        bess_replacement_capacity_factor=replacement_capacity_factor,
     )
 
     annual_system_values = [
@@ -666,6 +670,13 @@ def _enumerate_bess(
     rte = flex.round_trip_efficiency_pct / 100.0
     deg = flex.degradation_rate_pct_per_year / 100.0
 
+    # Extract replacement parameters from cost config
+    repl = costs.replacement if costs is not None else None
+    repl_after_years = repl.after_years if repl is not None else None
+    repl_cap_factor = (
+        repl.capacity_factor_pct / 100.0 if repl is not None else 1.0
+    )
+
     tasks: list[tuple[float, float]] = []
     for rate in flex.annual_addition_kw:
         for etp in flex.e_to_p_ratio_hours:
@@ -703,6 +714,8 @@ def _enumerate_bess(
                 start_year=flex.start_year,
                 pv_profiles_by_year=pv_profiles_by_year,
                 costs=costs,
+                replacement_after_years=repl_after_years,
+                replacement_capacity_factor=repl_cap_factor,
             )
             results.append(point)
             logger.info(
@@ -736,6 +749,8 @@ def _enumerate_bess(
                     start_year=flex.start_year,
                     pv_profiles_by_year=pv_profiles_by_year,
                     costs=costs,
+                    replacement_after_years=repl_after_years,
+                    replacement_capacity_factor=repl_cap_factor,
                 )
                 future_map[future] = (rate, etp)
 

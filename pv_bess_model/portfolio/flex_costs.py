@@ -48,6 +48,8 @@ class FlexLifecycleCost:
         OPEX per project year (EUR), length = lifetime_years.
     annual_personnel : list[float]
         Personnel cost per project year (EUR), length = lifetime_years.
+    annual_replacement : list[float]
+        Replacement CAPEX per project year (EUR), length = lifetime_years.
     annual_total : list[float]
         Total cost per project year (EUR), length = lifetime_years.
     cumulative_cost : float
@@ -57,6 +59,7 @@ class FlexLifecycleCost:
     annual_capex: list[float] = field(default_factory=list)
     annual_opex: list[float] = field(default_factory=list)
     annual_personnel: list[float] = field(default_factory=list)
+    annual_replacement: list[float] = field(default_factory=list)
     annual_total: list[float] = field(default_factory=list)
     cumulative_cost: float = 0.0
 
@@ -95,8 +98,10 @@ def compute_flex_lifecycle_cost(
     annual_capex: list[float] = []
     annual_opex: list[float] = []
     annual_personnel: list[float] = []
+    annual_replacement: list[float] = []
 
     learning_rate = costs.capex_learning_rate_pct / 100.0
+    repl = costs.replacement
 
     for year in range(1, lifetime_years + 1):
         # --- CAPEX ---
@@ -118,15 +123,23 @@ def compute_flex_lifecycle_cost(
         if year >= start_year and annual_addition_kw > 0.0:
             cumulative_kw = annual_addition_kw * (year - start_year + 1)
 
-            # Cumulative kWh with tranche degradation (consistent with
-            # engine_portfolio.compute_bess_tranche_capacity)
+            # Cumulative kWh with tranche degradation and replacement reset
+            # (consistent with engine_portfolio.compute_bess_tranche_capacity)
             cumulative_kwh = 0.0
             for install_year in range(start_year, year + 1):
                 age = year - install_year
+                if repl is not None and repl.after_years > 0:
+                    n_repl = age // repl.after_years
+                    effective_age = age % repl.after_years
+                    cap_factor = (repl.capacity_factor_pct / 100.0) ** n_repl
+                else:
+                    effective_age = age
+                    cap_factor = 1.0
                 cumulative_kwh += (
                     annual_addition_kw
                     * e_to_p_ratio
-                    * (1.0 - degradation_rate) ** age
+                    * cap_factor
+                    * (1.0 - degradation_rate) ** effective_age
                 )
         else:
             cumulative_kw = 0.0
@@ -147,13 +160,26 @@ def compute_flex_lifecycle_cost(
             costs.personnel_steps, cumulative_kw
         )
 
+        # --- Replacement CAPEX ---
+        replacement_year = _compute_replacement_cost(
+            repl=repl,
+            annual_addition_kw=annual_addition_kw,
+            e_to_p_ratio=e_to_p_ratio,
+            year=year,
+            start_year=start_year,
+            learning_rate=learning_rate,
+        )
+
         annual_capex.append(capex_year)
         annual_opex.append(opex_year)
         annual_personnel.append(personnel_year)
+        annual_replacement.append(replacement_year)
 
     annual_total = [
-        c + o + p
-        for c, o, p in zip(annual_capex, annual_opex, annual_personnel)
+        c + o + p + r
+        for c, o, p, r in zip(
+            annual_capex, annual_opex, annual_personnel, annual_replacement
+        )
     ]
     cumulative = sum(annual_total)
 
@@ -161,9 +187,79 @@ def compute_flex_lifecycle_cost(
         annual_capex=annual_capex,
         annual_opex=annual_opex,
         annual_personnel=annual_personnel,
+        annual_replacement=annual_replacement,
         annual_total=annual_total,
         cumulative_cost=cumulative,
     )
+
+
+def _compute_replacement_cost(
+    repl,
+    annual_addition_kw: float,
+    e_to_p_ratio: float,
+    year: int,
+    start_year: int,
+    learning_rate: float,
+) -> float:
+    """Compute replacement CAPEX for a given project year.
+
+    Each tranche installed in year ``i`` needs replacement in years
+    ``i + after_years``, ``i + 2 * after_years``, etc.  The replacement
+    cost uses the unified three-component schema from ``ReplacementConfig``.
+
+    When ``apply_learning_rate`` is true, the replacement cost is reduced
+    by the same learning curve as the initial CAPEX, based on the year
+    the replacement occurs (years since ``start_year``).
+
+    Parameters
+    ----------
+    repl:
+        ``ReplacementConfig`` or ``None``.
+    annual_addition_kw:
+        Annual power addition rate in kW/year.
+    e_to_p_ratio:
+        Energy-to-power ratio in hours.
+    year:
+        Current project year (1-indexed).
+    start_year:
+        First year in which additions begin.
+    learning_rate:
+        Annual CAPEX learning rate as a fraction (e.g. 0.02 for 2 %).
+
+    Returns
+    -------
+    float
+        Replacement CAPEX in EUR for this year.
+    """
+    if repl is None or repl.after_years <= 0 or annual_addition_kw <= 0.0:
+        return 0.0
+
+    total = 0.0
+    addition_kwh = annual_addition_kw * e_to_p_ratio
+
+    # Base replacement cost (before learning)
+    base_cost = (
+        repl.fixed_eur
+        + repl.eur_per_kw * annual_addition_kw
+        + repl.eur_per_kwh * addition_kwh
+    )
+
+    if base_cost <= 0.0:
+        return 0.0
+
+    # Check each installed tranche for replacement in this year
+    for install_year in range(start_year, year + 1):
+        age = year - install_year
+        if age > 0 and age % repl.after_years == 0:
+            # This tranche needs replacement this year
+            if repl.apply_learning_rate:
+                years_since_start = year - start_year
+                cost = base_cost * (1.0 - learning_rate) ** years_since_start
+            else:
+                cost = base_cost
+            total += cost
+
+    return total
 
 
 def _compute_personnel_cost(
