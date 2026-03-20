@@ -217,6 +217,7 @@ def compute_world_a_multiyear(
     spot_prices_base: np.ndarray,
     pv_degradation_rate: float,
     load_growth_factor: float = 1.0,
+    pv_profiles_by_year: list[np.ndarray] | None = None,
 ) -> list[float]:
     """Compute annual World A system costs over the project lifetime.
 
@@ -237,6 +238,8 @@ def compute_world_a_multiyear(
         Annual PV degradation fraction.
     load_growth_factor:
         Multiplicative annual load growth factor.
+    pv_profiles_by_year:
+        Pre-computed per-year PV profiles (overrides base × degradation).
 
     Returns
     -------
@@ -256,6 +259,7 @@ def compute_world_a_multiyear(
         bess_degradation_rate=0.0,
         pv_degradation_rate=pv_degradation_rate,
         load_growth_factor=load_growth_factor,
+        pv_profiles_by_year=pv_profiles_by_year,
     )
     return [r.system_cost for r in results]
 
@@ -281,6 +285,7 @@ def _evaluate_bess_point(
     pv_degradation_rate: float,
     load_growth_factor: float,
     start_year: int,
+    pv_profiles_by_year: list[np.ndarray] | None = None,
 ) -> SystemValuePoint:
     """Evaluate a single BESS enumeration point.
 
@@ -301,6 +306,7 @@ def _evaluate_bess_point(
         pv_degradation_rate=pv_degradation_rate,
         load_growth_factor=load_growth_factor,
         start_year=start_year,
+        pv_profiles_by_year=pv_profiles_by_year,
     )
 
     annual_system_values = [
@@ -335,6 +341,7 @@ def _evaluate_hp_point(
     pv_degradation_rate: float,
     load_growth_factor: float,
     start_year: int,
+    pv_profiles_by_year: list[np.ndarray] | None = None,
 ) -> SystemValuePoint:
     """Evaluate a single heat pump enumeration point.
 
@@ -363,6 +370,7 @@ def _evaluate_hp_point(
         wp_thermal_storage_kwh=wp_thermal_storage_kwh,
         wp_start_year=start_year,
         wp_base_power_kw=wp_base_power_kw,
+        pv_profiles_by_year=pv_profiles_by_year,
     )
 
     annual_system_values = [
@@ -400,6 +408,7 @@ def _evaluate_ev_point(
     pv_degradation_rate: float,
     load_growth_factor: float,
     start_year: int,
+    pv_profiles_by_year: list[np.ndarray] | None = None,
 ) -> SystemValuePoint:
     """Evaluate a single EV enumeration point.
 
@@ -431,6 +440,7 @@ def _evaluate_ev_point(
         ev_min_departure_soc_pct=ev_min_departure_soc_pct,
         ev_start_year=start_year,
         ev_base_power_kw=ev_base_power_kw,
+        pv_profiles_by_year=pv_profiles_by_year,
     )
 
     annual_system_values = [
@@ -464,6 +474,7 @@ def run_enumeration(
     load_growth_factor: float = 1.0,
     max_workers: int | None = None,
     temperature_hourly: np.ndarray | None = None,
+    pv_profiles_by_year: list[np.ndarray] | None = None,
 ) -> SystemValueResult:
     """Run enumeration over all flex x addition_rate x e_to_p_ratio combinations.
 
@@ -491,6 +502,8 @@ def run_enumeration(
     temperature_hourly:
         Hourly outdoor temperature array (8,760 values, °C).
         Required when *flexibilities* contains a ``HeatPumpFlexConfig``.
+    pv_profiles_by_year:
+        Pre-computed per-year PV profiles (overrides base × degradation).
 
     Returns
     -------
@@ -506,6 +519,7 @@ def run_enumeration(
         spot_prices_base=spot_prices_base,
         pv_degradation_rate=pv_degradation_rate,
         load_growth_factor=load_growth_factor,
+        pv_profiles_by_year=pv_profiles_by_year,
     )
     logger.info(
         "World A total cost: %.0f EUR (over %d years)",
@@ -528,6 +542,7 @@ def run_enumeration(
                 pv_degradation_rate=pv_degradation_rate,
                 load_growth_factor=load_growth_factor,
                 max_workers=max_workers,
+                pv_profiles_by_year=pv_profiles_by_year,
             )
             points.extend(bess_points)
         elif isinstance(flex, HeatPumpFlexConfig):
@@ -547,6 +562,7 @@ def run_enumeration(
                 pv_degradation_rate=pv_degradation_rate,
                 load_growth_factor=load_growth_factor,
                 max_workers=max_workers,
+                pv_profiles_by_year=pv_profiles_by_year,
             )
             points.extend(hp_points)
         elif isinstance(flex, EVFlexConfig):
@@ -560,6 +576,7 @@ def run_enumeration(
                 pv_degradation_rate=pv_degradation_rate,
                 load_growth_factor=load_growth_factor,
                 max_workers=max_workers,
+                pv_profiles_by_year=pv_profiles_by_year,
             )
             points.extend(ev_points)
         else:
@@ -590,6 +607,7 @@ def _enumerate_bess(
     pv_degradation_rate: float,
     load_growth_factor: float,
     max_workers: int | None,
+    pv_profiles_by_year: list[np.ndarray] | None = None,
 ) -> list[SystemValuePoint]:
     """Enumerate all (addition_rate x e_to_p_ratio) combinations for one BESS.
 
@@ -633,6 +651,7 @@ def _enumerate_bess(
                 pv_degradation_rate=pv_degradation_rate,
                 load_growth_factor=load_growth_factor,
                 start_year=flex.start_year,
+                pv_profiles_by_year=pv_profiles_by_year,
             )
             results.append(point)
             logger.info(
@@ -664,6 +683,7 @@ def _enumerate_bess(
                     pv_degradation_rate=pv_degradation_rate,
                     load_growth_factor=load_growth_factor,
                     start_year=flex.start_year,
+                    pv_profiles_by_year=pv_profiles_by_year,
                 )
                 future_map[future] = (rate, etp)
 
@@ -697,6 +717,7 @@ def _enumerate_heat_pump(
     pv_degradation_rate: float,
     load_growth_factor: float,
     max_workers: int | None,
+    pv_profiles_by_year: list[np.ndarray] | None = None,
 ) -> list[SystemValuePoint]:
     """Enumerate all addition_rate combinations for one heat pump.
 
@@ -748,6 +769,7 @@ def _enumerate_heat_pump(
                 pv_degradation_rate=pv_degradation_rate,
                 load_growth_factor=load_growth_factor,
                 start_year=flex.start_year,
+                pv_profiles_by_year=pv_profiles_by_year,
             )
             results.append(point)
             logger.info(
@@ -777,6 +799,7 @@ def _enumerate_heat_pump(
                     pv_degradation_rate=pv_degradation_rate,
                     load_growth_factor=load_growth_factor,
                     start_year=flex.start_year,
+                    pv_profiles_by_year=pv_profiles_by_year,
                 )
                 future_map[future] = rate
 
@@ -805,6 +828,7 @@ def _enumerate_ev(
     pv_degradation_rate: float,
     load_growth_factor: float,
     max_workers: int | None,
+    pv_profiles_by_year: list[np.ndarray] | None = None,
 ) -> list[SystemValuePoint]:
     """Enumerate all addition_rate combinations for one EV fleet.
 
@@ -867,6 +891,7 @@ def _enumerate_ev(
                 pv_degradation_rate=pv_degradation_rate,
                 load_growth_factor=load_growth_factor,
                 start_year=flex.start_year,
+                pv_profiles_by_year=pv_profiles_by_year,
             )
             results.append(point)
             logger.info(
@@ -899,6 +924,7 @@ def _enumerate_ev(
                     pv_degradation_rate=pv_degradation_rate,
                     load_growth_factor=load_growth_factor,
                     start_year=flex.start_year,
+                    pv_profiles_by_year=pv_profiles_by_year,
                 )
                 future_map[future] = rate_kw
 

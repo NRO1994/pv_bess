@@ -122,6 +122,81 @@ def build_aggregated_pv_profile(
     return aggregated, temperature_hourly
 
 
+def build_pv_profiles_by_year(
+    per_asset_profiles: dict[str, np.ndarray],
+    generation_configs: list[GenerationConfig],
+    baseline_year: int,
+    lifetime_years: int,
+) -> list[np.ndarray]:
+    """Build per-year aggregated PV profiles with per-asset degradation and lifetime.
+
+    For each project year, applies per-asset degradation based on the asset's
+    commissioning year and zeroes out production for assets that have exceeded
+    their technical lifetime.
+
+    Parameters
+    ----------
+    per_asset_profiles:
+        Mapping of asset name to base quarter-hourly production profile.
+    generation_configs:
+        List of PV generation asset configurations.
+    baseline_year:
+        Calendar year corresponding to project year 1.
+    lifetime_years:
+        Total project lifetime in years.
+
+    Returns
+    -------
+    list[numpy.ndarray]
+        One aggregated profile per project year (index 0 = year 1).
+        Each array has 35,040 elements.
+    """
+    expected_qh = HOURS_PER_YEAR * INTERVALS_PER_HOUR
+    profiles_by_year: list[np.ndarray] = []
+
+    for year in range(1, lifetime_years + 1):
+        calendar_year = baseline_year + year - 1
+        aggregated = np.zeros(expected_qh, dtype=float)
+
+        for gen in generation_configs:
+            if gen.name not in per_asset_profiles:
+                continue
+
+            base_profile = per_asset_profiles[gen.name]
+            deg_rate = gen.degradation_rate_pct_per_year / 100.0
+
+            # Determine commissioning year (default: baseline_year = no initial degradation)
+            comm_year = gen.commissioning_year if gen.commissioning_year is not None else baseline_year
+
+            # Check lifetime: asset stops producing after commissioning_year + lifetime
+            if gen.lifetime_years is not None:
+                end_year = comm_year + gen.lifetime_years
+                if calendar_year >= end_year:
+                    logger.debug(
+                        "PV asset '%s': inactive in %d (lifetime ended %d).",
+                        gen.name, calendar_year, end_year,
+                    )
+                    continue
+
+            # Degradation age = years since commissioning
+            age = calendar_year - comm_year
+            if age < 0:
+                # Asset not yet commissioned
+                continue
+
+            deg_factor = (1.0 - deg_rate) ** age
+            aggregated += base_profile * deg_factor
+
+            logger.debug(
+                "PV asset '%s': year %d, age %d, deg_factor %.4f.",
+                gen.name, calendar_year, age, deg_factor,
+            )
+
+        profiles_by_year.append(aggregated)
+
+    return profiles_by_year
+
+
 def build_per_asset_pv_profiles(
     generation_configs: list[GenerationConfig],
     weather_year: int,

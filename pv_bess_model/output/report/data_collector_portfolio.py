@@ -142,6 +142,8 @@ def _extract_generation(gen_configs: list[GenerationConfig]) -> list[dict]:
             "latitude": g.latitude,
             "longitude": g.longitude,
             "degradation_pct": g.degradation_rate_pct_per_year,
+            "commissioning_year": g.commissioning_year,
+            "lifetime_years": g.lifetime_years,
         }
         for g in gen_configs
     ]

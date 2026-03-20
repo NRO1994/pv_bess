@@ -111,6 +111,15 @@ class GenerationConfig:
         Panel tilt angle in degrees (0 = horizontal, 90 = vertical).
     start_year:
         Simulation year (1-indexed) from which this generator is active.
+    commissioning_year:
+        Calendar year when the asset was commissioned.  Used to compute
+        initial degradation at simulation start.  If ``None``, the asset
+        is assumed to be commissioned at the baseline year (no initial
+        degradation).
+    lifetime_years:
+        Technical lifetime of the asset in years (from commissioning).
+        After ``commissioning_year + lifetime_years``, production is zero.
+        If ``None``, the asset produces indefinitely.
     """
 
     type: str
@@ -125,6 +134,8 @@ class GenerationConfig:
     azimuth_deg: float = 0.0
     tilt_deg: float = 30.0
     start_year: int = DEFAULT_FLEX_START_YEAR
+    commissioning_year: int | None = None
+    lifetime_years: int | None = None
 
 
 @dataclass
@@ -459,6 +470,12 @@ def _parse_generation(raw: dict) -> GenerationConfig:
         azimuth_deg=float(raw.get("azimuth_deg", 0.0)),
         tilt_deg=float(raw.get("tilt_deg", 30.0)),
         start_year=int(raw.get("start_year", DEFAULT_FLEX_START_YEAR)),
+        commissioning_year=(
+            int(raw["commissioning_year"]) if "commissioning_year" in raw else None
+        ),
+        lifetime_years=(
+            int(raw["lifetime_years"]) if "lifetime_years" in raw else None
+        ),
     )
 
 

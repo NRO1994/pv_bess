@@ -86,6 +86,8 @@ _GENERATION_PV = {
         "azimuth_deg": {"type": "number", "minimum": -180, "maximum": 180},
         "tilt_deg": {"type": "number", "minimum": 0, "maximum": 90},
         "start_year": _POSITIVE_INTEGER,
+        "commissioning_year": {"type": "integer", "minimum": 1900, "maximum": 2200},
+        "lifetime_years": _POSITIVE_INTEGER,
     },
     "additionalProperties": False,
 }

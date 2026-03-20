@@ -283,9 +283,11 @@ function renderOverview(){
 
   // Generation table
   const genRows = DATA.generation.map(g=>[g.name, g.type, fmtNum(g.peak_kwp,0)+' kWp',
-    fmtNum(g.latitude,2)+'°', fmtNum(g.longitude,2)+'°', fmtNum(g.degradation_pct,1)+' %/a']);
+    fmtNum(g.latitude,2)+'°', fmtNum(g.longitude,2)+'°', fmtNum(g.degradation_pct,1)+' %/a',
+    g.commissioning_year!=null ? g.commissioning_year : '–',
+    g.lifetime_years!=null ? g.lifetime_years+' a' : '–']);
   document.getElementById('tblGeneration').innerHTML = makeTable(
-    ['Name','Typ','Leistung','Lat','Lon','Degradation'], genRows);
+    ['Name','Typ','Leistung','Lat','Lon','Degradation','IBN-Jahr','Laufzeit'], genRows);
 
   // Load table
   const loadRows = DATA.load_groups.map(l=>[l.name, l.slp_type, fmtNum(l.customer_count,0),

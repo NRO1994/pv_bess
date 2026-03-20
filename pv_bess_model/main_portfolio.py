@@ -58,6 +58,7 @@ from pv_bess_model.output.report.html_builder import build_portfolio_html_report
 from pv_bess_model.portfolio.generation import (
     build_aggregated_pv_profile,
     build_per_asset_pv_profiles,
+    build_pv_profiles_by_year,
 )
 from pv_bess_model.portfolio.heat_demand import (
     compute_cop,
@@ -347,6 +348,14 @@ def main(argv: list[str] | None = None) -> int:
     # Compute aggregate load growth factor (weighted average across groups)
     load_growth_factor = _compute_avg_load_growth(config)
 
+    # Build per-year PV profiles with per-asset commissioning year and lifetime
+    pv_profiles_by_year = build_pv_profiles_by_year(
+        per_asset_profiles=per_gen_profiles,
+        generation_configs=config.generation,
+        baseline_year=meta.baseline_year,
+        lifetime_years=meta.project_lifetime_years,
+    )
+
     engine_config = PortfolioEngineConfig(
         lifetime_years=meta.project_lifetime_years,
         baseline_year=meta.baseline_year,
@@ -362,6 +371,7 @@ def main(argv: list[str] | None = None) -> int:
         pv_degradation_rate=pv_degradation_rate,
         load_growth_factor=load_growth_factor,
         temperature_hourly=temperature_hourly,
+        pv_profiles_by_year=pv_profiles_by_year,
     )
 
     # --- Step 8: Marginal value curves ------------------------------------

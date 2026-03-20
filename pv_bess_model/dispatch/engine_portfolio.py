@@ -312,6 +312,7 @@ def run_portfolio_simulation(
     ev_min_departure_soc_pct: float = 80.0,
     ev_start_year: int = 1,
     ev_base_power_kw: float = 0.0,
+    pv_profiles_by_year: list[np.ndarray] | None = None,
 ) -> list[PortfolioAnnualResult]:
     """Run a multi-year portfolio simulation with annual flex build-out.
 
@@ -386,6 +387,10 @@ def run_portfolio_simulation(
         First project year when EV additions begin (1-indexed).
     ev_base_power_kw:
         Reference EV power for scaling demand and battery capacity.
+    pv_profiles_by_year:
+        Pre-computed aggregated PV profiles per project year (index 0 = year 1).
+        When provided, overrides ``pv_profile_base * (1-rate)^year`` logic,
+        supporting per-asset commissioning years and lifetimes.
 
     Returns
     -------
@@ -423,9 +428,12 @@ def run_portfolio_simulation(
     carry_ev_soc_kwh = 0.0
 
     for year in range(1, config.lifetime_years + 1):
-        # 1. PV degradation
-        pv_factor = (1.0 - pv_degradation_rate) ** year
-        pv_profile = pv_profile_base * pv_factor
+        # 1. PV degradation (per-asset profiles or simple scalar)
+        if pv_profiles_by_year is not None:
+            pv_profile = pv_profiles_by_year[year - 1]
+        else:
+            pv_factor = (1.0 - pv_degradation_rate) ** year
+            pv_profile = pv_profile_base * pv_factor
 
         # 2. Load growth
         load_factor = load_growth_factor ** year
