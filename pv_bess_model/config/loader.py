@@ -116,6 +116,14 @@ class ScenarioConfig:
         return float(self.pv["design"]["peak_power_kwp"])
 
     @property
+    def pv_sub_arrays(self) -> list[dict] | None:
+        """Optional dual-azimuth sub-array definitions.
+
+        Returns ``None`` when no sub-arrays are configured (single-azimuth mode).
+        """
+        return self.pv["design"].get("sub_arrays")
+
+    @property
     def bess_scale_pct_list(self) -> list[float]:
         """BESS scale percentages for the grid search."""
         return [float(v) for v in self.bess["design_space"]["scale_pct_of_pv"]]
@@ -250,6 +258,39 @@ class InflationTimeseriesConfig:
 
 
 # ---------------------------------------------------------------------------
+# Cross-field validators
+# ---------------------------------------------------------------------------
+
+_SUB_ARRAY_POWER_TOLERANCE_KWP = 0.1
+"""Maximum allowed difference between sum of sub-array powers and peak_power_kwp."""
+
+
+def _validate_pv_sub_arrays(data: dict) -> None:
+    """Validate that sub-array powers sum to peak_power_kwp (if sub_arrays present).
+
+    Raises
+    ------
+    ValueError
+        When the sum of sub-array ``power_kwp`` values deviates from
+        ``peak_power_kwp`` by more than :data:`_SUB_ARRAY_POWER_TOLERANCE_KWP`.
+    """
+    pv_design = data["project_settings"]["technology"]["pv"]["design"]
+    sub_arrays = pv_design.get("sub_arrays")
+    if sub_arrays is None:
+        return
+
+    peak_power = float(pv_design["peak_power_kwp"])
+    sub_sum = sum(float(sa["power_kwp"]) for sa in sub_arrays)
+
+    if abs(sub_sum - peak_power) > _SUB_ARRAY_POWER_TOLERANCE_KWP:
+        raise ValueError(
+            f"Sum of sub-array powers ({sub_sum:.1f} kWp) does not match "
+            f"peak_power_kwp ({peak_power:.1f} kWp). "
+            f"Maximum allowed deviation: {_SUB_ARRAY_POWER_TOLERANCE_KWP} kWp."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Public functions
 # ---------------------------------------------------------------------------
 
@@ -298,6 +339,7 @@ def load_scenario(path: str | Path) -> ScenarioConfig:
         ) from exc
 
     validate_scenario(data)  # raises ValidationError on schema violations
+    _validate_pv_sub_arrays(data)
 
     ps = data["project_settings"]
     config = ScenarioConfig(
@@ -343,6 +385,7 @@ def load_scenario_dict(data: dict) -> ScenarioConfig:
         When cross-field constraints are violated.
     """
     validate_scenario(data)
+    _validate_pv_sub_arrays(data)
     ps = data["project_settings"]
     return ScenarioConfig(
         raw=data,

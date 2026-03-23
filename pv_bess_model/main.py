@@ -676,6 +676,7 @@ def run(args: argparse.Namespace) -> int:
     mounting_type = pv_design.get("mounting_type", "free")
     azimuth_deg = float(pv_design.get("azimuth_deg", 0))
     tilt_deg = float(pv_design.get("tilt_deg", 30))
+    pv_sub_arrays = scenario.pv_sub_arrays
 
     # Parse price-weather scenarios from the new schema
     price_inputs = finance.get("price_inputs", {})
@@ -707,16 +708,43 @@ def run(args: argparse.Namespace) -> int:
         weather_year_hourly: dict[int, np.ndarray] = {}
         for wy in unique_weather_years:
             try:
-                hourly_ts = client.fetch_single_year(
-                    year=wy,
-                    latitude=latitude,
-                    longitude=longitude,
-                    peak_power_kwp=pv_peak_kwp,
-                    mounting_type=mounting_type,
-                    azimuth_deg=azimuth_deg,
-                    tilt_deg=tilt_deg,
-                    pvgis_database=pvgis_database,
-                )
+                if pv_sub_arrays is not None:
+                    # Dual-azimuth mode: fetch each sub-array and sum profiles
+                    logger.info(
+                        "Dual-azimuth mode: fetching %d sub-arrays for year %d",
+                        len(pv_sub_arrays), wy,
+                    )
+                    combined = None
+                    for i, sa in enumerate(pv_sub_arrays):
+                        sa_ts = client.fetch_single_year(
+                            year=wy,
+                            latitude=latitude,
+                            longitude=longitude,
+                            peak_power_kwp=float(sa["power_kwp"]),
+                            mounting_type=mounting_type,
+                            azimuth_deg=float(sa["azimuth_deg"]),
+                            tilt_deg=float(sa["tilt_deg"]),
+                            pvgis_database=pvgis_database,
+                        )
+                        logger.info(
+                            "  Sub-array %d: %.0f kWp, azi=%.1f°, tilt=%.1f° → %.0f kWh/a",
+                            i + 1, sa["power_kwp"], sa["azimuth_deg"],
+                            sa["tilt_deg"], float(np.sum(sa_ts)),
+                        )
+                        combined = sa_ts if combined is None else combined + sa_ts
+                    hourly_ts = combined
+                else:
+                    # Single-azimuth mode (default)
+                    hourly_ts = client.fetch_single_year(
+                        year=wy,
+                        latitude=latitude,
+                        longitude=longitude,
+                        peak_power_kwp=pv_peak_kwp,
+                        mounting_type=mounting_type,
+                        azimuth_deg=azimuth_deg,
+                        tilt_deg=tilt_deg,
+                        pvgis_database=pvgis_database,
+                    )
             except Exception as exc:
                 logger.error("PVGIS fetch for year %d failed: %s", wy, exc)
                 return 1

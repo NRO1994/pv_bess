@@ -179,6 +179,17 @@ _SCENARIO_BLOCK = {
 # PV
 # ---------------------------------------------------------------------------
 
+_PV_SUB_ARRAY = {
+    "type": "object",
+    "required": ["power_kwp", "azimuth_deg", "tilt_deg"],
+    "properties": {
+        "power_kwp": {"type": "number", "minimum": 0, "exclusiveMinimum": 0},
+        "azimuth_deg": {"type": "number", "minimum": -180, "maximum": 180},
+        "tilt_deg": {"type": "number", "minimum": 0, "maximum": 90},
+    },
+    "additionalProperties": False,
+}
+
 _PV_DESIGN = {
     "type": "object",
     "required": ["peak_power_kwp", "mounting_type", "azimuth_deg", "tilt_deg"],
@@ -187,6 +198,12 @@ _PV_DESIGN = {
         "mounting_type": {"type": "string", "enum": ["free", "building"]},
         "azimuth_deg": {"type": "number", "minimum": -180, "maximum": 180},
         "tilt_deg": {"type": "number", "minimum": 0, "maximum": 90},
+        "sub_arrays": {
+            "type": "array",
+            "items": _PV_SUB_ARRAY,
+            "minItems": 2,
+            "maxItems": 2,
+        },
     },
     "additionalProperties": False,
 }

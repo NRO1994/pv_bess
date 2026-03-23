@@ -189,8 +189,24 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
   <div class="g g4">
     <div><label class="req">Peak Power (kWp)</label><input id="f_pv_kwp" type="number" min="0" step="any" value="5000"/></div>
     <div><label class="req">Montageart</label><select id="f_pv_mount"><option value="free">Freifläche</option><option value="building">Gebäude</option></select></div>
-    <div><label class="req">Azimut (Grad)</label><input id="f_pv_azi" type="number" min="-180" max="180" step="any" value="0"/><div class="hint">0° = Süd</div></div>
-    <div><label class="req">Neigung (Grad)</label><input id="f_pv_tilt" type="number" min="0" max="90" step="any" value="30"/></div>
+    <div id="pv_single_azi"><label class="req">Azimut (Grad)</label><input id="f_pv_azi" type="number" min="-180" max="180" step="any" value="0"/><div class="hint">0° = Süd</div></div>
+    <div id="pv_single_tilt"><label class="req">Neigung (Grad)</label><input id="f_pv_tilt" type="number" min="0" max="90" step="any" value="30"/></div>
+  </div>
+  <div style="margin:8px 0">
+    <label class="sw"><input type="checkbox" id="f_pv_dual" onchange="toggleDualAzimuth()"/>Ost/West-Ausrichtung (Dual-Azimut)</label>
+  </div>
+  <div id="pv_dual_block" style="display:none">
+    <div class="g g3" style="margin-bottom:6px">
+      <div><label class="req">Array 1 – Leistung (kWp)</label><input id="f_pv_sa1_kwp" type="number" min="0" step="any" value="2500"/></div>
+      <div><label class="req">Array 1 – Azimut (°)</label><input id="f_pv_sa1_azi" type="number" min="-180" max="180" step="any" value="90"/><div class="hint">90° = West</div></div>
+      <div><label class="req">Array 1 – Neigung (°)</label><input id="f_pv_sa1_tilt" type="number" min="0" max="90" step="any" value="25"/></div>
+    </div>
+    <div class="g g3" style="margin-bottom:6px">
+      <div><label class="req">Array 2 – Leistung (kWp)</label><input id="f_pv_sa2_kwp" type="number" min="0" step="any" value="2500"/></div>
+      <div><label class="req">Array 2 – Azimut (°)</label><input id="f_pv_sa2_azi" type="number" min="-180" max="180" step="any" value="-90"/><div class="hint">-90° = Ost</div></div>
+      <div><label class="req">Array 2 – Neigung (°)</label><input id="f_pv_sa2_tilt" type="number" min="0" max="90" step="any" value="25"/></div>
+    </div>
+    <div id="pv_dual_warn" class="hint" style="color:#F73E5E;display:none"></div>
   </div>
   <hr class="sep"/>
   <div class="sub-title">Performance</div>
@@ -296,14 +312,14 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
   <div class="sec-title">Finanzierung</div>
   <div class="sub-title">Fremdkapital &amp; Allgemein</div>
   <div class="g g4">
-    <div><label class="req">Fremdkapitalanteil (%)</label><input id="f_fi_lev" type="number" min="0" max="100" step="0.1" value="75"/></div>
-    <div><label class="req">Zinssatz (%)</label><input id="f_fi_ir" type="number" min="0" step="0.01" value="4.5"/></div>
-    <div><label class="req">Kreditlaufzeit (Jahre)</label><input id="f_fi_tenor" type="number" min="1" value="18"/></div>
+    <div><label class="req">Fremdkapitalanteil (%)</label><input id="f_fi_lev" type="number" min="0" max="100" step="1" value="80"/></div>
+    <div><label class="req">Zinssatz (%)</label><input id="f_fi_ir" type="number" min="0" step="0.01" value="3.8"/></div>
+    <div><label class="req">Kreditlaufzeit (Jahre)</label><input id="f_fi_tenor" type="number" min="1" value="20"/></div>
     <div><label class="req">Inflation (%)</label><input id="f_fi_infl" type="number" min="0" step="0.1" value="2" max="100"/></div>
     <div><label class="req">Diskontsatz (%)</label><input id="f_discount" type="number" min="0" step="1" value="6" max="100"/></div>
-    <div><label>Equity-IRR Ziel</label><input id="f_fi_irrtgt" type="number" step="any"/><div class="hint">Optional</div></div>
+    <div><label>Equity-IRR Ziel</label><input id="f_fi_irrtgt" type="number" step="any" value="8.1"/><div class="hint">Optional</div></div>
     <div><label class="sw"><input type="checkbox" id="f_fi_p90" checked/> Debt Sizing mit P90</label></div>
-    <div><label>Debt Sizing Downside (%)</label><input id="f_fi_dsds" type="number" min="0" max="100" step="0.1"/></div>
+    <div><label>Debt Sizing Downside (%)</label><input id="f_fi_dsds" type="number" min="0" max="100" step="0.1" value="15"/></div>
   </div>
   <hr class="sep"/>
   <div class="sub-title">Vermarktung - Base Case für Grid-Search</div>
@@ -336,7 +352,7 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
   <div class="g g3">
     <div><label class="req">AfA PV (Jahre)</label><input id="f_tx_afapv" type="number" min="1" value="20"/></div>
     <div><label class="req">AfA BESS (Jahre)</label><input id="f_tx_afabs" type="number" min="1" value="10"/></div>
-    <div><label class="req">GewSt Hebesatz</label><input id="f_tx_hebe" type="number" min="0" step="1" value="400"/></div>
+    <div><label class="req">GewSt Hebesatz</label><input id="f_tx_hebe" type="number" min="0" step="1" value="450"/></div>
     <div><label class="req">GewSt Messzahl</label><input id="f_tx_mess" type="number" min="0" max="1" step="0.001" value="0.035"/></div>
     <div><label>KSt (%)</label><input id="f_tx_kst" type="number" min="0" max="100" step="0.1" value="15"/></div>
     <div><label>Soli (%)</label><input id="f_tx_soli" type="number" min="0" max="100" step="0.1" value="5.5"/></div>
@@ -548,6 +564,29 @@ function setListValues(id,vals){
 function v(id){const e=document.getElementById(id);if(!e)return null;if(e.type==='checkbox')return e.checked;if(e.type==='number')return e.value===''?null:parseFloat(e.value);return e.value||null;}
 function sv(id,val){const e=document.getElementById(id);if(!e)return;if(e.type==='checkbox')e.checked=!!val;else if(val!==null&&val!==undefined)e.value=val;}
 
+/* --- Dual-Azimuth toggle --- */
+function toggleDualAzimuth(){
+  const dual=v('f_pv_dual');
+  document.getElementById('pv_single_azi').style.display=dual?'none':'';
+  document.getElementById('pv_single_tilt').style.display=dual?'none':'';
+  document.getElementById('pv_dual_block').style.display=dual?'':'none';
+  if(dual)validateDualPower();
+}
+function validateDualPower(){
+  const total=v('f_pv_kwp')||0;
+  const s1=v('f_pv_sa1_kwp')||0;
+  const s2=v('f_pv_sa2_kwp')||0;
+  const warn=document.getElementById('pv_dual_warn');
+  if(Math.abs(s1+s2-total)>0.1){
+    warn.textContent='Summe der Teil-Leistungen ('+(s1+s2).toLocaleString('de-DE')+' kWp) \u2260 Gesamtleistung ('+total.toLocaleString('de-DE')+' kWp)';
+    warn.style.display='';
+  }else{warn.style.display='none';}
+}
+['f_pv_kwp','f_pv_sa1_kwp','f_pv_sa2_kwp'].forEach(id=>{
+  const el=document.getElementById(id);
+  if(el)el.addEventListener('input',()=>{if(v('f_pv_dual'))validateDualPower();});
+});
+
 /* --- Hardcoded price scenarios (from full_input_example.json) --- */
 function getDefaultPriceScenarios(){
   return [
@@ -627,7 +666,11 @@ function buildJSON(){
       location:{latitude:v('f_lat'),longitude:v('f_lon'),pvgis_database:v('f_pvgis')},
       technology:{
         pv:{
-          design:{peak_power_kwp:pvCase?v('f_pv_kwp'):0,mounting_type:v('f_pv_mount'),azimuth_deg:v('f_pv_azi'),tilt_deg:v('f_pv_tilt')},
+          design:(function(){
+            const d={peak_power_kwp:pvCase?v('f_pv_kwp'):0,mounting_type:v('f_pv_mount'),azimuth_deg:v('f_pv_azi'),tilt_deg:v('f_pv_tilt')};
+            if(pvCase&&v('f_pv_dual')){d.sub_arrays=[{power_kwp:v('f_pv_sa1_kwp'),azimuth_deg:v('f_pv_sa1_azi'),tilt_deg:v('f_pv_sa1_tilt')},{power_kwp:v('f_pv_sa2_kwp'),azimuth_deg:v('f_pv_sa2_azi'),tilt_deg:v('f_pv_sa2_tilt')}];}
+            return d;
+          })(),
           performance:{degradation_rate_pct_per_year:v('f_pv_deg'),pv_availability_pct:v('f_pv_avail')},
           costs:{capex:{fixed_eur:v('f_pv_cx_fix'),eur_per_kw:v('f_pv_cx_kw'),eur_per_kwh:v('f_pv_cx_kwh'),pct_of_capex:v('f_pv_cx_pct')},opex:{fixed_eur:v('f_pv_ox_fix'),eur_per_kw:v('f_pv_ox_kw'),eur_per_kwh:v('f_pv_ox_kwh'),pct_of_capex:v('f_pv_ox_pct')}}
         },
@@ -721,6 +764,12 @@ function loadFromJSON(j){
   if(pvKwp===0){sv('f_pv_case',false);}else{sv('f_pv_case',true);}
   sv('f_pv_kwp',pvKwp||5000);
   sv('f_pv_mount',pvd.mounting_type);sv('f_pv_azi',pvd.azimuth_deg);sv('f_pv_tilt',pvd.tilt_deg);
+  if(pvd.sub_arrays&&pvd.sub_arrays.length===2){
+    sv('f_pv_dual',true);
+    sv('f_pv_sa1_kwp',pvd.sub_arrays[0].power_kwp);sv('f_pv_sa1_azi',pvd.sub_arrays[0].azimuth_deg);sv('f_pv_sa1_tilt',pvd.sub_arrays[0].tilt_deg);
+    sv('f_pv_sa2_kwp',pvd.sub_arrays[1].power_kwp);sv('f_pv_sa2_azi',pvd.sub_arrays[1].azimuth_deg);sv('f_pv_sa2_tilt',pvd.sub_arrays[1].tilt_deg);
+  }else{sv('f_pv_dual',false);}
+  toggleDualAzimuth();
   sv('f_pv_deg',pvp.degradation_rate_pct_per_year);sv('f_pv_avail',pvp.pv_availability_pct);
   sv('f_pv_cx_fix',(pvc.capex||{}).fixed_eur);sv('f_pv_cx_kw',(pvc.capex||{}).eur_per_kw);sv('f_pv_cx_kwh',(pvc.capex||{}).eur_per_kwh);sv('f_pv_cx_pct',(pvc.capex||{}).pct_of_capex);
   sv('f_pv_ox_fix',(pvc.opex||{}).fixed_eur);sv('f_pv_ox_kw',(pvc.opex||{}).eur_per_kw);sv('f_pv_ox_kwh',(pvc.opex||{}).eur_per_kwh);sv('f_pv_ox_pct',(pvc.opex||{}).pct_of_capex);
@@ -777,6 +826,11 @@ function buildReview(){
     ['BESS-Case',v('f_bess_case')?'Ja':'Nein'],
     ['Standort',fmt(ps.location.latitude)+' / '+fmt(ps.location.longitude)],
     ['PV Peak Power',fmt(t.pv.design.peak_power_kwp,'kWp')],
+    ...(t.pv.design.sub_arrays?[
+      ['PV Ausrichtung','Dual-Azimut (Ost/West)'],
+      ['  Array 1',fmt(t.pv.design.sub_arrays[0].power_kwp,'kWp')+' / Azi '+fmt(t.pv.design.sub_arrays[0].azimuth_deg,'°')+' / Neigung '+fmt(t.pv.design.sub_arrays[0].tilt_deg,'°')],
+      ['  Array 2',fmt(t.pv.design.sub_arrays[1].power_kwp,'kWp')+' / Azi '+fmt(t.pv.design.sub_arrays[1].azimuth_deg,'°')+' / Neigung '+fmt(t.pv.design.sub_arrays[1].tilt_deg,'°')],
+    ]:[['PV Azimut / Neigung',fmt(t.pv.design.azimuth_deg,'°')+' / '+fmt(t.pv.design.tilt_deg,'°')]]),
     ['PV Degradation',fmt(t.pv.performance.degradation_rate_pct_per_year,'%/a')],
     ['BESS Skalierung',getListValues('lst_bscale').join(', ')+' %'],
     ['BESS E/P Ratios',getListValues('lst_epr').join(', ')+' h'],
@@ -802,6 +856,7 @@ function persist(){
     j._step=curStep;
     j._pvCase=v('f_pv_case');
     j._bessCase=v('f_bess_case');
+    j._pvDual=v('f_pv_dual');
     j._lists={
       bscale:getListValues('lst_bscale'),epr:getListValues('lst_epr'),
       eeg:getListValues('lst_eeg_fp'),col_fp:getListValues('lst_col_fp'),
@@ -818,6 +873,7 @@ function restore(){
     loadFromJSON(j);
     if(j._pvCase!==undefined)sv('f_pv_case',j._pvCase);
     if(j._bessCase!==undefined)sv('f_bess_case',j._bessCase);
+    if(j._pvDual!==undefined){sv('f_pv_dual',j._pvDual);toggleDualAzimuth();}
     updateCaseTabs();
     if(j._step)goStep(j._step);
   }catch(e){}
