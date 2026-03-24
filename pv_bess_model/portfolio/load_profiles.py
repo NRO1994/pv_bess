@@ -40,7 +40,7 @@ from pv_bess_model.config.defaults import (
 logger = logging.getLogger(__name__)
 
 # Path to the BDEW profile JSON (relative to project root)
-_BDEW_JSON_PATH = Path(".data/bdew_profile_2025.json")
+_BDEW_JSON_PATH = Path("../.data/bdew_profile_2025.json")
 
 # Mapping from calendar month (1-indexed) to BDEW JSON month keys
 _MONTH_KEYS: list[str] = [

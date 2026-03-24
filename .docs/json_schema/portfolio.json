@@ -16,19 +16,705 @@
     "generation": [
       {
         "type": "pv",
-        "name": "PV-Dachanlage Betriebshof",
-        "peak_power_kwp": 750,
+        "name": "EDL - Mönkhofer Weg 179 - Haus 1",
+        "peak_power_kwp": 15.0,
         "location": {
           "latitude": 53.865,
           "longitude": 10.686,
-          "pvgis_database": "PVGIS-SARAH"
+          "pvgis_database": "PVGIS-SARAH3"
         },
         "degradation_rate_pct_per_year": 0.5,
         "system_loss_pct": 10,
         "mounting_type": "building",
         "azimuth_deg": 10,
         "tilt_deg": 20,
-        "start_year": 1
+        "start_year": 1,
+        "commissioning_year": 2026,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV Mönkhofer Weg 179 c - Haus 3",
+        "peak_power_kwp": 15.0,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2026,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - Mönkhofer Weg 179a, b - Haus 2",
+        "peak_power_kwp": 45.08,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2026,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PVA Skandikai Logistikhalle 1",
+        "peak_power_kwp": 2647.8,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2025,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PVA Skandikai Logistikhalle 2",
+        "peak_power_kwp": 1261.8,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2025,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV Berliner Platz 1",
+        "peak_power_kwp": 23.76,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2025,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV Auf auf dem Baggersand Travemünde",
+        "peak_power_kwp": 17.22,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2025,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV Auf auf dem Baggersand Travemünde",
+        "peak_power_kwp": 25.2,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2025,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV Auf auf dem Baggersand Travemünde",
+        "peak_power_kwp": 25.5,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2025,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV Auf auf dem Baggersand Travemünde",
+        "peak_power_kwp": 11.76,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2025,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV Auf auf dem Baggersand Travemünde",
+        "peak_power_kwp": 15.96,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2025,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV Auf auf dem Baggersand Travemünde",
+        "peak_power_kwp": 27.72,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2025,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV Auf auf dem Baggersand Travemünde",
+        "peak_power_kwp": 28.14,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2025,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PV Skandikai Fährhalle",
+        "peak_power_kwp": 743.58,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2025,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PVA Lübeck Geniner Str. 80 Parkpalette A",
+        "peak_power_kwp": 184.8,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2024,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PVA Lübeck Geniner Str. 80 Parkpalette B",
+        "peak_power_kwp": 184.8,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2024,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV JKQ Haus 1",
+        "peak_power_kwp": 8.1,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2023,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV JKQ Haus 2",
+        "peak_power_kwp": 8.1,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2023,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV JKQ Haus 3",
+        "peak_power_kwp": 8.1,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2023,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV JKQ 4",
+        "peak_power_kwp": 8.1,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2023,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV JKQ Haus 5",
+        "peak_power_kwp": 12.54,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2023,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV JKQ Haus 6",
+        "peak_power_kwp": 10.89,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2023,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PV-Anlage JKQ Haus 10",
+        "peak_power_kwp": 8.91,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2023,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV JKQ Haus 9",
+        "peak_power_kwp": 8.91,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2023,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV Grothe-Bau",
+        "peak_power_kwp": 53.0,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2023,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV Rothebek",
+        "peak_power_kwp": 13.4,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2021,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PV Deponie Niemark 1",
+        "peak_power_kwp": 748.88,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2021,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "EDL - PV- Hüxstraße",
+        "peak_power_kwp": 74.25,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2021,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PV Lindtorf 1 (EW)",
+        "peak_power_kwp": 748.44,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2021,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PV Lindtorf 2 (ADC)",
+        "peak_power_kwp": 712.8,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2021,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PV Zentrum MuK Lübeck",
+        "peak_power_kwp": 40.32,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2019,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PV Ivendorf Behälterdach",
+        "peak_power_kwp": 44.4,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2019,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PV BS Schützengilde",
+        "peak_power_kwp": 66.96,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2019,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PV Herrenwyk Habotec",
+        "peak_power_kwp": 39.95,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2019,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PV Seeretz G&H Schule",
+        "peak_power_kwp": 20.74,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2019,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PV Kücknitz Trave Gymnasium",
+        "peak_power_kwp": 59.52,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2019,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PV Kücknitz BHKW VTW",
+        "peak_power_kwp": 24.57,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2019,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PV Lindtorf 3 (EW)",
+        "peak_power_kwp": 749.89,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2019,
+        "lifetime": 25
+      },
+      {
+        "type": "pv",
+        "name": "PV Lindtorf 4 (ADC)",
+        "peak_power_kwp": 155.76,
+        "location": {
+          "latitude": 53.865,
+          "longitude": 10.686,
+          "pvgis_database": "PVGIS-SARAH3"
+        },
+        "degradation_rate_pct_per_year": 0.5,
+        "system_loss_pct": 10,
+        "mounting_type": "building",
+        "azimuth_deg": 10,
+        "tilt_deg": 20,
+        "start_year": 1,
+        "commissioning_year": 2019,
+        "lifetime": 25
       }
     ],
     "load": [
@@ -46,8 +732,14 @@
     {
       "type": "bess",
       "name": "BESS-Demo",
-      "annual_addition_kw": [100, 150],
-      "e_to_p_ratio_hours": [2, 3],
+      "annual_addition_kw": [
+        100,
+        150
+      ],
+      "e_to_p_ratio_hours": [
+        2,
+        3
+      ],
       "round_trip_efficiency_pct": 85,
       "min_soc_pct": 10,
       "max_soc_pct": 90,
@@ -57,7 +749,9 @@
     {
       "type": "heat_pump",
       "name": "WP-Quartier",
-      "annual_addition_kw": [50],
+      "annual_addition_kw": [
+        50
+      ],
       "cop_nominal": 3.5,
       "cop_reference_temp_c": 2,
       "annual_thermal_demand_mwh": 900,
@@ -68,7 +762,11 @@
       "type": "ev_charging",
       "name": "Öffentliche Ladesäulen",
       "mean_kw_per_unit": 22,
-      "annual_additional_units": [5, 10, 10],
+      "annual_additional_units": [
+        5,
+        10,
+        10
+      ],
       "daily_energy_demand_kwh_per_unit": 12,
       "time_window": {
         "arrival_hour": 17,
