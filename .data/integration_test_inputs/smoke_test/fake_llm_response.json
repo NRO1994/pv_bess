@@ -5,5 +5,6 @@
   "tab_4_eeg": "Die EEG-Sensitivitaetsanalyse untersucht verschiedene Floor-Preise und deren Auswirkung auf die Eigenkapitalrendite.",
   "tab_5_collar": "Die Collar-PPA-Analyse bewertet verschiedene Floor-/Cap-Kombinationen fuer die Vermarktung.",
   "tab_6_baseload": "Die Baseload-PPA-Analyse untersucht verschiedene Baseload-Niveaus und PPA-Preise.",
-  "tab_7_cashflow": "Die Cashflow-Analyse zeigt die jaehrliche Entwicklung der Einnahmen, Ausgaben und des Eigenkapital-Cashflows ueber die Projektlaufzeit."
+  "tab_7_target_irr": "Die IRR-Schwellenanalyse zeigt, unter welchen Monte-Carlo-Parameterkombinationen der Ziel-IRR je Preisszenario erreicht wird.",
+  "tab_8_cashflow": "Die Cashflow-Analyse zeigt die jaehrliche Entwicklung der Einnahmen, Ausgaben und des Eigenkapital-Cashflows ueber die Projektlaufzeit."
 }

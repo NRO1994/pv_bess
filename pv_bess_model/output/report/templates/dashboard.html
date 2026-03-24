@@ -1254,7 +1254,305 @@
     });
 
     // ================================================================
-    //  TAB 7: Cashflow-Analyse
+    //  TAB 7: IRR-Schwellenanalyse
+    // ================================================================
+    addTab('target_irr', 'IRR-Schwellenanalyse', D.target_irr_analysis != null, (panel) => {
+      const tia = D.target_irr_analysis;
+      const targetPct = tia.target_irr_pct;
+      panel.innerHTML = `<h2>IRR-Schwellenanalyse</h2>
+        <p style="color:var(--muted);margin:0 0 12px">Für jede Kombination aus Analyse und Preisszenario wird der MC-Datenpunkt gezeigt,
+        dessen Equity IRR dem Ziel-IRR von <b>${fmtNum(targetPct, 2)} %</b> am nächsten liegt.
+        Die Kostenwerte zeigen die tatsächlichen CAPEX/OPEX in EUR nach Anwendung des jeweiligen Noise-Faktors.</p>`;
+
+      // Dropdown filter for analysis_label
+      const labels = [...new Set(tia.representatives.map(r => r.analysis_label))].sort();
+      const filterDiv = document.createElement('div'); filterDiv.style.cssText = 'margin:0 0 12px;display:flex;gap:8px;align-items:center;';
+      filterDiv.innerHTML = '<label style="font-weight:600;color:var(--muted)">Analyse:</label>';
+      const sel = document.createElement('select');
+      sel.style.cssText = 'padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--fg);font-size:13px;';
+      sel.innerHTML = '<option value="__all__">Alle</option>' + labels.map(l => `<option value="${l}">${l || 'Baseline'}</option>`).join('');
+      filterDiv.appendChild(sel);
+      panel.appendChild(filterDiv);
+
+      // View toggle
+      const viewToggle = document.createElement('div');
+      viewToggle.style.cssText = 'display:flex;gap:4px;margin:0 0 12px;';
+      const views = ['Tabelle', 'Faktor-Headroom', 'Verfügbarkeits-Scatter'];
+      const viewBtns = views.map((v, i) => {
+        const b = document.createElement('button');
+        b.textContent = v; b.style.cssText = 'padding:4px 12px;border:1px solid var(--border);border-radius:4px;background:' + (i === 0 ? 'var(--corp-orange)' : 'var(--surface)') + ';color:' + (i === 0 ? '#fff' : 'var(--fg)') + ';cursor:pointer;font-size:12px;';
+        viewToggle.appendChild(b);
+        return b;
+      });
+      panel.appendChild(viewToggle);
+
+      // Actions
+      const actions = document.createElement('div'); actions.className = 'actions';
+      const btnCsv = document.createElement('button'); btnCsv.textContent = 'CSV';
+      const btnPng = document.createElement('button'); btnPng.textContent = 'PNG';
+      actions.append(btnCsv, btnPng);
+      panel.appendChild(actions);
+
+      // Content containers
+      const tableContainer = document.createElement('div');
+      const barContainer = document.createElement('div'); barContainer.id = 'chart-target-irr-bar'; barContainer.style.display = 'none';
+      const scatterContainer = document.createElement('div'); scatterContainer.id = 'chart-target-irr-scatter'; scatterContainer.style.display = 'none';
+      panel.append(tableContainer, barContainer, scatterContainer);
+
+      let currentView = 0;
+      let barChart = null, scatterChart = null;
+
+      function setView(idx) {
+        currentView = idx;
+        viewBtns.forEach((b, i) => {
+          b.style.background = i === idx ? 'var(--corp-orange)' : 'var(--surface)';
+          b.style.color = i === idx ? '#fff' : 'var(--fg)';
+        });
+        tableContainer.style.display = idx === 0 ? '' : 'none';
+        barContainer.style.display = idx === 1 ? '' : 'none';
+        scatterContainer.style.display = idx === 2 ? '' : 'none';
+        if (idx === 1) renderBarChart();
+        if (idx === 2) renderScatterChart();
+      }
+      viewBtns.forEach((b, i) => b.onclick = () => setView(i));
+
+      function getFiltered() {
+        const v = sel.value;
+        if (v === '__all__') return tia.representatives;
+        return tia.representatives.filter(r => r.analysis_label === v);
+      }
+      function getFilteredScatter() {
+        const v = sel.value;
+        if (v === '__all__') return tia.scatter_data;
+        return tia.scatter_data.filter(r => r.analysis_label === v);
+      }
+
+      // ----------------------------------------------------------
+      //  View 1: Table
+      // ----------------------------------------------------------
+      function renderTable() {
+        const data = getFiltered();
+        let html = '<table class="param-table" style="font-size:12px;width:100%;"><thead><tr>';
+        html += '<th>Analyse</th><th>Preisszenario</th><th>Equity IRR</th><th>Δ Target</th>';
+        if (tia.has_pv) html += '<th>CAPEX PV</th><th>OPEX PV</th><th>Verfügb. PV</th>';
+        if (tia.has_bess) html += '<th>CAPEX BESS</th><th>OPEX BESS</th><th>Verfügb. BESS</th>';
+        html += '<th>Capture Rate</th><th>Methode</th></tr></thead><tbody>';
+
+        for (const r of data) {
+          const delta = r.delta_irr_pp;
+          const deltaStr = delta != null ? (delta >= 0 ? '+' : '') + fmtNum(delta, 2) + ' pp' : 'n/a';
+          const deltaColor = delta != null ? (Math.abs(delta) <= 0.05 ? 'var(--corp-lightblue)' : delta < 0 ? 'var(--corp-red)' : 'var(--corp-orange)') : '';
+
+          html += '<tr>';
+          html += `<td>${r.analysis_label || 'Baseline'}</td>`;
+          html += `<td>${r.price_scenario}</td>`;
+          html += `<td>${r.equity_irr_pct != null ? fmtNum(r.equity_irr_pct, 2) + ' %' : 'n/a'}</td>`;
+          html += `<td style="color:${deltaColor}">${deltaStr}</td>`;
+
+          if (tia.has_pv) {
+            html += _factorCell(r.capex_factor_pv, fmtEur(r.capex_pv_eur), true);
+            html += _factorCell(r.opex_factor_pv, fmtEur(r.opex_pv_eur), true);
+            html += _factorCell(r.pv_availability_factor, fmtNum(r.pv_availability_pct, 1) + ' %', false);
+          }
+          if (tia.has_bess) {
+            html += _factorCell(r.capex_factor_bess, fmtEur(r.capex_bess_eur), true);
+            html += _factorCell(r.opex_factor_bess, fmtEur(r.opex_bess_eur), true);
+            html += _factorCell(r.bess_availability_factor, fmtNum(r.bess_availability_pct, 1) + ' %', false);
+          }
+          html += `<td>${r.capture_rate_ct_kwh != null ? fmtNum(r.capture_rate_ct_kwh, 2) + ' ct/kWh' : 'n/a'}</td>`;
+
+          const mCls = r.selection_method === 'exact' ? 'background:rgba(0,189,220,0.2);color:#006EB2'
+                     : r.selection_method === 'closest' ? 'background:rgba(255,130,0,0.2);color:#FF8200'
+                     : 'background:rgba(247,62,94,0.2);color:#F73E5E';
+          html += `<td><span style="display:inline-block;padding:1px 6px;border-radius:999px;font-size:10px;${mCls}">${r.selection_method}</span></td>`;
+          html += '</tr>';
+        }
+        html += '</tbody></table>';
+        tableContainer.innerHTML = html;
+      }
+
+      function _factorCell(factor, formatted, isCost) {
+        // For costs: factor > 1 means higher cost (bad, red), factor < 1 means lower cost (good, green)
+        // For availability: factor > 1 is not possible (clipped), factor < 1 means lower availability (bad, red)
+        let bg = 'transparent';
+        if (factor != null && factor !== 1.0) {
+          const isGood = isCost ? factor < 1.0 : factor > 1.0;
+          const isBad = isCost ? factor > 1.0 : factor < 1.0;
+          const intensity = Math.min(Math.abs(factor - 1.0) * 3, 0.25);
+          if (isGood) bg = `rgba(0,189,220,${intensity.toFixed(2)})`;
+          else if (isBad) bg = `rgba(247,62,94,${intensity.toFixed(2)})`;
+        }
+        return `<td style="background:${bg}">${formatted}</td>`;
+      }
+
+      // ----------------------------------------------------------
+      //  View 2: Factor headroom bar chart
+      // ----------------------------------------------------------
+      function renderBarChart() {
+        if (barChart) return; // already rendered
+        barContainer.innerHTML = '';
+        const data = getFiltered();
+        if (!data.length) { barContainer.innerHTML = '<p>Keine Daten</p>'; return; }
+
+        // Group by price_scenario
+        const scenarios = [...new Set(data.map(r => r.price_scenario))];
+        const factorKeys = [];
+        const factorLabels = [];
+        if (tia.has_pv) {
+          factorKeys.push('capex_factor_pv', 'opex_factor_pv', 'pv_availability_factor');
+          factorLabels.push('CAPEX PV', 'OPEX PV', 'Verfügb. PV');
+        }
+        if (tia.has_bess) {
+          factorKeys.push('capex_factor_bess', 'opex_factor_bess', 'bess_availability_factor');
+          factorLabels.push('CAPEX BESS', 'OPEX BESS', 'Verfügb. BESS');
+        }
+
+        const wrap = document.createElement('div'); wrap.className = 'chart-wrap';
+        const canvas = document.createElement('canvas'); canvas.setAttribute('role', 'img');
+        const tip = document.createElement('div'); tip.className = 'tooltip';
+        const rb = document.createElement('div'); rb.className = 'rubberband';
+        wrap.append(canvas, tip, rb);
+        barContainer.appendChild(wrap);
+
+        // Compute extent
+        let yMin = 0, yMax = 0;
+        for (const r of data) {
+          for (const fk of factorKeys) {
+            const dev = ((r[fk] || 1.0) - 1.0) * 100;
+            yMin = Math.min(yMin, dev); yMax = Math.max(yMax, dev);
+          }
+        }
+        const margin = Math.max(Math.abs(yMin), Math.abs(yMax), 5) * 1.3;
+
+        const chart = new InteractiveCartesianChart({
+          wrap, canvas, tooltipEl: tip, rubberEl: rb,
+          xLabelFormatter: v => {
+            const idx = Math.round(v);
+            return idx >= 0 && idx < factorLabels.length ? factorLabels[idx] : '';
+          },
+          yLabelFormatter: v => fmtNum(v, 1) + ' %',
+          getSeriesData: () => [],
+          drawContent: (ctx, ch) => {
+            const cr = ch.chartRect();
+            const nFactors = factorKeys.length;
+            const nScenarios = scenarios.length;
+            const groupWidth = (cr.right - cr.left) / (nFactors + 0.5);
+            const barWidth = groupWidth / (nScenarios + 1);
+
+            // Zero line
+            const zeroY = ch.dataYToCanvas(0);
+            ctx.strokeStyle = cssVar('--muted'); ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+            ctx.beginPath(); ctx.moveTo(cr.left, zeroY); ctx.lineTo(cr.right, zeroY); ctx.stroke();
+            ctx.setLineDash([]);
+
+            for (let fi = 0; fi < nFactors; fi++) {
+              for (let si = 0; si < nScenarios; si++) {
+                const scData = data.filter(r => r.price_scenario === scenarios[si]);
+                if (!scData.length) continue;
+                const r = scData[0]; // one representative per scenario in filtered data
+                const dev = ((r[factorKeys[fi]] || 1.0) - 1.0) * 100;
+                const bx = cr.left + groupWidth * 0.25 + fi * groupWidth + si * barWidth;
+                const by = ch.dataYToCanvas(dev);
+                ctx.fillStyle = CORP_COLORS[si % CORP_COLORS.length];
+                if (dev >= 0) ctx.fillRect(bx, by, barWidth * 0.85, zeroY - by);
+                else ctx.fillRect(bx, zeroY, barWidth * 0.85, by - zeroY);
+              }
+            }
+          },
+          tooltipFormatter: () => null,
+        });
+
+        chart.viewX = [-0.5, factorKeys.length - 0.5];
+        chart.viewY = [-margin, margin];
+        chart.render();
+        barChart = chart;
+        allCharts.push(chart);
+
+        // Legend
+        const legend = document.createElement('div'); legend.style.cssText = 'display:flex;gap:12px;margin:8px 0;flex-wrap:wrap;';
+        scenarios.forEach((s, i) => {
+          const d = document.createElement('span');
+          d.innerHTML = `<span style="display:inline-block;width:12px;height:12px;background:${CORP_COLORS[i % CORP_COLORS.length]};border-radius:2px;vertical-align:middle;margin-right:4px;"></span>${s}`;
+          d.style.fontSize = '12px';
+          legend.appendChild(d);
+        });
+        barContainer.appendChild(legend);
+      }
+
+      // ----------------------------------------------------------
+      //  View 3: Availability scatter plot
+      // ----------------------------------------------------------
+      function renderScatterChart() {
+        if (scatterChart) return;
+        scatterContainer.innerHTML = '';
+        const pts = getFilteredScatter();
+        if (!pts.length) { scatterContainer.innerHTML = '<p>Keine Daten im IRR-Band</p>'; return; }
+
+        // Build series: one per price_scenario, X = availability (PV or BESS), Y = equity IRR
+        const scenarios = [...new Set(pts.map(p => p.price_scenario))];
+        const useBess = tia.has_bess;
+        const availKey = useBess ? 'bess_availability_pct' : 'pv_availability_pct';
+        const availLabel = useBess ? 'BESS-Verfügbarkeit' : 'PV-Verfügbarkeit';
+
+        const scatterSeries = scenarios.map((sc, i) => {
+          const sp = pts.filter(p => p.price_scenario === sc);
+          return {
+            label: sc,
+            x: sp.map(p => p[availKey]),
+            y: sp.map(p => p.equity_irr_pct),
+            color: CORP_COLORS[i % CORP_COLORS.length],
+          };
+        });
+
+        const r = createMultiLineChart('chart-target-irr-scatter', scatterSeries, {
+          xLabel: availLabel, yLabel: 'Equity IRR',
+          xFormatter: v => fmtNum(v, 1) + ' %',
+          yFormatter: v => fmtNum(v, 2) + ' %',
+          hLines: [{y: targetPct, label: 'Ziel IRR', color: '#E74C3C', dash: [8, 3, 2, 3]}]
+        });
+        if (r) { scatterChart = r.chart; allCharts.push(r.chart); }
+      }
+
+      // CSV export
+      btnCsv.onclick = () => {
+        const data = getFiltered();
+        const h = ['Analyse', 'Preisszenario', 'Equity_IRR_%', 'Delta_pp'];
+        if (tia.has_pv) h.push('CAPEX_PV_EUR', 'OPEX_PV_EUR', 'Verfuegb_PV_%');
+        if (tia.has_bess) h.push('CAPEX_BESS_EUR', 'OPEX_BESS_EUR', 'Verfuegb_BESS_%');
+        h.push('Capture_Rate_ct_kWh', 'Methode');
+        const rows = data.map(r => {
+          const row = [r.analysis_label || 'Baseline', r.price_scenario,
+            (r.equity_irr_pct||0).toFixed(2).replace('.',','), (r.delta_irr_pp||0).toFixed(2).replace('.',',')];
+          if (tia.has_pv) row.push((r.capex_pv_eur||0).toFixed(0), (r.opex_pv_eur||0).toFixed(0), (r.pv_availability_pct||0).toFixed(1).replace('.',','));
+          if (tia.has_bess) row.push((r.capex_bess_eur||0).toFixed(0), (r.opex_bess_eur||0).toFixed(0), (r.bess_availability_pct||0).toFixed(1).replace('.',','));
+          row.push((r.capture_rate_ct_kwh||0).toFixed(2).replace('.',','), r.selection_method);
+          return row;
+        });
+        downloadFile(D.scenario_name + '_irr_schwellenanalyse.csv', 'text/csv', arrayToCSV(h, rows));
+      };
+      btnPng.onclick = () => {
+        const chart = currentView === 1 && barChart ? barChart : scatterChart;
+        if (chart) downloadCanvasPNG(chart.canvas, D.scenario_name + '_irr_schwellenanalyse.png');
+      };
+
+      // Initial render
+      renderTable();
+      sel.onchange = () => {
+        renderTable();
+        barChart = null; scatterChart = null;
+        barContainer.innerHTML = ''; scatterContainer.innerHTML = '';
+        if (currentView === 1) renderBarChart();
+        if (currentView === 2) renderScatterChart();
+      };
+
+      // LLM text
+      const llm = document.createElement('div'); llm.className = 'llm-text';
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_7_target_irr) + LLM_HINT_HTML;
+      panel.appendChild(llm);
+    });
+
+    // ================================================================
+    //  TAB 8: Cashflow-Analyse
     // ================================================================
     addTab('cashflow', 'Cashflow-Analyse', true, (panel) => {
       panel.innerHTML = `<h2>Cashflow-Analyse des Base Cases</h2>`;
@@ -1324,7 +1622,7 @@
 
       // LLM text
       const llm = document.createElement('div'); llm.className = 'llm-text';
-      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_7_cashflow) + LLM_HINT_HTML;
+      llm.innerHTML = renderMarkdownLight(D.llm_texts?.tab_8_cashflow) + LLM_HINT_HTML;
       panel.appendChild(llm);
     });
 

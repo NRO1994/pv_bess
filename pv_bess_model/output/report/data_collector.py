@@ -28,6 +28,8 @@ from pv_bess_model.config.defaults import (
     MWH_TO_KWH,
     PRICE_DATA_ORIGIN,
     REPORT_MODEL_VERSION,
+    TARGET_IRR_SCATTER_BAND_PP,
+    TARGET_IRR_TOLERANCE_PP,
 )
 from pv_bess_model.config.loader import PriceWeatherScenario, ScenarioConfig
 from pv_bess_model.finance.cashflow import CashflowProjection
@@ -159,6 +161,9 @@ class HtmlReportData:
     # -- Reference lines for charts --
     baseline_market_irr: float | None = None  # Project IRR from pure spot market (Direktvermarktung), in %
     equity_irr_target: float | None = None  # Internal minimum IRR requirement, in %
+
+    # -- IRR threshold analysis (Tab 7, optional) --
+    target_irr_analysis: dict | None = None
 
     # -- LLM texts (populated after manual Copilot step) --
     llm_texts: dict[str, str] = field(default_factory=dict)
@@ -394,6 +399,166 @@ def _extract_sensitivity(result: Any) -> list[dict] | None:
 
 
 # ---------------------------------------------------------------------------
+# IRR threshold analysis
+# ---------------------------------------------------------------------------
+
+
+def _extract_target_irr_analysis(
+    all_mc_results: list,
+    target_irr_pct: float,
+    capex_pv: float,
+    capex_bess: float,
+    opex_pv: float,
+    opex_bess: float,
+    has_bess: bool,
+    has_pv: bool,
+) -> dict | None:
+    """Find, for each (analysis_label, price_scenario) combination, the MC
+    iteration closest to the target IRR and collect scatter data.
+
+    Parameters
+    ----------
+    all_mc_results:
+        List of ``MCResult`` objects from baseline and sensitivity analyses.
+    target_irr_pct:
+        Target Equity IRR in percent (e.g. 12.0).
+    capex_pv, capex_bess:
+        Base PV / BESS CAPEX in EUR (from optimal grid point).
+    opex_pv, opex_bess:
+        Base-year PV / BESS OPEX in EUR (from optimal grid point).
+    has_bess:
+        Whether the optimal configuration includes a BESS.
+    has_pv:
+        Whether the optimal configuration includes PV.
+
+    Returns
+    -------
+    dict | None
+        Structured data for the HTML tab, or ``None`` when no MC data exists.
+    """
+    # Flatten all iterations from every MCResult
+    all_iterations: list = []
+    for mc_result in all_mc_results:
+        all_iterations.extend(mc_result.iterations)
+
+    if not all_iterations:
+        return None
+
+    # Group by (analysis_label, price_scenario)
+    groups: dict[tuple[str, str], list] = {}
+    for it in all_iterations:
+        key = (it.analysis_label, it.price_scenario)
+        groups.setdefault(key, []).append(it)
+
+    representatives: list[dict] = []
+    for (label, scenario), iterations in sorted(groups.items()):
+        rep = _select_representative(iterations, target_irr_pct)
+        if rep is None:
+            continue
+
+        irr_pct = rep.equity_irr * 100.0 if rep.equity_irr is not None else None
+        delta = (irr_pct - target_irr_pct) if irr_pct is not None else None
+
+        representatives.append({
+            "analysis_label": label,
+            "price_scenario": scenario,
+            "equity_irr_pct": irr_pct,
+            "delta_irr_pp": delta,
+            "capex_pv_eur": rep.capex_factor_pv * capex_pv,
+            "capex_bess_eur": rep.capex_factor_bess * capex_bess,
+            "opex_pv_eur": rep.opex_factor_pv * opex_pv,
+            "opex_bess_eur": rep.opex_factor_bess * opex_bess,
+            "pv_availability_pct": rep.pv_availability_factor * 100.0,
+            "bess_availability_pct": rep.bess_availability_factor * 100.0,
+            "capture_rate_ct_kwh": (
+                rep.capture_rate * 100.0 if rep.capture_rate is not None else None
+            ),
+            # Raw factors for bar chart
+            "capex_factor_pv": rep.capex_factor_pv,
+            "capex_factor_bess": rep.capex_factor_bess,
+            "opex_factor_pv": rep.opex_factor_pv,
+            "opex_factor_bess": rep.opex_factor_bess,
+            "pv_availability_factor": rep.pv_availability_factor,
+            "bess_availability_factor": rep.bess_availability_factor,
+            "selection_method": _classify_match(rep, target_irr_pct),
+        })
+
+    if not representatives:
+        return None
+
+    # Scatter data: all iterations within ±band of target IRR
+    scatter_data: list[dict] = []
+    for it in all_iterations:
+        if it.equity_irr is None:
+            continue
+        irr_pct = it.equity_irr * 100.0
+        if abs(irr_pct - target_irr_pct) <= TARGET_IRR_SCATTER_BAND_PP:
+            scatter_data.append({
+                "analysis_label": it.analysis_label,
+                "price_scenario": it.price_scenario,
+                "equity_irr_pct": irr_pct,
+                "pv_availability_pct": it.pv_availability_factor * 100.0,
+                "bess_availability_pct": it.bess_availability_factor * 100.0,
+                "avg_cost_factor": (
+                    it.capex_factor_pv + it.capex_factor_bess
+                    + it.opex_factor_pv + it.opex_factor_bess
+                ) / 4.0,
+            })
+
+    return {
+        "target_irr_pct": target_irr_pct,
+        "has_bess": has_bess,
+        "has_pv": has_pv,
+        "capex_pv_base": capex_pv,
+        "capex_bess_base": capex_bess,
+        "opex_pv_base": opex_pv,
+        "opex_bess_base": opex_bess,
+        "representatives": representatives,
+        "scatter_data": scatter_data,
+    }
+
+
+def _select_representative(iterations: list, target_irr_pct: float):
+    """Select the single most representative MC iteration for a group.
+
+    Selection priority:
+    1. Exact match (within tolerance) → lowest capture rate.
+    2. No exact match → closest |delta|, tiebreak by lowest capture rate.
+    3. All IRRs None → iteration with highest equity_irr as fallback.
+    """
+    valid = [it for it in iterations if it.equity_irr is not None]
+    if not valid:
+        return None
+
+    def _capture_sort_key(it):
+        return it.capture_rate if it.capture_rate is not None else float("inf")
+
+    # Check exact matches
+    exact = [
+        it for it in valid
+        if abs(it.equity_irr * 100.0 - target_irr_pct) <= TARGET_IRR_TOLERANCE_PP
+    ]
+    if exact:
+        return min(exact, key=_capture_sort_key)
+
+    # Closest by delta, tiebreak by capture rate
+    return min(
+        valid,
+        key=lambda it: (abs(it.equity_irr * 100.0 - target_irr_pct), _capture_sort_key(it)),
+    )
+
+
+def _classify_match(it, target_irr_pct: float) -> str:
+    """Classify the selection method for a representative iteration."""
+    if it.equity_irr is None:
+        return "fallback"
+    delta = abs(it.equity_irr * 100.0 - target_irr_pct)
+    if delta <= TARGET_IRR_TOLERANCE_PP:
+        return "exact"
+    return "closest"
+
+
+# ---------------------------------------------------------------------------
 # Marketing params
 # ---------------------------------------------------------------------------
 
@@ -452,6 +617,7 @@ def collect_report_data(
     baseline_market_irr: float | None = None,
     equity_irr_target: float | None = None,
     price_inflation_factors: np.ndarray[float] | None = None,
+    all_mc_results: list | None = None,
 ) -> HtmlReportData:
     """Aggregate all simulation results into an ``HtmlReportData`` instance.
 
@@ -504,6 +670,20 @@ def collect_report_data(
     json_filename = ""
     if scenario.path is not None:
         json_filename = scenario.path.name
+
+    # IRR threshold analysis
+    target_irr_data = None
+    if all_mc_results and equity_irr_target is not None:
+        target_irr_data = _extract_target_irr_analysis(
+            all_mc_results=all_mc_results,
+            target_irr_pct=equity_irr_target * 100.0,
+            capex_pv=opt.capex_pv,
+            capex_bess=opt.capex_bess,
+            opex_pv=opt.opex_pv,
+            opex_bess=opt.opex_bess,
+            has_bess=opt.bess_capacity_kwh > 0,
+            has_pv=scenario.pv_peak_kwp > 0,
+        )
 
     return HtmlReportData(
         # Meta
@@ -558,4 +738,6 @@ def collect_report_data(
         # Reference lines
         baseline_market_irr=(baseline_market_irr * 100.0) if baseline_market_irr is not None else None,
         equity_irr_target=(equity_irr_target*100) if equity_irr_target is not None else None,
+        # IRR threshold analysis
+        target_irr_analysis=target_irr_data,
     )

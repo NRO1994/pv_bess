@@ -83,6 +83,15 @@ DEFAULT_MC_SIGMA_BESS_AVAILABILITY_PCT: float = 2.0
 MC_WEIGHT_TOLERANCE: float = 1e-6
 """Tolerance for checking that MC price scenario weights sum to 1.0."""
 
+TARGET_IRR_TOLERANCE_PP: float = 0.05
+"""Tolerance in percentage points for matching an MC iteration's Equity IRR
+to the target IRR.  An iteration with ``|equity_irr_pct - target_irr_pct|
+<= 0.05`` is considered an exact match."""
+
+TARGET_IRR_SCATTER_BAND_PP: float = 2.0
+"""Half-width in percentage points around the target IRR for selecting MC
+iterations to include in the scatter plot data of the IRR threshold analysis."""
+
 # ---------------------------------------------------------------------------
 # BESS / dispatch defaults
 # ---------------------------------------------------------------------------

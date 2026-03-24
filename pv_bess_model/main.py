@@ -1214,7 +1214,8 @@ def run(args: argparse.Namespace) -> int:
         analyses=analyses_cfg,
         baseline_market_irr=baseline_market_irr,
         equity_irr_target=equity_irr_target,
-        price_inflation_factors=list(yearly_inflation_rates.values()) if yearly_inflation_rates is not None else None
+        price_inflation_factors=list(yearly_inflation_rates.values()) if yearly_inflation_rates is not None else None,
+        all_mc_results=all_mc_results,
     )
 
     # ------------------------------------------------------------------
@@ -1244,6 +1245,7 @@ def _generate_report(
     baseline_market_irr: float | None = None,
     equity_irr_target: float | None = None,
     price_inflation_factors: list[float] | None = None,
+    all_mc_results: list | None = None,
 ) -> None:
     """Generate the interactive HTML report (Step 7b).
 
@@ -1311,7 +1313,8 @@ def _generate_report(
             analyses=analyses,
             baseline_market_irr=baseline_market_irr,
             equity_irr_target=equity_irr_target,
-            price_inflation_factors=price_inflation_factors
+            price_inflation_factors=price_inflation_factors,
+            all_mc_results=all_mc_results,
         )
     except Exception:
         logger.error("Report data collection failed.", exc_info=True)

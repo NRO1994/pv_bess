@@ -34,7 +34,8 @@ _EXPECTED_KEYS = [
     "tab_4_eeg",
     "tab_5_collar",
     "tab_6_baseload",
-    "tab_7_cashflow",
+    "tab_7_target_irr",
+    "tab_8_cashflow",
 ]
 
 _FALLBACK_TEXT = (
@@ -139,6 +140,46 @@ def render_prompt(data: Any) -> str:
 
     sensitivity_section = "\n".join(sens_lines) if sens_lines else ""
 
+    # Target IRR threshold analysis section
+    target_irr_lines: list[str] = []
+    if isinstance(data.target_irr_analysis, dict):
+        tia = data.target_irr_analysis
+        target_irr_lines.append(f"### IRR-Schwellenanalyse (Ziel-IRR: {tia['target_irr_pct']:.2f} %)")
+        target_irr_lines.append(
+            f"- Basis CAPEX PV: {tia['capex_pv_base']:,.0f} EUR, "
+            f"CAPEX BESS: {tia['capex_bess_base']:,.0f} EUR"
+        )
+        target_irr_lines.append(
+            f"- Basis OPEX PV: {tia['opex_pv_base']:,.0f} EUR/a, "
+            f"OPEX BESS: {tia['opex_bess_base']:,.0f} EUR/a"
+        )
+        for rep in tia["representatives"]:
+            label = rep["analysis_label"] or "Baseline"
+            sc = rep["price_scenario"]
+            irr = f"{rep['equity_irr_pct']:.2f} %" if rep["equity_irr_pct"] is not None else "n/a"
+            delta = f"{rep['delta_irr_pp']:+.2f} pp" if rep["delta_irr_pp"] is not None else "n/a"
+            line = (
+                f"- [{label} / {sc}] Equity IRR: {irr} (Delta: {delta}), "
+                f"Methode: {rep['selection_method']}"
+            )
+            if tia["has_pv"]:
+                line += (
+                    f", CAPEX PV: {rep['capex_pv_eur']:,.0f} EUR"
+                    f", OPEX PV: {rep['opex_pv_eur']:,.0f} EUR"
+                    f", Verfuegb. PV: {rep['pv_availability_pct']:.1f} %"
+                )
+            if tia["has_bess"]:
+                line += (
+                    f", CAPEX BESS: {rep['capex_bess_eur']:,.0f} EUR"
+                    f", OPEX BESS: {rep['opex_bess_eur']:,.0f} EUR"
+                    f", Verfuegb. BESS: {rep['bess_availability_pct']:.1f} %"
+                )
+            if rep["capture_rate_ct_kwh"] is not None:
+                line += f", Capture Rate: {rep['capture_rate_ct_kwh']:.2f} ct/kWh"
+            target_irr_lines.append(line)
+
+    target_irr_section = "\n".join(target_irr_lines) if target_irr_lines else ""
+
     # Substitutions
     replacements = {
         "{{scenario_name}}": data.scenario_name,
@@ -178,6 +219,7 @@ def render_prompt(data: Any) -> str:
         "{{weather_years}}": weather_stats,
         "{{price_scenarios_summary}}": price_scenarios_summary,
         "{{sensitivity_section}}": sensitivity_section,
+        "{{target_irr_section}}": target_irr_section,
         "{{baseline_market_irr}}": (
             f"{data.baseline_market_irr:.2f} %" if data.baseline_market_irr is not None else "n/a"
         ),

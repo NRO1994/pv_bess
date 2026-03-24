@@ -122,6 +122,8 @@ Wenn Kennzahlen „nicht zusammenpassen“, musst du das ausdrücklich thematisi
 
 {{sensitivity_section}}
 
+{{target_irr_section}}
+
 ## Aufgabe
 
 Erstelle für jeden Tab des Ergebnis-Reports einen erklärenden Text, der:
@@ -143,7 +145,8 @@ Antworte ausschließlich mit folgendem JSON‑Objekt (kein Markdown‑Codeblock,
   "tab_4_eeg": "Analyse der EEG-Sensitivität (3-4 Absätze). null falls keine EEG-Analyse.",
   "tab_5_collar": "Analyse der PPA-Collar-Ergebnisse (3-4 Absätze). null falls keine Collar-Analyse.",
   "tab_6_baseload": "Analyse der PPA-Baseload-Ergebnisse (3-4 Absätze). null falls keine Baseload-Analyse.",
-  "tab_7_cashflow": "Einschätzung der Cashflow-Entwicklung und der KPIs (3-4 Absätze)."
+  "tab_7_target_irr": "Analyse der IRR-Schwellenwerte: Unter welchen MC-Parameterkombinationen wird der Ziel-IRR je Preisszenario erreicht? Welche Kosten-/Verfügbarkeitsrisiken sind kritisch? (3-4 Absätze). null falls keine MC-Simulation.",
+  "tab_8_cashflow": "Einschätzung der Cashflow-Entwicklung und der KPIs (3-4 Absätze)."
 }
 ```
 
@@ -173,7 +176,13 @@ Antworte ausschließlich mit folgendem JSON‑Objekt (kein Markdown‑Codeblock,
   entstehen (Energie‑Defizit‑Kosten, Constraint‑Risiko). Wenn mehrere IRR‑Werte ohne Parameterbezug gegeben sind, fasse
   die Bandbreite zusammen und erkläre, welche Parameter typischerweise die Varianten treiben, ohne konkrete Zuordnung zu
   behaupten.
-- **tab_7_cashflow**: Setze Equity IRR, Project IRR, NPV, LCOE, Payback, DSCR min/avg in Beziehung: Was ist konsistent,
+- **tab_7_target_irr**: Interpretiere die IRR-Schwellenanalyse aus Bankability-Sicht. Welche Preisszenarien erlauben das
+  Erreichen des Ziel-IRR, und welche Kosten-/Verfügbarkeitsannahmen sind dafür nötig? Wo liegt der kritischste
+  Einzelfaktor (z. B. BESS-Verfügbarkeit, PV-CAPEX)? Vergleiche die Selektionsmethoden (exact vs. closest): Wie nah
+  kommt das Projekt am Ziel-IRR in den verschiedenen Szenarien? Verknüpfe die Ergebnisse mit der Cashflow-Robustheit
+  und dem DSCR-Signal. Wenn nur „closest"-Matches mit großem Delta vorhanden sind, ordne das als Warnsignal ein. Wenn
+  keine MC-Daten vorhanden sind, setze auf null.
+- **tab_8_cashflow**: Setze Equity IRR, Project IRR, NPV, LCOE, Payback, DSCR min/avg in Beziehung: Was ist konsistent,
   was widersprüchlich? Interpretiere die Schuldendienstfähigkeit über die Laufzeit (auch wenn nur DSCR‑Aggregate
   vorliegen). Liefere mindestens eine Normalisierung (z. B. NPV je kWp) und ordne die Aussagekraft von Payback gegenüber
   NPV/IRR ein. Bei negativen DSCR‑Werten muss explizit erklärt werden, ob das Projekt so nicht bankfähig wäre oder ob
