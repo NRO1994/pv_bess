@@ -604,6 +604,7 @@ def _build_grey_milp(
         timestep_hours: float = 1.0,
         baseload_kwh: float = 0.0,
         shortfall_penalty_prices: np.ndarray | None = None,
+        grid_max_import_kw: float | None = None,
 ) -> tuple[np.ndarray, csc_matrix, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Construct the Grey-Mode MILP matrices with binary charge/discharge indicator.
 
@@ -787,8 +788,9 @@ def _build_grey_milp(
     var_ub[2 * T: 3 * T] = np.inf
     # curtail[t]: [0, inf]
     var_ub[3 * T: 4 * T] = np.inf
-    # charge_grid[t]: [0, inf] (power limited via constraint)
-    var_ub[4 * T: 5 * T] = np.inf
+    # charge_grid[t]: [0, grid_max_import_energy] (grid import power limit)
+    _effective_import_kw = grid_max_import_kw if grid_max_import_kw is not None else grid_max_kw
+    var_ub[4 * T: 5 * T] = _effective_import_kw * timestep_hours
     # discharge_grey[t]: [0, inf] (power limited via constraint)
     var_ub[5 * T: 6 * T] = np.inf
     # soc_green[t]: [0, soc_max]
@@ -960,6 +962,7 @@ def optimize_day(
         price_cap_eur_per_kwh: float = 0.0,
         grid_loss_factor: float = 1.0,
         baseload_mw: float = 0.0,
+        grid_max_import_kw: float | None = None,
 ) -> DailyDispatchResult:
     """Solve the daily dispatch LP for one day.
 
@@ -1006,6 +1009,10 @@ def optimize_day(
         prices (no floor/cap/goo) because the baseload settlement is a
         constant that does not affect LP decisions.  Defaults to 0.0
         (no baseload PPA).
+    grid_max_import_kw : float | None
+        Maximum grid import power in **kW** (Grey Mode only).  Limits
+        ``charge_grid[t]`` per timestep.  When ``None``, falls back to
+        ``grid_max_kw``.  Has no effect in Green Mode.
 
     Returns
     -------
@@ -1083,6 +1090,7 @@ def optimize_day(
             timestep_hours=bess.timestep_hours,
             baseload_kwh=baseload_kwh,
             shortfall_penalty_prices=shortfall_penalty,
+            grid_max_import_kw=grid_max_import_kw,
         )
     else:
         raise ValueError(f"Unknown operating mode: '{mode}'. Use 'green' or 'grey'.")

@@ -291,7 +291,8 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
 <section class="card" data-step="5">
   <div class="sec-title">Netzanschluss</div>
   <div class="g g3">
-    <div><label class="req">Max. Einspeisung (kW)</label><input id="f_gr_kw" type="number" min="0.001" step="any" value="4000"/></div>
+    <div><label class="req">Max. Einspeiseleistung (kW)</label><input id="f_gr_kw" type="number" min="0.001" step="any" value="4000"/></div>
+    <div><label>Max. Bezugsleistung (kW)</label><input id="f_gr_import_kw" type="number" min="0.001" step="any" placeholder="= Einspeiseleistung"/></div>
     <div><label>Systemverluste (%)</label><input id="f_gr_loss" type="number" min="0" max="100" step="0.1" value="14"/></div>
   </div>
   <div class="sub-title">Kosten</div>
@@ -690,6 +691,7 @@ function buildJSON(){
         },
         grid_connection:{
           max_export_kw:v('f_gr_kw'),
+          ...(v('f_gr_import_kw')!=null&&v('f_gr_import_kw')!==''?{max_import_kw:v('f_gr_import_kw')}:{}),
           system_loss_pct:v('f_gr_loss'),
           costs:{capex:{fixed_eur:v('f_gr_cx_fix'),eur_per_kw:v('f_gr_cx_kw'),eur_per_kwh:v('f_gr_cx_kwh'),pct_of_capex:v('f_gr_cx_pct')},opex:{fixed_eur:v('f_gr_ox_fix'),eur_per_kw:v('f_gr_ox_kw'),eur_per_kwh:v('f_gr_ox_kwh'),pct_of_capex:v('f_gr_ox_pct')}}
         }
@@ -787,7 +789,7 @@ function loadFromJSON(j){
   sv('f_bs_optfee',(bsc.opex||{}).optimization_fee_pct);
   const rpl=bsc.replacement||{};sv('f_bs_repl_en',rpl.enabled);sv('f_bs_repl_yr',rpl.year);sv('f_bs_repl_fix',rpl.fixed_eur);sv('f_bs_repl_kw',rpl.eur_per_kw);sv('f_bs_repl_kwh',rpl.eur_per_kwh);sv('f_bs_repl_pct',rpl.pct_of_capex);sv('f_bs_repl_cf',rpl.capacity_factor_pct);
   const gr=(p.technology||{}).grid_connection||{};
-  sv('f_gr_kw',gr.max_export_kw);sv('f_gr_loss',gr.system_loss_pct);
+  sv('f_gr_kw',gr.max_export_kw);sv('f_gr_import_kw',gr.max_import_kw);sv('f_gr_loss',gr.system_loss_pct);
   const grc=gr.costs||{};
   sv('f_gr_cx_fix',(grc.capex||{}).fixed_eur);sv('f_gr_cx_kw',(grc.capex||{}).eur_per_kw);sv('f_gr_cx_kwh',(grc.capex||{}).eur_per_kwh);sv('f_gr_cx_pct',(grc.capex||{}).pct_of_capex);
   sv('f_gr_ox_fix',(grc.opex||{}).fixed_eur);sv('f_gr_ox_kw',(grc.opex||{}).eur_per_kw);sv('f_gr_ox_kwh',(grc.opex||{}).eur_per_kwh);sv('f_gr_ox_pct',(grc.opex||{}).pct_of_capex);
@@ -835,7 +837,8 @@ function buildReview(){
     ['BESS Skalierung',getListValues('lst_bscale').join(', ')+' %'],
     ['BESS E/P Ratios',getListValues('lst_epr').join(', ')+' h'],
     ['BESS RTE',fmt(t.bess.performance.round_trip_efficiency_pct,'%')],
-    ['Netz max. Export',fmt(t.grid_connection.max_export_kw,'kW')],
+    ['Netz max. Einspeisung',fmt(t.grid_connection.max_export_kw,'kW')],
+    ...(t.grid_connection.max_import_kw?[['Netz max. Bezug',fmt(t.grid_connection.max_import_kw,'kW')]]:[]),
     ['FK-Anteil',fmt(ps.finance.leverage_pct,'%')],
     ['Zinssatz',fmt(ps.finance.interest_rate_pct,'%')],
     ['Diskontsatz',fmt(ps.finance.discount_rate!=null?ps.finance.discount_rate*100:null,'%')],

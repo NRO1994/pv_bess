@@ -348,6 +348,7 @@ _GRID_CONNECTION = {
     "required": ["max_export_kw", "costs"],
     "properties": {
         "max_export_kw": {"type": "number", "exclusiveMinimum": 0},
+        "max_import_kw": {"type": "number", "exclusiveMinimum": 0},
         "system_loss_pct": {"type": "number", "minimum": 0, "maximum": 100},
         "costs": {
             "type": "object",

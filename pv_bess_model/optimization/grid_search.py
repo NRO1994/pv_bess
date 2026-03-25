@@ -109,6 +109,9 @@ class GridSearchConfig:
         replacement unit). Applied to the nameplate capacity after replacement.
     grid_max_kw:
         Maximum grid export power in kW.
+    grid_max_import_kw:
+        Maximum grid import power in kW (Grey Mode only).  Falls back to
+        ``grid_max_kw`` when ``None``.
     grid_costs_capex:
         CAPEX cost config dict for grid connection.
     grid_costs_opex:
@@ -197,6 +200,7 @@ class GridSearchConfig:
 
     # Grid
     grid_max_kw: float
+    grid_max_import_kw: float | None
     grid_loss_factor: float
     grid_costs_capex: dict
     grid_costs_opex: dict
@@ -350,6 +354,7 @@ class _GridPointArgs:
     # Engine config
     operating_mode: str
     grid_max_kw: float
+    grid_max_import_kw: float | None
     grid_loss_factor: float
     bess_rte: float
     bess_min_soc_pct: float
@@ -444,6 +449,7 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
     engine_config = DispatchEngineConfig(
         mode=args.operating_mode,
         grid_max_kw=args.grid_max_kw,
+        grid_max_import_kw=args.grid_max_import_kw,
         bess_nameplate_kwh=args.bess_capacity_kwh,
         bess_max_charge_kw=args.bess_power_kw,
         bess_max_discharge_kw=args.bess_power_kw,
@@ -684,6 +690,7 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
                     bess_capacity_kwh=bess_capacity_kwh,
                     operating_mode=config.operating_mode,
                     grid_max_kw=config.grid_max_kw,
+                    grid_max_import_kw=config.grid_max_import_kw,
                     grid_loss_factor=config.grid_loss_factor,
                     bess_rte=config.bess_rte,
                     bess_min_soc_pct=config.bess_min_soc_pct,

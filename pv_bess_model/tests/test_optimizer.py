@@ -1469,3 +1469,148 @@ class TestGridLossFactor:
 
         expected_revenue = pv * glf * spot
         np.testing.assert_allclose(result["revenue"], expected_revenue, atol=ATOL)
+
+
+# ---------------------------------------------------------------------------
+# Grid Max Import Power (Grey Mode only)
+# ---------------------------------------------------------------------------
+
+
+class TestGridMaxImportKw:
+    """Tests for the ``grid_max_import_kw`` parameter."""
+
+    def test_grid_import_limit_none_uses_export_limit(self) -> None:
+        """When *grid_max_import_kw* is None, charge_grid is bounded by BESS
+        charge power (existing behaviour, no extra grid import limit)."""
+        T = 4
+        pv = np.zeros(T)
+        # Strongly negative prices → optimizer wants to charge from grid
+        spot = np.array([-0.10, -0.10, 0.10, 0.10])
+        bess = _make_bess(power_kw=100.0, capacity_kwh=400.0, rte=1.0,
+                          min_soc_pct=0.0, max_soc_pct=100.0)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="grey",
+            start_soc_kwh=0.0,
+            start_soc_green_kwh=0.0,
+            start_soc_grey_kwh=0.0,
+            grid_max_import_kw=None,
+        )
+        # charge_grid limited by bess max_charge_kw=100 kWh/h
+        assert np.all(result["charge_grid"] <= 100.0 + ATOL)
+
+    def test_grid_import_limit_restricts_charge_grid(self) -> None:
+        """When *grid_max_import_kw* is set below BESS charge power,
+        charge_grid respects the grid import limit per timestep."""
+        T = 4
+        pv = np.zeros(T)
+        spot = np.array([-0.10, -0.10, 0.10, 0.10])
+        # BESS can charge at 100 kW, but grid import limited to 50 kW
+        bess = _make_bess(power_kw=100.0, capacity_kwh=400.0, rte=1.0,
+                          min_soc_pct=0.0, max_soc_pct=100.0)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="grey",
+            start_soc_kwh=0.0,
+            start_soc_green_kwh=0.0,
+            start_soc_grey_kwh=0.0,
+            grid_max_import_kw=50.0,
+        )
+        # charge_grid should not exceed 50 kWh/h (hourly timestep)
+        assert np.all(result["charge_grid"] <= 50.0 + ATOL)
+
+    def test_grid_import_limit_does_not_affect_green_mode(self) -> None:
+        """In Green Mode, there is no charge_grid — grid_max_import_kw
+        has no effect and the result should be identical."""
+        T = 4
+        pv = np.array([100.0, 100.0, 0.0, 0.0])
+        spot = np.array([0.05, 0.05, 0.10, 0.10])
+        bess = _make_bess(power_kw=100.0, capacity_kwh=400.0, rte=0.9,
+                          min_soc_pct=0.0, max_soc_pct=100.0)
+
+        result_none = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="green",
+            start_soc_kwh=0.0,
+            grid_max_import_kw=None,
+        )
+        result_limited = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="green",
+            start_soc_kwh=0.0,
+            grid_max_import_kw=10.0,
+        )
+        np.testing.assert_allclose(
+            result_none["revenue"], result_limited["revenue"], atol=ATOL
+        )
+
+    def test_grid_import_limit_does_not_affect_charge_pv(self) -> None:
+        """charge_pv (PV charging) must not be limited by grid_max_import_kw.
+        Only charge_grid (grid import) is affected."""
+        T = 4
+        pv = np.array([200.0, 200.0, 0.0, 0.0])
+        spot = np.array([0.02, 0.02, 0.10, 0.10])
+        bess = _make_bess(power_kw=100.0, capacity_kwh=400.0, rte=1.0,
+                          min_soc_pct=0.0, max_soc_pct=100.0)
+
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="grey",
+            start_soc_kwh=0.0,
+            start_soc_green_kwh=0.0,
+            start_soc_grey_kwh=0.0,
+            grid_max_import_kw=10.0,  # Very low import limit
+        )
+        # charge_pv can still go up to bess max_charge_kw (100 kWh/h)
+        assert np.max(result["charge_pv"]) > 10.0 + ATOL
+
+    def test_grid_import_limit_binding(self) -> None:
+        """When grid import is the binding constraint (lower than BESS charge
+        power), total charge_grid energy is limited accordingly."""
+        T = 4
+        pv = np.zeros(T)
+        # All negative prices → optimizer wants to charge max from grid
+        spot = np.full(T, -0.10)
+        bess = _make_bess(power_kw=200.0, capacity_kwh=800.0, rte=1.0,
+                          min_soc_pct=0.0, max_soc_pct=100.0)
+
+        import_limit_kw = 50.0
+        result = optimize_day(
+            pv_production_kwh=pv,
+            spot_prices_eur_per_kwh=spot,
+            price_fixed_eur_per_kwh=0.0,
+            bess=bess,
+            grid_max_kw=500.0,
+            mode="grey",
+            start_soc_kwh=0.0,
+            start_soc_green_kwh=0.0,
+            start_soc_grey_kwh=0.0,
+            grid_max_import_kw=import_limit_kw,
+        )
+        # Each timestep: charge_grid ≤ 50 kWh (hourly)
+        assert np.all(result["charge_grid"] <= import_limit_kw + ATOL)
+        # Total charged should be 50 * 4 = 200 kWh (all negative → charge max)
+        total_charged = float(np.sum(result["charge_grid"]))
+        assert abs(total_charged - import_limit_kw * T) < ATOL

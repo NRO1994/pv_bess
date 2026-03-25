@@ -114,6 +114,10 @@ class DispatchEngineConfig:
     grid_loss_factor:
         Grid loss factor in (0, 1].  Applied to green energy at the grid
         connection point.  Defaults to 1.0 (no losses).
+    grid_max_import_kw:
+        Maximum grid import power in kW (Grey Mode only).  Used to limit
+        ``charge_grid[t]`` in the LP optimizer.  Falls back to
+        ``grid_max_kw`` when ``None``.
     """
 
     mode: OperatingMode
@@ -131,9 +135,22 @@ class DispatchEngineConfig:
     commissioning_year: int
     bess_power_kw: float
     grid_loss_factor: float = 1.0
+    grid_max_import_kw: float | None = None
     timestep_hours: float = 1.0
     intervals_per_day: int = 24
     intervals_per_year: int = 8760
+
+    @property
+    def effective_grid_max_import_kw(self) -> float:
+        """Return the effective grid import power limit in kW.
+
+        Falls back to ``grid_max_kw`` when no explicit import limit is set.
+        """
+        return (
+            self.grid_max_import_kw
+            if self.grid_max_import_kw is not None
+            else self.grid_max_kw
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -595,6 +612,7 @@ def run_simulation(
                     goo_premium_eur_per_kwh=goo_price,
                     price_cap_eur_per_kwh=cap_price,
                     grid_loss_factor=config.grid_loss_factor,
+                    grid_max_import_kw=config.effective_grid_max_import_kw,
                 )
 
             # Update SoC carry-over

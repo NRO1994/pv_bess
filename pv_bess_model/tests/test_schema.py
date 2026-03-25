@@ -788,3 +788,41 @@ class TestGridConnection:
         )
         with pytest.raises(jsonschema.ValidationError):
             validate_scenario(bad)
+
+
+# ---------------------------------------------------------------------------
+# Grid max_import_kw schema tests
+# ---------------------------------------------------------------------------
+
+
+class TestGridMaxImportKwSchema:
+    """Schema validation for the optional ``max_import_kw`` field."""
+
+    def test_grid_connection_with_max_import_kw(self, sample_scenario_config_green):
+        """Schema accepts max_import_kw as an optional property."""
+        good = _deep_set(
+            sample_scenario_config_green,
+            2000.0,
+            "project_settings",
+            "technology",
+            "grid_connection",
+            "max_import_kw",
+        )
+        validate_scenario(good)  # should not raise
+
+    def test_grid_connection_without_max_import_kw(self, sample_scenario_config_green):
+        """Schema still accepts grid_connection without max_import_kw (backward compat)."""
+        validate_scenario(sample_scenario_config_green)  # should not raise
+
+    def test_grid_connection_max_import_kw_zero_rejected(self, sample_scenario_config_green):
+        """max_import_kw: 0 must be rejected (exclusiveMinimum)."""
+        bad = _deep_set(
+            sample_scenario_config_green,
+            0,
+            "project_settings",
+            "technology",
+            "grid_connection",
+            "max_import_kw",
+        )
+        with pytest.raises(jsonschema.ValidationError):
+            validate_scenario(bad)

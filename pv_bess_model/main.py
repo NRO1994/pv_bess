@@ -606,6 +606,11 @@ def run(args: argparse.Namespace) -> int:
     # Grid connection
     grid_connection = scenario.grid_connection
     grid_max_kw = float(grid_connection.get("max_export_kw", pv_peak_kwp))
+    grid_max_import_kw: float | None = (
+        float(grid_connection["max_import_kw"])
+        if "max_import_kw" in grid_connection
+        else None
+    )
     system_loss_pct = float(grid_connection.get("system_loss_pct", 0.0))
     grid_loss_factor = 1.0 - system_loss_pct / 100.0
 
@@ -874,6 +879,7 @@ def run(args: argparse.Namespace) -> int:
         replacement_capacity_factor_pct=replacement_capacity_factor_pct,
         optimization_fee_pct=optimization_fee_pct,
         grid_max_kw=grid_max_kw,
+        grid_max_import_kw=grid_max_import_kw,
         grid_loss_factor=grid_loss_factor,
         grid_costs_capex=grid_capex_cfg,
         grid_costs_opex=grid_opex_cfg,

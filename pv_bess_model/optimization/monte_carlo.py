@@ -293,6 +293,7 @@ def _run_scenario_dispatch(scenario_name: str) -> _ScenarioDispatch:
     engine_config = DispatchEngineConfig(
         mode=base.operating_mode,
         grid_max_kw=base.grid_max_kw,
+        grid_max_import_kw=base.grid_max_import_kw,
         bess_nameplate_kwh=optimal.bess_capacity_kwh,
         bess_max_charge_kw=optimal.bess_power_kw,
         bess_max_discharge_kw=optimal.bess_power_kw,

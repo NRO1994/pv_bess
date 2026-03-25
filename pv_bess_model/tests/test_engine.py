@@ -802,3 +802,39 @@ class TestBessSpotRevenue:
         )
 
         assert abs(result.annual_results[0].bess_spot_revenue) < ATOL
+
+
+# ---------------------------------------------------------------------------
+# Grid Max Import Power
+# ---------------------------------------------------------------------------
+
+
+class TestGridMaxImportKw:
+    """Tests for the ``grid_max_import_kw`` property on DispatchEngineConfig."""
+
+    def test_effective_grid_max_import_kw_fallback(self) -> None:
+        """When grid_max_import_kw is None, falls back to grid_max_kw."""
+        config = _make_config(grid_max_kw=300.0)
+        assert config.grid_max_import_kw is None
+        assert config.effective_grid_max_import_kw == 300.0
+
+    def test_effective_grid_max_import_kw_explicit(self) -> None:
+        """When grid_max_import_kw is set, property returns it."""
+        config = DispatchEngineConfig(
+            mode="grey",
+            grid_max_kw=300.0,
+            grid_max_import_kw=150.0,
+            bess_nameplate_kwh=200.0,
+            bess_max_charge_kw=100.0,
+            bess_max_discharge_kw=100.0,
+            bess_rte=0.90,
+            bess_min_soc_pct=10.0,
+            bess_max_soc_pct=90.0,
+            bess_degradation_rate=0.0,
+            pv_degradation_rate=0.0,
+            replacement=_replacement_disabled(),
+            lifetime_years=1,
+            commissioning_year=2027,
+            bess_power_kw=100.0,
+        )
+        assert config.effective_grid_max_import_kw == 150.0
