@@ -83,7 +83,7 @@ DEFAULT_MC_SIGMA_BESS_AVAILABILITY_PCT: float = 2.0
 MC_WEIGHT_TOLERANCE: float = 1e-6
 """Tolerance for checking that MC price scenario weights sum to 1.0."""
 
-TARGET_IRR_TOLERANCE_PP: float = 0.05
+TARGET_IRR_TOLERANCE_PP: float = 0.001
 """Tolerance in percentage points for matching an MC iteration's Equity IRR
 to the target IRR.  An iteration with ``|equity_irr_pct - target_irr_pct|
 <= 0.05`` is considered an exact match."""
@@ -349,7 +349,7 @@ REPORT_LLM_PROMPT_FILENAME: str = "_llm_prompt.md"
 REPORT_LLM_RESPONSE_FILENAME: str = "_llm_response.json"
 """Suffix for the LLM response JSON file expected in the output directory."""
 
-REPORT_MODEL_VERSION: str = "1.0"
+REPORT_MODEL_VERSION: str = "1.3"
 """Version string displayed on the report cover page."""
 
 PRICE_DATA_ORIGIN: str = "Prognos 2026"

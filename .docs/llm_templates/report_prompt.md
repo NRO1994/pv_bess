@@ -160,7 +160,7 @@ Antworte ausschließlich mit folgendem JSON‑Objekt (kein Markdown‑Codeblock,
 - **tab_2_timeseries**:  Erkläre, wie Wetterjahre/Ertragsvariabilität und Preisszenarien gemeinsam die Erlösstreuung
   treiben. Unterscheide Preisniveau‑Risiko (Mittelwerte) von Preisprofil‑Risiko (Intraday‑Spreads) und leite ab, was das
   für BESS‑Wert (Arbitrage) vs. PV‑Wert (Mengenrisiko) bedeutet. Es sind nur wenige Wetterjahre im Einsatz, da jedes
-  Priesszenario einem spezifischen Wetterjahr zugeordnet ist, sodass die Realität zwischen Wetter und Preis gegeben ist.
+  Preisszenario einem spezifischen Wetterjahr zugeordnet ist, sodass die Realität zwischen Wetter und Preis gegeben ist.
 - **tab_3_gridsearch**: Nur wenn mehrere Punkte: Interpretiere die Form der Optimum‑Fläche (Leistung vs. Kapazität),
   typische „zu klein/zu groß“-Effekte, und verbinde das mit Netzlimit und Vermarktungsmodus. Wenn nur 1 Punkt: setze
   null (wie gefordert) – aber sorge dafür, dass die Bedeutung (kein Optimierungsraum) in tab_1 oder tab_7 aufgegriffen

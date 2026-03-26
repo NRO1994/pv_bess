@@ -536,7 +536,7 @@ def _run_mc_iteration_fast(
 
     return MCIterationResult(
         iteration=iteration,
-        price_scenario=selected.name,
+        price_scenario=selected.label,
         capex_factor_pv=capex_factor_pv,
         capex_factor_bess=capex_factor_bess,
         opex_factor_pv=opex_factor_pv,

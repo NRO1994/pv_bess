@@ -334,8 +334,6 @@ class TestGridSearchBessOnlySizing:
         config = _make_grid_config(
             pv_peak_kwp=0.0,
             scales=[0.0, 100.0],
-            absolute_power_kw=500.0,
-            absolute_capacity_kwh=1_000.0,
         )
         result = run_grid_search(config)
         baseline = next(p for p in result.points if p.scale_pct == 0.0)

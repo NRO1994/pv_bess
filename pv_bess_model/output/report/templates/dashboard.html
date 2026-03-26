@@ -255,7 +255,7 @@
       const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
     }
     function arrayToCSV(headers, rows) {
-      const esc = (s) => { const t = String(s ?? '').replace(/,/g, '.'); return /[";;\n]/.test(t) ? `"${t.replace(/"/g,'""')}"` : t; };
+      const esc = (s) => { const t = String(s ?? '').replace(/,/g, ','); return /[";;\n]/.test(t) ? `"${t.replace(/"/g,'""')}"` : t; };
       const lines = [];
       if (headers?.length) lines.push(headers.map(esc).join(';'));
       for (const r of rows) lines.push(r.map(esc).join(';'));

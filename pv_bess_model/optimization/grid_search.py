@@ -484,7 +484,8 @@ def _evaluate_grid_point(args: _GridPointArgs) -> GridPointResult:
 
     annual_revenues_p50 = [r.total_revenue for r in sim_p50.annual_results]
     annual_bess_spot_revenues_p50 = [r.bess_spot_revenue for r in sim_p50.annual_results]
-    total_production_kwh = sum(r.pv_production + r.bess_discharge_grey + r.bess_discharge_green for r in sim_p50.annual_results)
+    total_production_kwh = sum(
+        r.pv_production + r.bess_discharge_grey + r.bess_discharge_green for r in sim_p50.annual_results)
 
     # Optional downside simulation – used for conservative DSCR calculation, P90 only on PV revenue
     annual_revenues_downside = [
@@ -636,7 +637,11 @@ def run_grid_search(config: GridSearchConfig) -> GridSearchResult:
     worker_args: list[_GridPointArgs] = []
     for scale_pct in scales:
         for e_to_p in config.e_to_p_ratio_hours:
-            if config.pv_peak_kwp > 0:
+            if config.bess_absolute_capacity_kwh and config.bess_absolute_power_kw and (
+                    config.bess_absolute_capacity_kwh > 0) and (config.bess_absolute_power_kw > 0):
+                bess_capacity_kwh = config.bess_absolute_capacity_kwh
+                bess_power_kw = config.bess_absolute_power_kw
+            elif config.pv_peak_kwp > 0:
                 # Standard ratio-based sizing
                 bess_power_kw = config.pv_peak_kwp * scale_pct / 100.0
                 bess_capacity_kwh = bess_power_kw * e_to_p

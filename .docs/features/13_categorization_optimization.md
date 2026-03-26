@@ -16,12 +16,12 @@
 Das bestehende Modell maximiert die Equity-IRR innerhalb eines einzelnen, manuell gewählten Szenarios.
 Das Meta-Optimierungsframework invertiert die Fragestellung:
 
-| Bestehendes Modell                          | Meta-Optimierung                                          |
-|---------------------------------------------|-----------------------------------------------------------|
-| 1 Szenario-JSON → max(IRR)                  | Ziel-IRR → min(Kosten) über alle Regime                   |
-| Vermarktung fix vorgegeben                  | Vermarktung als Entscheidungsvariable                     |
-| Betriebsmodus fix                           | Green/Grey als Vergleichsdimension                        |
-| Ergebnis: "beste BESS-Größe für Szenario X" | Ergebnis: "günstigstes Instrument für Ziel-IRR"           |
+| Bestehendes Modell                          | Meta-Optimierung                                |
+|---------------------------------------------|-------------------------------------------------|
+| 1 Szenario-JSON → max(IRR)                  | Ziel-IRR → min(Kosten) über alle Regime         |
+| Vermarktung fix vorgegeben                  | Vermarktung als Entscheidungsvariable           |
+| Betriebsmodus fix                           | Green/Grey als Vergleichsdimension              |
+| Ergebnis: "beste BESS-Größe für Szenario X" | Ergebnis: "günstigstes Instrument für Ziel-IRR" |
 
 ### 1.3 Nicht-Ziele (explizit ausgeschlossen)
 
@@ -40,16 +40,16 @@ Die Entscheidungsvariablen des Modells lassen sich in zwei Kategorien trennen:
 
 **Diskrete Regime (äußere Schleife – vorab enumerieren):**
 
-| Regime               | Freie Parameter                                 |
-|----------------------|-------------------------------------------------|
-| Direktvermarktung    | –                                               |
-| EEG-Floor            | Floor-Preis (€/kWh)                             |
-| PPA-Floor            | Floor-Preis (€/kWh), GoO (€/kWh), Laufzeit (a) |
-| PPA-Collar           | Floor (€/kWh), Cap (€/kWh), GoO, Laufzeit      |
-| PPA Pay-as-Produced  | Fixpreis (€/kWh), GoO, Laufzeit                 |
-| PPA Baseload         | Fixpreis (€/kWh), Baseload (MW), GoO, Laufzeit  |
+| Regime              | Freie Parameter                           |
+|---------------------|-------------------------------------------|
+| Direktvermarktung   | –                                         |
+| EEG-Floor           | Floor-Preis (€/kWh)                       |
+| PPA-Floor           | Floor-Preis (€/kWh), Laufzeit (a)         |
+| PPA-Collar          | Floor (€/kWh), Cap (€/kWh),  Laufzeit     |
+| PPA Pay-as-Produced | Fixpreis (€/kWh), Laufzeit                |
+| PPA Baseload        | Fixpreis (€/kWh), Baseload (MW), Laufzeit |
 
-Jeweils kombiniert mit Betriebsmodus: **green** oder **grey**.
+Für Cases mit BESS, jeweils kombiniert mit Betriebsmodus: **green** oder **grey**.
 
 **Stetige Design-Variablen (innere Optimierung – Grid Search):**
 
@@ -60,10 +60,10 @@ Jeweils kombiniert mit Betriebsmodus: **green** oder **grey**.
 
 ### 2.2 Capture Rate als vereinheitlichende Metrik
 
-Die Capture Rate ist der mengengewichtete durchschnittliche Erlöspreis relativ zum Spot-Referenzpreis:
+Die Capture Rate ist der mengengewichtete jährliche durchschnittliche Erlöspreis:
 
 ```
-c = (Σ revenue_t) / (Σ production_t × spot_reference)
+c = (Σ revenue_t) / (Σ production_t)
 ```
 
 Sie wird bereits in `metrics.py:compute_all_metrics()` berechnet und im `FinancialMetrics`-Objekt
@@ -81,6 +81,7 @@ c_total = c_PV,raw + Δc_Marketing + Δc_Flexibilität
 - `Δc_Flexibilität`: Uplift durch BESS (Arbitrage, Curtailment-Vermeidung)
 
 Diese Zerlegung ist **ableitbar aus den Grid-Search-Ergebnissen** – kein neuer Berechnungsschritt:
+
 - `c_PV,raw` = Capture Rate des PV-only-Punktes (scale=0%) im Direktvermarktungs-Regime
 - `Δc_Marketing` = Capture Rate PV-only im aktuellen Regime − `c_PV,raw`
 - `Δc_Flexibilität` = Capture Rate mit BESS − Capture Rate PV-only (selbes Regime)
@@ -164,13 +165,13 @@ Das bestehende `analyses.py` führt Marketing-Parameter-Sweeps mit Monte Carlo d
 (EEG-Sensitivity, PPA-Collar-2D, PPA-Baseload-2D). Diese bleiben erhalten und werden
 **nicht** durch das Regime-Framework ersetzt.
 
-| Aspekt        | analyses.py (besteht)          | regime_search.py (neu)             |
-|---------------|--------------------------------|------------------------------------|
-| Zweck         | Sensitivität innerhalb 1 Regime | Vergleich über Regime hinweg       |
-| Methode       | MC pro Parameterpunkt          | Deterministisch (P50 Grid Search)  |
-| BESS-Größe    | Fix (Optimum aus Grid Search)  | Variabel (voller Grid Search)      |
-| Ergebnis      | IRR-Verteilung pro Preispunkt  | Optimale BESS-Größe pro Regime     |
-| Wann nutzen?  | Nach Regime-Wahl, für Feintuning | Vor Regime-Wahl, für Strategieentscheidung |
+| Aspekt       | analyses.py (besteht)            | regime_search.py (neu)                     |
+|--------------|----------------------------------|--------------------------------------------|
+| Zweck        | Sensitivität innerhalb 1 Regime  | Vergleich über Regime hinweg               |
+| Methode      | MC pro Parameterpunkt            | Deterministisch (P50 Grid Search)          |
+| BESS-Größe   | Fix (Optimum aus Grid Search)    | Variabel (voller Grid Search)              |
+| Ergebnis     | IRR-Verteilung pro Preispunkt    | Optimale BESS-Größe pro Regime             |
+| Wann nutzen? | Nach Regime-Wahl, für Feintuning | Vor Regime-Wahl, für Strategieentscheidung |
 
 ---
 
@@ -182,10 +183,10 @@ Das bestehende `analyses.py` führt Marketing-Parameter-Sweeps mit Monte Carlo d
 @dataclass
 class MarketingRegime:
     """Definition eines Vermarktungsregimes für den Regime-Vergleich."""
-    name: str                              # z.B. "EEG Floor 7ct green"
-    label: str                             # z.B. "EEG-Mindestpreis 0,07 €/kWh (Grünstrom)"
-    marketing_type: str                    # "market" | "eeg" | "ppa_floor" | "ppa_collar" | "ppa_pap" | "ppa_baseload"
-    operating_mode: str                    # "green" | "grey"
+    name: str  # z.B. "EEG Floor 7ct green"
+    label: str  # z.B. "EEG-Mindestpreis 0,07 €/kWh (Grünstrom)"
+    marketing_type: str  # "market" | "eeg" | "ppa_floor" | "ppa_collar" | "ppa_pap" | "ppa_baseload"
+    operating_mode: str  # "green" | "grey"
 
     # EEG-spezifisch
     eeg_floor_price_eur_per_kwh: float = 0.0
@@ -206,7 +207,7 @@ class MarketingRegime:
 class RegimeSearchConfig:
     """Konfiguration für den Regime-übergreifenden Vergleich."""
     regimes: list[MarketingRegime]
-    target_irr: float                      # Ziel-IRR als Dezimalzahl (z.B. 0.08)
+    target_irr: float  # Ziel-IRR als Dezimalzahl (z.B. 0.08)
 
     # BESS Design Space (identisch für alle Regime)
     scale_pct_of_pv: list[float]
@@ -223,17 +224,17 @@ class RegimeSearchConfig:
 class RegimeResult:
     """Ergebnis eines einzelnen Regimes."""
     regime: MarketingRegime
-    grid_search_result: GridSearchResult    # Vollständiges Grid-Search-Ergebnis
+    grid_search_result: GridSearchResult  # Vollständiges Grid-Search-Ergebnis
 
     # Abgeleitete Metriken
-    capture_rate_pv_only: float | None      # c bei scale=0% (PV-only in diesem Regime)
-    capture_rate_optimal: float | None      # c beim IRR-optimalen BESS-Punkt
-    delta_c_marketing: float | None         # Δc gegenüber Direktvermarktung PV-only
-    delta_c_flexibility: float | None       # Δc durch BESS (optimal - PV-only, selbes Regime)
-    irr_pv_only: float | None              # IRR bei PV-only
-    irr_optimal: float | None              # Beste IRR in diesem Regime
-    min_bess_capex_for_target: float | None # Minimaler BESS-CAPEX für Ziel-IRR (oder None)
-    target_irr_achievable: bool            # Wird Ziel-IRR in irgendeinem Grid-Punkt erreicht?
+    capture_rate_pv_only: float | None  # c bei scale=0% (PV-only in diesem Regime)
+    capture_rate_optimal: float | None  # c beim IRR-optimalen BESS-Punkt
+    delta_c_marketing: float | None  # Δc gegenüber Direktvermarktung PV-only
+    delta_c_flexibility: float | None  # Δc durch BESS (optimal - PV-only, selbes Regime)
+    irr_pv_only: float | None  # IRR bei PV-only
+    irr_optimal: float | None  # Beste IRR in diesem Regime
+    min_bess_capex_for_target: float | None  # Minimaler BESS-CAPEX für Ziel-IRR (oder None)
+    target_irr_achievable: bool  # Wird Ziel-IRR in irgendeinem Grid-Punkt erreicht?
 
 
 @dataclass
@@ -241,7 +242,7 @@ class RegimeSearchResult:
     """Gesamtergebnis des Regime-Vergleichs."""
     target_irr: float
     regime_results: list[RegimeResult]
-    baseline_capture_rate: float            # c_PV,raw (Direktvermarktung, PV-only, green)
+    baseline_capture_rate: float  # c_PV,raw (Direktvermarktung, PV-only, green)
 
     # Sortierte Empfehlung: Regime, die Ziel-IRR erreichen, sortiert nach min BESS CAPEX
     feasible_regimes: list[RegimeResult]
@@ -314,9 +315,9 @@ Kernfunktion: Übersetzung eines `MarketingRegime` in die Preis-Schedules, die
 
 ```python
 def _regime_to_price_schedules(
-    regime: MarketingRegime,
-    lifetime_years: int,
-    inflation_rate: float,
+        regime: MarketingRegime,
+        lifetime_years: int,
+        inflation_rate: float,
 ) -> tuple[list[float], list[float], list[float]]:
     """Erzeuge (fixed_prices_yearly, goo_prices_yearly, cap_prices_yearly) für ein Regime.
 
@@ -340,8 +341,8 @@ kopieren, was temporär Duplikation erzeugt).
 
 ```python
 def run_regime_search(
-    base_config: GridSearchConfig,
-    regime_config: RegimeSearchConfig,
+        base_config: GridSearchConfig,
+        regime_config: RegimeSearchConfig,
 ) -> RegimeSearchResult:
     """Führe Grid Search für jedes Regime durch und vergleiche Ergebnisse.
 
@@ -384,6 +385,7 @@ def run_regime_search(
 
 **Parallelisierung:** Die Grid Searches pro Regime sind voneinander unabhängig. Zwei Ebenen
 möglich:
+
 - **Sequentiell über Regime, parallel innerhalb Grid Search** (einfach, bestehende
   Parallelisierung nutzen)
 - **Parallel über Regime UND innerhalb Grid Search** (erfordert Resource-Management,
@@ -403,35 +405,35 @@ Zwei neue CSV-Dateien:
 
 **`{scenario}_regime_comparison.csv`** – Eine Zeile pro Regime:
 
-| Spalte                        | Beschreibung                                     |
-|-------------------------------|--------------------------------------------------|
-| Regime                        | Name des Regimes                                 |
-| Marketing-Typ                 | market/eeg/ppa_floor/...                         |
-| Betriebsmodus                 | green/grey                                       |
-| IRR PV-only (%)               | Equity-IRR ohne BESS                             |
-| IRR Optimal (%)               | Beste Equity-IRR mit BESS                        |
-| Capture Rate PV-only          | c bei scale=0%                                   |
-| Capture Rate Optimal          | c beim besten BESS-Punkt                         |
-| Δc Marketing                  | Uplift durch Vermarktungsstruktur                |
-| Δc Flexibilität               | Uplift durch BESS                                |
-| Ziel-IRR erreichbar           | Ja/Nein                                          |
-| Min BESS-CAPEX für Ziel (€)   | Minimaler BESS-CAPEX, der Ziel-IRR erreicht      |
-| Optimale BESS-Leistung (kW)   | Bei min BESS-CAPEX für Ziel                      |
-| Optimale BESS-Kapazität (kWh) | Bei min BESS-CAPEX für Ziel                      |
+| Spalte                        | Beschreibung                                |
+|-------------------------------|---------------------------------------------|
+| Regime                        | Name des Regimes                            |
+| Marketing-Typ                 | market/eeg/ppa_floor/...                    |
+| Betriebsmodus                 | green/grey                                  |
+| IRR PV-only (%)               | Equity-IRR ohne BESS                        |
+| IRR Optimal (%)               | Beste Equity-IRR mit BESS                   |
+| Capture Rate PV-only          | c bei scale=0%                              |
+| Capture Rate Optimal          | c beim besten BESS-Punkt                    |
+| Δc Marketing                  | Uplift durch Vermarktungsstruktur           |
+| Δc Flexibilität               | Uplift durch BESS                           |
+| Ziel-IRR erreichbar           | Ja/Nein                                     |
+| Min BESS-CAPEX für Ziel (€)   | Minimaler BESS-CAPEX, der Ziel-IRR erreicht |
+| Optimale BESS-Leistung (kW)   | Bei min BESS-CAPEX für Ziel                 |
+| Optimale BESS-Kapazität (kWh) | Bei min BESS-CAPEX für Ziel                 |
 
 **`{scenario}_regime_grid_detail.csv`** – Alle Grid-Punkte aller Regime:
 
-| Spalte         | Beschreibung                    |
-|----------------|---------------------------------|
-| Regime         | Name                            |
-| Scale (%)      | BESS-Anteil                     |
-| E/P (h)        | Ratio                           |
-| BESS kW        | Leistung                        |
-| BESS kWh       | Kapazität                       |
-| CAPEX BESS (€) | Nur BESS-Anteil                 |
-| IRR (%)        | Equity-IRR                      |
-| Capture Rate   | c                               |
-| ≥ Ziel-IRR     | Boolean                         |
+| Spalte         | Beschreibung    |
+|----------------|-----------------|
+| Regime         | Name            |
+| Scale (%)      | BESS-Anteil     |
+| E/P (h)        | Ratio           |
+| BESS kW        | Leistung        |
+| BESS kWh       | Kapazität       |
+| CAPEX BESS (€) | Nur BESS-Anteil |
+| IRR (%)        | Equity-IRR      |
+| Capture Rate   | c               |
+| ≥ Ziel-IRR     | Boolean         |
 
 **Aufwand:** Klein.
 
@@ -485,6 +487,7 @@ python -m pv_bess_model.main --scenario scenario.json --regime-search
 ```
 
 Wenn `--regime-search` aktiv:
+
 1. Normaler Grid Search wird **übersprungen** (der Regime-Search ersetzt ihn)
 2. Regime-Search liefert Ergebnisse für alle definierten Regime
 3. Das "beste" Regime (Ziel-IRR erreichbar, minimaler BESS-CAPEX) wird als "Optimum" ausgewählt
@@ -532,33 +535,33 @@ Floor 6ct grey;ppa_floor;grey;7,2%;9,1%;0,92;1,01;0,10;0,09;Ja;3.600.000
 
 ### Was wird hinzugefügt?
 
-| Neu                              | Datei                        |
-|----------------------------------|------------------------------|
-| `RegimeSearchConfig`             | `optimization/regime_search.py` |
-| `MarketingRegime`                | `optimization/regime_search.py` |
+| Neu                                  | Datei                           |
+|--------------------------------------|---------------------------------|
+| `RegimeSearchConfig`                 | `optimization/regime_search.py` |
+| `MarketingRegime`                    | `optimization/regime_search.py` |
 | `RegimeResult`, `RegimeSearchResult` | `optimization/regime_search.py` |
-| `run_regime_search()`            | `optimization/regime_search.py` |
-| `_regime_to_price_schedules()`   | `optimization/regime_search.py` |
-| `write_regime_comparison_csv()`  | `output/csv_writer.py`       |
-| `write_regime_detail_csv()`      | `output/csv_writer.py`       |
-| Regime-Tab + 3 Charts            | `output/report/`             |
-| JSON-Schema-Erweiterung          | `config/schema.py`           |
-| CLI-Flag `--regime-search`       | `main.py`                    |
+| `run_regime_search()`                | `optimization/regime_search.py` |
+| `_regime_to_price_schedules()`       | `optimization/regime_search.py` |
+| `write_regime_comparison_csv()`      | `output/csv_writer.py`          |
+| `write_regime_detail_csv()`          | `output/csv_writer.py`          |
+| Regime-Tab + 3 Charts                | `output/report/`                |
+| JSON-Schema-Erweiterung              | `config/schema.py`              |
+| CLI-Flag `--regime-search`           | `main.py`                       |
 
 ---
 
 ## 8. Implementierungsreihenfolge
 
-| #   | Schritt                                         | Abhängigkeit | Aufwand |
-|-----|--------------------------------------------------|--------------|---------|
-| 1   | `MarketingRegime` + `RegimeSearchConfig` Datenmodell | –          | Klein   |
-| 2   | `_regime_to_price_schedules()` (Preis-Übersetzung) | 1, ideal nach B3 | Mittel |
-| 3   | `run_regime_search()` Orchestrierung             | 1, 2         | Mittel  |
-| 4   | JSON-Schema-Erweiterung + Validierung            | 1            | Klein   |
-| 5   | CLI-Integration in `main.py`                     | 3, 4         | Klein   |
-| 6   | CSV-Ausgabe                                      | 3            | Klein   |
-| 7   | HTML-Dashboard: Regime-Tab + Charts              | 6            | Groß    |
-| 8   | Tests                                            | 3            | Mittel  |
+| # | Schritt                                              | Abhängigkeit     | Aufwand |
+|---|------------------------------------------------------|------------------|---------|
+| 1 | `MarketingRegime` + `RegimeSearchConfig` Datenmodell | –                | Klein   |
+| 2 | `_regime_to_price_schedules()` (Preis-Übersetzung)   | 1, ideal nach B3 | Mittel  |
+| 3 | `run_regime_search()` Orchestrierung                 | 1, 2             | Mittel  |
+| 4 | JSON-Schema-Erweiterung + Validierung                | 1                | Klein   |
+| 5 | CLI-Integration in `main.py`                         | 3, 4             | Klein   |
+| 6 | CSV-Ausgabe                                          | 3                | Klein   |
+| 7 | HTML-Dashboard: Regime-Tab + Charts                  | 6                | Groß    |
+| 8 | Tests                                                | 3                | Mittel  |
 
 **Geschätzter Gesamtaufwand:** Mittel-Groß (ohne HTML-Charts: Mittel)
 
@@ -589,16 +592,19 @@ Floor 6ct grey;ppa_floor;grey;7,2%;9,1%;0,92;1,01;0,10;0,09;Ja;3.600.000
 Das Originaldokument erwähnt einen ML-basierten Surrogate-Ansatz. Bewertung:
 
 **Sinnvoll als Beschleunigung**, wenn:
+
 - Die Regime-Anzahl sehr groß wird (>20)
 - Oder der BESS Design Space feingranular wird (>50 Punkte)
 - Oder Echtzeit-Interaktivität gewünscht ist (Web-Frontend)
 
 **Nicht sinnvoll für MVP**, weil:
+
 - 6 Regime × 10 Grid-Punkte = 60 volle Simulationen → ~1h Rechenzeit, akzeptabel
 - Das bestehende Grid-Search-Framework ist exakt, ein Surrogat nur approximativ
 - Der Implementierungsaufwand für ML übersteigt den Nutzen bei dieser Problemgröße
 
 **Möglicher späterer Ansatz:**
+
 - Trainingsdaten: Alle Grid-Search-Ergebnisse aus vergangenen Läufen
 - Modell: Gradient-Boosted Trees (z.B. LightGBM) – schnell, braucht wenig Daten
 - Features: (marketing_type, mode, scale_pct, e_to_p, floor_price, cap_price, ...)
@@ -645,6 +651,7 @@ Baseline konfigurieren können, oder ist "Direktvermarktung green" immer korrekt
 ### 11.4 Wie soll mit dem Fall umgegangen werden, dass kein Regime die Ziel-IRR erreicht?
 
 Mögliche Reaktionen:
+
 - Warnung ausgeben + trotzdem alle Ergebnisse berichten
 - Das Regime mit der höchsten IRR als "nächstbestes" markieren
 - Die Capture-Rate-Lücke quantifizieren ("X% mehr Capture Rate nötig")

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -28,12 +29,12 @@ import pandas as pd
 # ==============================================================================
 
 # Pfad zur CSV-Datei mit Strompreisdaten
-CSV_PATH = ".data/scenarios/strompreise/other_prices_original_2025.csv"
+CSV_PATH = ".data/scenarios/strompreise/prognos_prices_2017_original_2026.csv"
 
 # Spaltennamen
-COL_TIMESTAMP = "Timestamp"
+COL_TIMESTAMP = "Timestep"
 COL_LOW = "Low"
-COL_MID = "Central"
+COL_MID = "Mid"
 COL_HIGH = "High"
 SCENARIO_COLS = [COL_LOW, COL_MID, COL_HIGH]
 
@@ -48,15 +49,16 @@ INTERVALS_PER_HOUR = 1
 INTERVALS_PER_WEEK = 24 * 7
 
 # Output
-OUTPUT_DIR = Path(".data/scenarios/strompreise/price_analysis_other")
+OUTPUT_DIR = Path(".data/scenarios/strompreise/price_analysis_prognos")
 DPI = 150
 
 # Schwellenwert: Ab wie vielen identischen aufeinanderfolgenden Werten gilt
 # eine Periode als "konstant"? (2 = schon ab 2 gleichen Werten hintereinander)
-CONST_MIN_LENGTH = 2
+CONST_MIN_LENGTH = 8
 
 # Toleranz für Gleichheit (floating point)
 CONST_TOLERANCE = 1e-10
+
 
 # ==============================================================================
 # HILFSFUNKTIONEN
@@ -75,7 +77,7 @@ def load_data(csv_path: str) -> pd.DataFrame:
 
     df[COL_TIMESTAMP] = pd.to_datetime(
         df[COL_TIMESTAMP],
-        format="%d.%m.%Y %H:%M",
+        format="%Y-%m-%dT%H:%M",
         errors="raise",
     )
 
@@ -129,7 +131,7 @@ def load_data(csv_path: str) -> pd.DataFrame:
 
 
 def find_constant_periods(
-    values: np.ndarray, min_length: int = CONST_MIN_LENGTH, tol: float = CONST_TOLERANCE
+        values: np.ndarray, min_length: int = CONST_MIN_LENGTH, tol: float = CONST_TOLERANCE
 ) -> list[dict]:
     """
     Finde zusammenhängende Perioden mit konstanten Werten.
@@ -248,6 +250,7 @@ def plot_annual_means(df: pd.DataFrame, output_dir: Path) -> str:
 
     ax.set_xlabel("Jahr")
     ax.set_ylabel("Durchschnittspreis (EUR/MWh)")
+    ax.set_ylim(10, 130)
     ax.set_title("Jährliche Durchschnittspreise pro Szenario")
     ax.legend()
     ax.grid(True, alpha=0.3)
@@ -364,7 +367,7 @@ def constant_periods_analysis(df: pd.DataFrame) -> tuple[str, dict]:
         for i, p in enumerate(sorted_periods[:top_n]):
             ts = df[COL_TIMESTAMP].iloc[p["start_idx"]]
             md += (
-                f"| {i+1} | {p['start_idx']:,} | {p['length']:,} "
+                f"| {i + 1} | {p['start_idx']:,} | {p['length']:,} "
                 f"| {format_intervals_as_duration(p['length'])} "
                 f"| {p['value']:.5f} | {ts} |\n"
             )
@@ -419,7 +422,7 @@ def constant_periods_analysis(df: pd.DataFrame) -> tuple[str, dict]:
     md += "|-------------|--------------------------|-------------------|-------------------|\n"
 
     for i, col_a in enumerate(SCENARIO_COLS):
-        for col_b in SCENARIO_COLS[i+1:]:
+        for col_b in SCENARIO_COLS[i + 1:]:
             both = (const_masks[col_a] & const_masks[col_b]).sum()
             only_a = (const_masks[col_a] & ~const_masks[col_b]).sum()
             only_b = (~const_masks[col_a] & const_masks[col_b]).sum()
@@ -434,11 +437,11 @@ def constant_periods_analysis(df: pd.DataFrame) -> tuple[str, dict]:
     # Gleichzeitig konstant UND gleicher Wert?
     md += "\n#### Gleichzeitig konstant mit identischem Wert\n\n"
     for i, col_a in enumerate(SCENARIO_COLS):
-        for col_b in SCENARIO_COLS[i+1:]:
+        for col_b in SCENARIO_COLS[i + 1:]:
             both_const = const_masks[col_a] & const_masks[col_b]
             if both_const.sum() > 0:
                 same_value = both_const & (
-                    np.abs(df[col_a].values - df[col_b].values) <= CONST_TOLERANCE
+                        np.abs(df[col_a].values - df[col_b].values) <= CONST_TOLERANCE
                 )
                 md += (
                     f"- **{col_a} / {col_b}**: "
@@ -475,7 +478,7 @@ def constant_periods_analysis(df: pd.DataFrame) -> tuple[str, dict]:
 
 
 def plot_constant_periods_heatmap(
-    df: pd.DataFrame, all_periods: dict, output_dir: Path
+        df: pd.DataFrame, all_periods: dict, output_dir: Path
 ) -> str:
     """Heatmap: Konstante Perioden über das Jahr (Tag x Stunde)."""
     n_years = len(df["year"].unique())
@@ -528,7 +531,7 @@ def plot_constant_periods_heatmap(
 
 
 def plot_constant_periods_duration_hist(
-    all_periods: dict, output_dir: Path
+        all_periods: dict, output_dir: Path
 ) -> str:
     """Histogramm der Dauern konstanter Perioden."""
     fig, axes = plt.subplots(1, len(SCENARIO_COLS), figsize=(6 * len(SCENARIO_COLS), 5))
@@ -563,7 +566,7 @@ def plot_constant_periods_duration_hist(
 
 
 def plot_constant_periods_by_price_level(
-    all_periods: dict, output_dir: Path
+        all_periods: dict, output_dir: Path
 ) -> str:
     """Scatter: Preisniveau vs. Dauer der konstanten Perioden."""
     fig, axes = plt.subplots(1, len(SCENARIO_COLS), figsize=(6 * len(SCENARIO_COLS), 5))
@@ -593,7 +596,7 @@ def plot_constant_periods_by_price_level(
 
 
 def plot_constant_periods_timeline(
-    df: pd.DataFrame, all_periods: dict, output_dir: Path
+        df: pd.DataFrame, all_periods: dict, output_dir: Path
 ) -> str:
     """Zeitlicher Verlauf: Markierung konstanter Perioden auf der Preis-Zeitreihe (Ausschnitt erstes Jahr)."""
     first_year = df["year"].iloc[0]
@@ -772,7 +775,7 @@ def seasonal_analysis(df: pd.DataFrame) -> str:
     for m in range(1, 13):
         if m in monthly.index:
             vals = " | ".join(f"{monthly.loc[m, col]:.2f}" for col in SCENARIO_COLS)
-            md += f"| {month_names[m-1]} | {vals} |\n"
+            md += f"| {month_names[m - 1]} | {vals} |\n"
 
     # Sommer vs Winter
     md += "\n### 4.2 Sommer (Apr-Sep) vs. Winter (Okt-Mar)\n\n"
@@ -825,10 +828,10 @@ def plot_avg_daily_profile(df: pd.DataFrame, output_dir: Path) -> str:
 def plot_avg_weekly_profile(df: pd.DataFrame, output_dir: Path) -> str:
     """Durchschnittliches Wochenprofil."""
     fig, ax = plt.subplots(figsize=(14, 5))
-
+    df_y = df[df.year <= 2030]
     for col in SCENARIO_COLS:
         # Wochentag + Stunde kombiniert
-        df_tmp = df[[col, "weekday", "interval_of_day"]].copy()
+        df_tmp = df_y[[col, "weekday", "interval_of_day"]].copy()
         df_tmp["week_interval"] = df_tmp["weekday"] * INTERVALS_PER_DAY + df_tmp["interval_of_day"]
         profile = df_tmp.groupby("week_interval")[col].mean() * 1000
         hours = profile.index / INTERVALS_PER_HOUR
@@ -840,7 +843,7 @@ def plot_avg_weekly_profile(df: pd.DataFrame, output_dir: Path) -> str:
     ax.set_xticklabels(day_labels)
     ax.set_xlabel("Wochentag")
     ax.set_ylabel("Durchschnittspreis (EUR/MWh)")
-    ax.set_title("Durchschnittliches Wochenprofil (alle Jahre)")
+    ax.set_title("Durchschnittliches Wochenprofil (2026 - 2030)")
     ax.legend()
     ax.grid(True, alpha=0.3)
     for d in range(7):
@@ -987,7 +990,7 @@ def plot_spread_over_time(df: pd.DataFrame, output_dir: Path) -> str:
 
 
 def plot_constant_periods_per_year(
-    df: pd.DataFrame, all_periods: dict, output_dir: Path
+        df: pd.DataFrame, all_periods: dict, output_dir: Path
 ) -> str:
     """Anteil konstanter Intervalle pro Jahr als Balkendiagramm."""
     years = sorted(df["year"].unique())
